@@ -1,0 +1,257 @@
+# Hypothèses du jumeau numérique Djen Djen–Bellara
+#
+# Règle : chaque paramètre porte sa valeur, son unité, sa fourchette plausible,
+# son statut et sa source. Statuts possibles :
+#   connu     : publié par une source identifiée
+#   observé   : mesuré dans nos propres données collectées
+#   annoncé   : communiqué officiellement, non réalisé ou non vérifié
+#   estimé    : ordre de grandeur raisonné, à affiner
+#   inconnu   : aucune donnée ; valeur de travail soumise à analyse de sensibilité
+#   technique : paramètre de calcul sans portée physique (pas de temps, graine)
+#
+# La fourchette [min, max] sert à l'analyse de sensibilité : toute conclusion
+# doit rester vraie sur la fourchette, pas seulement sur la valeur centrale.
+
+usine:
+  capacite_acier:
+    value: 2.2
+    unit: Mt/an
+    status: connu
+    source: "GMK Center, Algeria's steel industry: why is it growing"
+  capacite_laminage:
+    value: 2.0
+    unit: Mt/an
+    status: connu
+    source: "GMK Center (rond à béton et fil machine)"
+  capacite_dri:
+    value: 2.5
+    unit: Mt/an
+    status: connu
+    source: "GMK Center (module Midrex)"
+  taux_utilisation_dri:
+    value: 0.85
+    range: [0.70, 0.95]
+    unit: fraction
+    status: estimé
+    note: "Hors arrêts planifiés, modélisés à part."
+  arrets_planifies_dri:
+    value: 20
+    range: [10, 35]
+    unit: jours/an
+    status: estimé
+    note: "Maintenance annuelle typique d'un module DRI."
+  pellets_par_t_dri:
+    value: 1.45
+    range: [1.40, 1.50]
+    unit: t/t
+    status: estimé
+    source: "Ordre de grandeur de la littérature sur le procédé Midrex"
+  capacite_stock_pellets_usine:
+    value: 150000
+    range: [50000, 300000]
+    unit: t
+    status: inconnu
+
+phase_2:
+  capacite_acier_cible:
+    value: 4.0
+    unit: Mt/an
+    status: annoncé
+    source: "Presse, accord d'expansion annoncé ; à recouper"
+  facteur_dri:
+    value: 2.0
+    range: [1.6, 2.0]
+    unit: multiplicateur
+    status: estimé
+    note: "Hypothèse : la capacité DRI suit l'acier ; à vérifier."
+
+navires_minerai:
+  taille_moyenne:
+    value: 142700
+    range: [140000, 147000]
+    unit: t
+    status: observé
+    note: "Moyenne de 5 navires observés en sept. 2026 (140 571 à 146 414 t)."
+  postes_minerai:
+    value: 1
+    range: [1, 2]
+    unit: postes
+    status: observé
+    note: "Seul QW/7 vu en minerai ; un 2e navire attendait en rade (BERGE NIMBA, 24/09)."
+  cadence_dechargement:
+    value: 25000
+    range: [15000, 40000]
+    unit: t/jour
+    status: estimé
+    note: "Borne observée : GH NIGHTINGALE à quai ≥ 5,8 jours pour 142 533 t, soit ≤ 24 600 t/jour s'il déchargeait encore."
+  seuil_houle_arret:
+    value: 2.0
+    range: [1.5, 3.0]
+    unit: m (hauteur significative)
+    status: estimé
+    note: "À apprendre en croisant escales et houle Open-Meteo."
+  taux_surestaries:
+    value: 30000
+    range: [15000, 50000]
+    unit: USD/jour
+    status: estimé
+    note: "Ordre de grandeur Capesize ; très dépendant du marché du fret."
+
+stockage_port:
+  capacite_stockyard_pellets:
+    value: 300000
+    range: [150000, 600000]
+    unit: t
+    status: inconnu
+  capacite_terminal_import:
+    value: 3.5
+    unit: Mt/an
+    status: connu
+    source: "Presse, terminal à pellets de Djen Djen"
+
+rail:
+  politique_expedition:
+    value: pull
+    unit: pull | push
+    status: estimé
+    note: >
+      Règle d'expédition des rames. « pull » : une rame ne part charger que si le stock
+      usine peut recevoir une charge complète — le tampon reste donc au port, et une
+      rame n'est jamais immobilisée chargée devant une usine pleine. « push » : la rame
+      part dès qu'il y a de quoi charger et attend s'il n'y a plus de place à l'usine.
+      Aucune source sur la pratique réelle : « pull » est retenu par défaut parce qu'il
+      correspond à une exploitation raisonnable, « push » est conservé pour comparaison.
+  distance_port_usine:
+    value: 45
+    range: [40, 50]
+    unit: km
+    status: estimé
+    note: "Sources divergentes (40 km et 50 km) ; à confirmer."
+  charge_par_train:
+    value: 2500
+    range: [1500, 3500]
+    unit: t
+    status: estimé
+  nombre_de_rames:
+    value: 3
+    range: [2, 6]
+    unit: rames
+    status: inconnu
+  vitesse_moyenne:
+    value: 30
+    range: [20, 50]
+    unit: km/h
+    status: estimé
+  duree_chargement_train:
+    value: 3.0
+    range: [2.0, 5.0]
+    unit: h
+    status: estimé
+  duree_dechargement_train:
+    value: 2.0
+    range: [1.0, 4.0]
+    unit: h
+    status: estimé
+
+couts:
+  prix_pellets:
+    value: 140
+    range: [100, 180]
+    unit: USD/t
+    status: estimé
+    note: "À recaler sur la série Banque mondiale (Pink Sheet) + prime pellets."
+  taux_de_portage:
+    value: 0.10
+    range: [0.06, 0.15]
+    unit: fraction/an
+    status: estimé
+  cout_journee_arret_dri:
+    value: null
+    unit: USD/jour
+    status: inconnu
+    note: "À calculer : production perdue × marge unitaire. Marge inconnue."
+
+traitement_donnees:
+  long_stay_jours:
+    value: 60
+    unit: jours
+    status: estimé
+    note: "Au-delà, un navire à quai est considéré immobilisé, pas en escale."
+  absence_max_meme_escale:
+    value: 24
+    unit: h
+    status: estimé
+    note: "MAX_ABSENCE_HOURS dans build_escales.py."
+  tolerance_tonnage:
+    value: 0.05
+    unit: fraction
+    status: estimé
+    note: "TONNAGE_REL_TOL dans build_escales.py."
+
+# Paramètres propres à la simulation (étape 4). Les grandeurs dérivées (besoin annuel
+# en pellets, navires par an, intervalle entre arrivées, débit horaire du DRI) ne
+# figurent pas ici : elles sont calculées dans corridor.sim.config à partir des
+# hypothèses ci-dessus.
+simulation:
+  jours_par_an:
+    value: 365
+    unit: jours
+    status: connu
+  dispersion_arrivees:
+    value: 0.0
+    range: [0.0, 1.5]
+    unit: coefficient de variation
+    status: estimé
+    note: >
+      Régularité des arrivées de minéraliers. 0 = arrivées parfaitement régulières
+      (cas de référence), 1 = processus de Poisson, au-delà = arrivées groupées.
+      Le baseline est volontairement régulier : c'est le cas de référence qui isole
+      la capacité du corridor de l'irrégularité de l'affrètement.
+  cv_taille_navire:
+    value: 0.02
+    range: [0.0, 0.10]
+    unit: coefficient de variation
+    status: estimé
+    note: "Déduit de l'étendue observée sur 5 navires (140 571 à 146 414 t)."
+  cv_cadence_dechargement:
+    value: 0.15
+    range: [0.05, 0.35]
+    unit: coefficient de variation
+    status: estimé
+    note: "Variabilité d'un navire à l'autre : grues, houle, qualité du produit."
+  cv_durees_rail:
+    value: 0.20
+    range: [0.05, 0.40]
+    unit: coefficient de variation
+    status: estimé
+    note: "S'applique aux chargements, trajets et déchargements ferroviaires."
+  fraction_stock_initial:
+    value: 0.5
+    range: [0.0, 1.0]
+    unit: fraction
+    status: estimé
+    note: >
+      Remplissage des deux stocks au démarrage de la simulation. S'appuie sur deux
+      capacités de statut inconnu : à revoir en analyse de sensibilité.
+  arrets_planifies_nombre:
+    value: 2
+    range: [1, 4]
+    unit: arrêts/an
+    status: estimé
+    note: >
+      Les arrets_planifies_dri jours sont répartis en ce nombre d'arrêts de durée
+      égale, espacés régulièrement dans l'année.
+  pas_de_temps:
+    value: 1.0
+    unit: h
+    status: technique
+    note: "Pas de discrétisation du déchargement et de la consommation du DRI."
+  pas_echantillonnage_stocks:
+    value: 6.0
+    unit: h
+    status: technique
+    note: "Période d'échantillonnage des niveaux de stock (min et moyenne)."
+  graine_par_defaut:
+    value: 20260924
+    unit: entier
+    status: technique

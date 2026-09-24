@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "corridor"
+version = "0.1.0"
+description = "Jumeau numérique du corridor Djen Djen–Bellara (projet portfolio indépendant)"
+requires-python = ">=3.11"
+dependencies = [
+  "requests>=2.31",
+  "pdfplumber>=0.11",
+  "simpy>=4.1",      # simulation à événements discrets (étape 4)
+  "pyyaml>=6.0",     # hypothèses et scénarios
+  "pyarrow>=17.0",   # écriture Parquet des résultats de simulation
+  "matplotlib>=3.8", # figures de l'analyse de sensibilité
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]

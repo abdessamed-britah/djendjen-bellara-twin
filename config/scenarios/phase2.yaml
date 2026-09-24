@@ -1,0 +1,11 @@
+# Phase 2 : la capacité DRI suit l'expansion annoncée de l'acier, le corridor ne
+# change pas. Le besoin en pellets double, donc le nombre de navires par an aussi.
+#
+# Aucun chiffre ici : la capacité DRI est le produit de l'hypothèse existante par
+# phase_2.facteur_dri. Corriger facteur_dri dans assumptions.yaml suffit à corriger
+# ce scénario.
+nom: phase2
+description: "Capacité DRI × facteur_dri, corridor inchangé (1 poste, 3 rames)"
+overrides:
+  usine.capacite_dri:
+    multiply_by: phase_2.facteur_dri

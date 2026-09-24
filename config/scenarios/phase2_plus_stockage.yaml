@@ -1,0 +1,18 @@
+# Phase 2 avec le stockage porté en haut de sa fourchette.
+#
+# Remplace l'ancien scénario phase2_plus_rames : doubler le parc ne changeait rien à arrivées
+# régulières (4,011 Mt dans les deux cas) et ne récupérait que 1,4 point de perte à arrivées
+# de Poisson, là où le stockage en récupère 4,6. Ce n'est donc pas le rail qui limite, mais la
+# capacité à absorber l'irrégularité des arrivées.
+#
+# Les deux capacités sont portées au haut de leur fourchette ; toutes deux sont de statut
+# inconnu, ce scénario est donc un majorant plausible, pas une situation observée.
+nom: phase2_plus_stockage
+description: "Phase 2 avec stockage port et usine en haut de fourchette"
+overrides:
+  usine.capacite_dri:
+    multiply_by: phase_2.facteur_dri
+  stockage_port.capacite_stockyard_pellets:
+    value: 600000   # haut de la fourchette [150000, 600000]
+  usine.capacite_stock_pellets_usine:
+    value: 300000   # haut de la fourchette [50000, 300000]

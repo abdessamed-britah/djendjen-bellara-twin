@@ -1,0 +1,9 @@
+# Cas de référence : le corridor tel que les hypothèses le décrivent aujourd'hui.
+#
+# Aucun écart : baseline est exactement assumptions.yaml. Les arrivées y sont
+# régulières (simulation.dispersion_arrivees = 0), ce qui isole la capacité du
+# corridor de l'irrégularité de l'affrètement. Pour étudier cette irrégularité,
+# faire varier dispersion_arrivees plutôt que modifier ce fichier.
+nom: baseline
+description: "Capacité actuelle, arrivées régulières, 1 poste minerai, 3 rames"
+overrides: {}
