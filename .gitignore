@@ -4,3 +4,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 data/sim/
+# PDF bruts : archivés dans les releases GitHub raw-AAAA-MM, pas dans git.
+# « data/raw/*.pdf » ne suffirait pas : les PDF sont rangés dans AAAA/MM/JJ/.
+data/raw/**/*.pdf

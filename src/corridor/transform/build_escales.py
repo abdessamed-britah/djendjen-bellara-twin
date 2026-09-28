@@ -16,8 +16,13 @@ Deux horloges, jamais mélangées :
 
 - les **durées** (`wait_hours`, `berth_hours`) viennent des `event_time` publiés par le
   port (colonnes Anchorage, Berthed, E.T.A) : ce sont des heures de mouvement réelles ;
-- les **bornes de départ** viennent de `source_time_utc`, l'heure de mise à jour que le
-  port affiche. C'est le port qui atteste la présence, pas notre heure de téléchargement.
+- les **bornes de départ** viennent de `source_time_utc`, l'heure de génération du PDF
+  lue dans son en-tête — à la minute près, notre heure de collecte.
+
+Limite à garder en tête : le PDF ne dit pas quand ses **données** ont été mises à jour.
+« Présent à t » signifie « listé dans un document généré à t », pas « vu au port à t ».
+Si le port tarde à retirer un navire parti, `departure_min` est trop tardif, et rien
+dans la source ne permet de le détecter.
 
 Rien n'est corrigé en silence : toute transition inattendue (retour à la rade,
 apparition directe à quai, durée négative, révision d'ETA, ripage de poste…) est
@@ -186,7 +191,7 @@ def group_snapshots(
 ) -> list[tuple[datetime, dict[tuple[str, str], VesselObservation]]]:
     """Regroupe les observations par instantané, du plus ancien au plus récent.
 
-    L'instantané est identifié par `source_time_utc`, l'heure du port. Un instantané
+    L'instantané est identifié par `source_time_utc`, l'heure de génération du PDF. Un instantané
     n'existe que s'il contient au moins un navire : une situation portuaire vide serait
     invisible ici, ce que Djen Djen ne produit pas. Si un navire y figure deux fois,
     la première ligne est retenue (voir `duplicate_in_snapshot`).

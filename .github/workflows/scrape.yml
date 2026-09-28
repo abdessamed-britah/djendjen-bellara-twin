@@ -2,11 +2,11 @@ name: Collecte situation portuaire
 
 on:
   schedule:
-    - cron: "0 5,13,21 * * *"   # 06h, 14h, 22h heure d'Algérie (UTC+1)
+    - cron: "0 5,13,21 * * *"   # 06h, 14h, 22h heure d'Algérie (UTC+1) ; GitHub retarde souvent de plusieurs heures
   workflow_dispatch:            # bouton « Run workflow » pour tester à la main
 
 permissions:
-  contents: write
+  contents: write               # commit du manifeste et des observations, création des releases
 
 concurrency:
   group: scrape
@@ -16,6 +16,8 @@ jobs:
   scrape:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # authentifie la commande gh pour les releases
     steps:
       - uses: actions/checkout@v4
 
@@ -31,12 +33,33 @@ jobs:
       - name: Télécharger la situation portuaire
         run: python -m corridor.ingest.port_status
 
+      # Les PDF ne sont plus versionnés : ils partent dans la release du mois (raw-AAAA-MM),
+      # créée si elle n'existe pas. Idempotent : ne republie rien de déjà publié, et
+      # rattrape tout PDF local encore en attente.
+      - name: Publier les PDF dans la release du mois
+        if: always()
+        run: python -m corridor.ingest.releases publish
+
+      - name: Ajouter les observations à data/clean/observations.csv
+        if: always()
+        run: python -m corridor.transform.observations_csv
+
+      # Filet de sécurité : sur un runner éphémère, un PDF non publié serait perdu.
+      - name: Conserver les PDF comme artefact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-bruts-${{ github.run_id }}
+          path: data/raw/port_status/**/*.pdf
+          retention-days: 30
+          if-no-files-found: ignore
+
       - name: Enregistrer dans le dépôt
         if: always()   # même en cas d'échec, la ligne d'erreur du manifeste est conservée
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/raw/port_status
+          git add data/raw/port_status/_manifest.csv data/clean/observations.csv
           if git diff --cached --quiet; then echo "Rien à enregistrer"; exit 0; fi
           git commit -m "data: situation portuaire $(date -u +%Y-%m-%dT%H:%MZ)"
           git pull --rebase

@@ -4,6 +4,7 @@ Aucun accès réseau : tout part du PDF archivé le 2026-09-24 à 15:58:25 UTC.
 Chaque piège listé dans CLAUDE.md a son test.
 """
 
+import dataclasses
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,7 +15,7 @@ from corridor.transform import parse_status as psx
 
 FIXTURE = Path(__file__).parent / "fixtures" / "port_status_20260924T155825Z.pdf"
 
-# Heure de mise à jour du port : 2026-09-24 16:58 Africa/Algiers = 15:58 UTC.
+# Heure de génération du PDF (en-tête) : 2026-09-24 16:58 Africa/Algiers = 15:58 UTC.
 SOURCE_TIME = datetime(2026, 9, 24, 15, 58, tzinfo=UTC)
 # Heure de collecte, lue dans le nom du fichier (déjà en UTC).
 FETCHED_AT = datetime(2026, 9, 24, 15, 58, 25, tzinfo=UTC)
@@ -270,3 +271,70 @@ def test_cargo_label_est_le_libelle_sans_tonnage(observations):
 def test_observations_immuables(observations):
     with pytest.raises((AttributeError, TypeError)):
         observations[0].vessel = "AUTRE"
+
+
+# --- lecture depuis les octets et empreinte de contenu ---------------------
+
+
+def test_parse_pdf_bytes_equivaut_a_parse_pdf(observations):
+    depuis_octets = psx.parse_pdf_bytes(FIXTURE.read_bytes(), FETCHED_AT)
+    assert depuis_octets == observations
+
+
+def test_l_empreinte_ignore_les_heures_du_document(observations):
+    """Le cœur de la correction : l'en-tête change à chaque collecte, pas la situation."""
+    plus_tard = [
+        dataclasses.replace(
+            obs,
+            source_time_utc=obs.source_time_utc + timedelta(hours=8),
+            fetched_at_utc=obs.fetched_at_utc + timedelta(hours=8),
+        )
+        for obs in observations
+    ]
+    assert psx.content_fingerprint(plus_tard) == psx.content_fingerprint(observations)
+
+
+def test_l_empreinte_ne_depend_pas_de_l_ordre(observations):
+    assert psx.content_fingerprint(list(reversed(observations))) == psx.content_fingerprint(
+        observations
+    )
+
+
+def test_l_empreinte_normalise_casse_accents_et_espaces(observations):
+    variante = [
+        dataclasses.replace(
+            obs,
+            vessel=f"  {obs.vessel.lower()}  ",
+            cargo_raw=obs.cargo_raw.replace("Blé", "BLE").replace(" ", "  "),
+        )
+        for obs in observations
+    ]
+    assert psx.content_fingerprint(variante) == psx.content_fingerprint(observations)
+
+
+@pytest.mark.parametrize(
+    "changement",
+    [
+        {"dock": "QW/1"},                      # ripage de poste
+        {"status": "anchorage"},               # retour en rade
+        {"tonnage_t": 1.0},                    # tonnage corrigé
+        {"event_time": FETCHED_AT},            # heure d'accostage corrigée
+        {"cargo_raw": "142533 MT PELLETS"},    # cargaison modifiée
+    ],
+)
+def test_l_empreinte_change_quand_la_situation_change(observations, changement):
+    modifie = [dataclasses.replace(observations[0], **changement), *observations[1:]]
+    assert psx.content_fingerprint(modifie) != psx.content_fingerprint(observations)
+
+
+def test_l_empreinte_change_quand_un_navire_part(observations):
+    assert psx.content_fingerprint(observations[1:]) != psx.content_fingerprint(observations)
+
+
+def test_l_empreinte_ignore_les_colonnes_hors_perimetre(observations):
+    # agent, dernier port et situation ne font pas partie de l'empreinte demandée
+    variante = [
+        dataclasses.replace(obs, agent="AUTRE", last_port="AILLEURS", situation="x")
+        for obs in observations
+    ]
+    assert psx.content_fingerprint(variante) == psx.content_fingerprint(observations)

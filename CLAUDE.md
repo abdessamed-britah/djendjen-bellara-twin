@@ -34,16 +34,32 @@ la simulation (reproductibilité, conservation de la masse, production de réfé
 
 ### Étape 1 — collecte (terminée)
 
-Archive le PDF horodaté en UTC dans `data/raw/port_status/`, sans jamais dupliquer un PDF
-identique au précédent, et consigne chaque tentative dans `_manifest.csv` (`new`, `unchanged`,
-`error`). Le manifeste est lui-même une donnée : il révèle la fréquence réelle de mise à jour
-du port.
+Le workflow `scrape.yml`, 3×/jour, enchaîne quatre étapes :
+
+1. `corridor.ingest.port_status` télécharge le PDF, calcule `content_sha256` (empreinte des
+   tableaux, **sans** l'heure d'en-tête) et consigne la collecte dans `_manifest.csv` ;
+2. `corridor.ingest.releases publish` envoie le PDF dans la release GitHub du mois
+   (`raw-AAAA-MM`, créée si absente) et renseigne la colonne `release_asset` ;
+3. `corridor.transform.observations_csv` parse le PDF et ajoute ses lignes à
+   `data/clean/observations.csv` ;
+4. seuls `_manifest.csv` et `observations.csv` sont commités. **Les PDF bruts ne sont plus
+   dans git** (`data/raw/**/*.pdf` est ignoré) : ils sont dans les releases, et
+   `scripts/fetch_raw.py` les retélécharge pour tout reparser.
+
+Statut du manifeste : `new` si la situation diffère de la dernière collecte réussie, `unchanged`
+si `content_sha256` est identique, `error` si le téléchargement a échoué. Le PDF est archivé même
+`unchanged` : son heure de génération est nouvelle, et c'est elle qui atteste que les navires
+étaient encore listés. **Les statuts antérieurs au 2026-09-28 ont été calculés sur l'empreinte du
+fichier** et valent tous `new` ; ils n'ont pas été réécrits. Pour ces lignes, comparer
+`content_sha256` d'une ligne à l'autre (les collectes du 26/09 à 17:01 et 23:28 sont identiques).
 
 ### Étape 2 — parsing (terminée)
 
 `parse_pdf(path) -> list[VesselObservation]`. Une observation par navire et par instantané, avec
-`source_time_utc` (heure du port), `fetched_at_utc` (nom du fichier), statut, cargaison
-catégorisée, tonnage, et `long_stay` pour les navires à quai depuis plus de 60 jours.
+`source_time_utc` (heure de **génération** du PDF, lue dans l'en-tête), `fetched_at_utc` (nom du
+fichier), statut, cargaison catégorisée, tonnage, et `long_stay` pour les navires à quai depuis
+plus de 60 jours. `parse_pdf_bytes` fait la même chose depuis les octets, et
+`content_fingerprint` donne l'empreinte de la situation décrite.
 
 ### Étape 3 — escales (terminée, mais non validée sur données réelles)
 
@@ -64,8 +80,10 @@ du README.
 pip install -e ".[dev]"                       # environnement conda « corridor », Python 3.12
 ruff check . && pytest -q                     # doivent passer avant tout commit
 
-python -m corridor.ingest.port_status         # une collecte
+python -m corridor.ingest.port_status         # une collecte (PDF local + ligne de manifeste)
 python scripts/inspect_latest.py              # voir le contenu du dernier PDF
+python scripts/fetch_raw.py                   # retélécharger les PDF depuis les releases
+python -m corridor.transform.observations_csv --rebuild   # régénérer observations.csv
 
 python -m corridor.sim.run --scenario baseline --years 1 --reps 50
 python -m corridor.sim.run --scenario phase2 --years 1 --reps 50 --dispersion 1.0
@@ -88,13 +106,17 @@ Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et `docs/sensibil
 - La virgule est **toujours** une décimale : aucun séparateur de milliers n'a été observé dans la
   source. Si le port s'y met un jour, la règle casse silencieusement.
 - `parse_header` **lève** si l'en-tête manque, au lieu de se rabattre sur la première date du
-  document : une heure de mise à jour fausse contaminerait toute la table des escales.
+  document : une heure d'accostage prise pour l'heure du document fausserait tous les instantanés.
+- **L'en-tête date la génération du PDF, pas les données.** Vérifié sur douze collectes : il
+  coïncide à la minute près avec l'heure de téléchargement. Le changement de situation se détecte
+  donc sur le contenu (`content_fingerprint` : navire, statut, poste, cargaison, tonnage, heure
+  d'événement, normalisés et triés), jamais sur le fichier ni sur l'en-tête.
 
 **Escales (étape 3)**
 
-- Les bornes du départ sont en **heure du port** (`source_time_utc`), pas en heure de collecte :
-  c'est le port qui atteste la présence. Les durées (`wait_hours`, `berth_hours`) viennent des
-  `event_time` publiés.
+- Les bornes du départ sont en `source_time_utc`, l'heure de génération du PDF — à la minute près
+  l'heure de collecte. Les durées (`wait_hours`, `berth_hours`) viennent des `event_time` publiés,
+  qui sont de vraies heures de mouvement.
 - `berth_hours` est une **borne basse** (calculée sur `departure_min`). La durée réelle vaut au
   plus `berth_hours + departure_uncertainty_hours`.
 - `left_censored` (escale commencée au premier instantané, arrivée hors champ) est distingué de
@@ -133,34 +155,44 @@ Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et `docs/sensibil
 
 À lire avant de croire un résultat.
 
-1. **Un seul instantané réel** (`tests/fixtures/port_status_20260924T155825Z.pdf`). L'étape 3 n'a
-   donc jamais tourné sur une vraie séquence : transitions, réapparitions et trous de collecte sont
-   testés sur des séquences synthétiques construites en Python. `test_fixtures_reelles_invariants`
-   balaie `tests/fixtures/*.pdf` par `glob` et se renforcera seul dès que d'autres PDF y seront
-   déposés. **C'est le blocage principal du projet.**
-2. **Les deux capacités de stockage sont de statut `inconnu`** et pilotent tout le résultat : de
+1. **L'étape 3 n'a jamais tourné sur une vraie séquence.** Douze instantanés réels existent depuis
+   le 2026-09-28 (206 lignes dans `observations.csv`), mais `build_escales` n'a pas encore été
+   validé dessus, et `tests/fixtures/` ne contient toujours qu'un PDF : transitions, réapparitions
+   et trous de collecte restent testés sur des séquences synthétiques.
+   `test_fixtures_reelles_invariants` balaie `tests/fixtures/*.pdf` par `glob` et se renforcera
+   seul dès que d'autres PDF y seront déposés. **C'est le blocage principal du projet.**
+2. **La fraîcheur des données du port est inconnue.** L'en-tête date la génération du PDF, pas la
+   mise à jour de ses tableaux. « Présent à t » veut dire « listé dans un document généré à t » :
+   si le port tarde à retirer un navire parti, `departure_min` est trop tardif, sans signal dans
+   la source. `content_sha256` révèle seulement si la situation *publiée* a changé.
+3. **La cadence réelle de collecte n'est pas 3×/jour.** Le cron vise 05:00, 13:00 et 21:00 UTC ;
+   GitHub exécute avec 2 à 6 h de retard et en saute parfois (le créneau de 13:00 le 28/09 n'a
+   jamais tourné). Les trous de collecte élargissent d'autant la censure des départs.
+4. **Les deux capacités de stockage sont de statut `inconnu`** et pilotent tout le résultat : de
    200 kt à 900 kt, la perte de production passe de 14,1 % à 5,8 % (baseline, arrivées de Poisson).
    Aucune conclusion chiffrée ne doit être avancée sans cette fourchette.
-3. **`dispersion_arrivees` n'est pas mesurée** (statut estimé). C'est le second axe de la figure, et
+5. **`dispersion_arrivees` n'est pas mesurée** (statut estimé). C'est le second axe de la figure, et
    il n'a aucune source : il faudra l'estimer sur les escales réelles.
-4. Dans la grille de sensibilité, la répartition port/usine suit les proportions des valeurs
+6. Dans la grille de sensibilité, la répartition port/usine suit les proportions des valeurs
    centrales. Aux totaux les plus bas, la part du port descend **sous son propre minimum publié** :
    la fourchette du total est plus large que ce que chaque borne autorise séparément.
-5. **Hors périmètre v1** : exports, houle (`seuil_houle_arret` est inutilisé), surestaries et coûts,
+7. **Hors périmètre v1** : exports, houle (`seuil_houle_arret` est inutilisé), surestaries et coûts,
    temps morts à quai (amarrage, ouverture des cales). L'occupation du poste est donc une borne basse.
-6. `postes_minerai = 1` repose sur **une seule observation** (QW/7 en minerai, un navire en rade).
-7. Le DRI s'arrête entièrement dès qu'il manque une heure de pellets : pas de marche dégradée.
+8. `postes_minerai = 1` repose sur **une seule observation** (QW/7 en minerai, un navire en rade).
+9. Le DRI s'arrête entièrement dès qu'il manque une heure de pellets : pas de marche dégradée.
 
 ## Structure du dépôt
 
 ```
-src/corridor/ingest/     collecte (port_status.py)
-src/corridor/transform/  parse_status.py, build_escales.py
+src/corridor/ingest/     port_status.py (collecte), releases.py (archive GitHub)
+src/corridor/transform/  parse_status.py, observations_csv.py, build_escales.py
 src/corridor/sim/        config.py, samplers.py, model.py, run.py, sensitivity.py
 config/assumptions.yaml  toutes les valeurs numériques du domaine
 config/scenarios/        baseline, phase2, phase2_plus_stockage (écarts seulement)
-scripts/                 outils d'inspection ponctuels
-data/raw/port_status/    PDF horodatés UTC + _manifest.csv
+scripts/                 inspect_latest.py, fetch_raw.py
+data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
+releases raw-AAAA-MM     les PDF bruts eux-mêmes, un asset par collecte
+data/clean/              observations.csv : une ligne par navire et par collecte (versionné)
 data/sim/                sorties Parquet (git-ignoré, recalculable)
 docs/                    figures versionnées
 tests/                   pytest, fixtures PDF réelles
@@ -181,8 +213,10 @@ tests/                   pytest, fixtures PDF réelles
 
 ## Structure réelle du PDF de situation portuaire
 
-En-tête : `Djen-Djen : 2026-09-24 16:58` = heure de mise à jour **du port** (heure locale,
-Africa/Algiers, UTC+1). Distincte de l'heure de collecte, qui est dans le nom du fichier en UTC.
+En-tête : `Djen-Djen : 2026-09-24 16:58` = heure de **génération du document** par le serveur du
+port (heure locale, Africa/Algiers, UTC+1). Elle coïncide à la minute près avec l'heure de
+collecte, qui est dans le nom du fichier en UTC. Ce n'est **pas** l'heure de mise à jour des
+données portuaires, que le PDF ne publie nulle part.
 
 Trois sections, trois schémas différents, chacune avec sa ligne d'en-tête :
 
@@ -236,7 +270,11 @@ l'écart est commenté.
 - Inventer des chiffres sur AQS ou le port : soit une source publique, soit une hypothèse étiquetée.
 - Écrire une valeur numérique du domaine dans le code plutôt que dans `assumptions.yaml`.
 - Augmenter la fréquence de collecte au-delà de 3×/jour (respect de la source).
-- Supprimer ou réécrire un PDF brut déjà archivé.
+- Supprimer ou réécrire un PDF brut déjà archivé (dans une release ou en local).
+- Recommiter des PDF bruts dans git : ils vont dans les releases `raw-AAAA-MM`.
+- Réécrire l'historique git pour en retirer les PDF déjà commités : ils y restent, c'est voulu.
+- Décider qu'une situation a changé en comparant les fichiers ou l'en-tête : seul
+  `content_sha256` le dit.
 - Fabriquer de faux PDF de situation portuaire pour compléter les fixtures : une séquence
   synthétique se construit en Python, dans le fichier de test, jamais sur le disque.
 - Annoncer un résultat chiffré sans rappeler que la dispersion et les capacités de stockage ne sont

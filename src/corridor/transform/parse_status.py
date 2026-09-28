@@ -8,20 +8,28 @@ le tableau n'a alors que son en-tête).
 
 Toutes les fonctions sont pures sauf `parse_pdf`, qui lit le fichier.
 
-Deux horloges cohabitent, à ne jamais confondre :
+**Ce que dit l'en-tête, et ce qu'il ne dit pas.** « Djen-Djen : 2026-09-24 16:58 » est
+l'heure à laquelle le serveur du port a **généré le document**, en heure locale
+(Africa/Algiers, UTC+1). Vérifié sur douze collectes : elle coïncide toujours, à la
+minute près, avec notre heure de téléchargement. Ce n'est **pas** l'heure de mise à jour
+des données portuaires, que le PDF ne publie nulle part. Deux conséquences :
 
-- `source_time_utc` : heure de mise à jour affichée par le port, locale
-  (Africa/Algiers, UTC+1 sans changement d'heure), convertie en UTC ;
-- `fetched_at_utc` : heure de notre collecte, déjà en UTC dans le nom du fichier.
+- `source_time_utc` (lu dans l'en-tête) et `fetched_at_utc` (lu dans le nom du fichier)
+  diffèrent de quelques secondes seulement, et ne portent pas deux informations ;
+- pour savoir si la situation a changé entre deux collectes, il faut comparer le
+  contenu des tableaux (`content_fingerprint`), jamais le fichier ni son en-tête.
 
-Les heures des tableaux (Berthed, Anchorage, E.T.A) sont elles aussi locales et
-sont converties en UTC, pour que l'étape 3 puisse soustraire deux dates sans piège.
+Les heures des tableaux (Berthed, Anchorage, E.T.A) sont, elles, de vraies heures de
+mouvement, locales, converties en UTC pour que l'étape 3 soustraie deux dates sans piège.
 
 Usage : `from corridor.transform.parse_status import parse_pdf`.
 """
 
 from __future__ import annotations
 
+import hashlib
+import io
+import json
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -82,7 +90,7 @@ class VesselObservation:
     collecte tant qu'il est présent. Les escales sont reconstruites à l'étape 3.
     """
 
-    source_time_utc: datetime
+    source_time_utc: datetime  # génération du PDF (en-tête), pas mise à jour des données
     fetched_at_utc: datetime
     status: str  # berthed | anchorage | expected
     dock: str | None  # renseigné seulement à quai
@@ -135,10 +143,17 @@ def parse_local_datetime(text: str | None) -> datetime | None:
 
 
 def parse_header(text: str) -> datetime:
-    """Extrait l'heure de mise à jour du port (« Djen-Djen : 2026-09-24 16:58 ») en UTC.
+    """Extrait l'heure de génération du document (« Djen-Djen : 2026-09-24 16:58 ») en UTC.
 
-    Lève `ValueError` plutôt que de se rabattre sur la première date rencontrée :
-    une date de mise à jour silencieusement fausse contaminerait toute l'étape 3.
+    Cette heure est celle à laquelle le serveur du port a produit le PDF, c'est-à-dire,
+    à la minute près, l'heure de notre téléchargement. Elle ne date **pas** la dernière
+    mise à jour des données portuaires : deux PDF générés à huit heures d'écart peuvent
+    décrire exactement la même situation. Pour détecter un changement, comparer
+    `content_fingerprint`, pas cette heure.
+
+    Lève `ValueError` plutôt que de se rabattre sur la première date rencontrée : une
+    date prise dans un tableau (heure d'accostage, ETA) passerait pour l'heure du
+    document sans que rien ne le signale.
     """
     match = _HEADER_TIME.search(text or "")
     if not match:
@@ -269,36 +284,86 @@ def _row_to_observation(
     )
 
 
+def _parse_document(
+    pdf: pdfplumber.PDF,
+    fetched_at_utc: datetime,
+    long_stay_days: int,
+) -> list[VesselObservation]:
+    """Extrait les observations d'un PDF déjà ouvert, quelle que soit sa provenance."""
+    observations: list[VesselObservation] = []
+    source_time_utc = parse_header(pdf.pages[0].extract_text() or "")
+    for page in pdf.pages:
+        for table in page.extract_tables():
+            if not table:
+                continue
+            header = [clean_cell(cell).lower() for cell in table[0]]
+            status = _section_of(table[0])
+            if status is None:  # tableau inattendu : mieux vaut l'ignorer que deviner
+                continue
+            for raw_row in table[1:]:
+                cells = [clean_cell(cell) for cell in raw_row]
+                if not any(cells):  # ligne de séparation vide
+                    continue
+                row = dict(zip(header, cells, strict=False))
+                observations.append(
+                    _row_to_observation(
+                        row, status, source_time_utc, fetched_at_utc, long_stay_days
+                    )
+                )
+    return observations
+
+
 def parse_pdf(
     path: str | Path,
     long_stay_days: int = LONG_STAY_DAYS,
 ) -> list[VesselObservation]:
-    """Transforme un instantané PDF en une observation par navire.
+    """Transforme un instantané PDF archivé en une observation par navire.
 
-    L'heure de mise à jour du port vient de l'en-tête, l'heure de collecte du nom
-    du fichier. Les sections vides ne produisent aucune ligne.
+    L'heure de génération vient de l'en-tête, l'heure de collecte du nom du fichier.
+    Les sections vides ne produisent aucune ligne.
     """
     path = Path(path)
     fetched_at_utc = fetched_at_from_name(path)
-    observations: list[VesselObservation] = []
     with pdfplumber.open(path) as pdf:
-        source_time_utc = parse_header(pdf.pages[0].extract_text() or "")
-        for page in pdf.pages:
-            for table in page.extract_tables():
-                if not table:
-                    continue
-                header = [clean_cell(cell).lower() for cell in table[0]]
-                status = _section_of(table[0])
-                if status is None:  # tableau inattendu : mieux vaut l'ignorer que deviner
-                    continue
-                for raw_row in table[1:]:
-                    cells = [clean_cell(cell) for cell in raw_row]
-                    if not any(cells):  # ligne de séparation vide
-                        continue
-                    row = dict(zip(header, cells, strict=False))
-                    observations.append(
-                        _row_to_observation(
-                            row, status, source_time_utc, fetched_at_utc, long_stay_days
-                        )
-                    )
-    return observations
+        return _parse_document(pdf, fetched_at_utc, long_stay_days)
+
+
+def parse_pdf_bytes(
+    content: bytes,
+    fetched_at_utc: datetime,
+    long_stay_days: int = LONG_STAY_DAYS,
+) -> list[VesselObservation]:
+    """Même chose depuis les octets d'un PDF pas encore écrit sur disque.
+
+    Sert à la collecte, qui doit connaître le contenu avant de décider du statut.
+    L'heure de collecte est alors fournie, faute de nom de fichier où la lire.
+    """
+    with pdfplumber.open(io.BytesIO(content)) as pdf:
+        return _parse_document(pdf, fetched_at_utc, long_stay_days)
+
+
+def _fingerprint_row(obs: VesselObservation) -> list[str]:
+    """Ce qui caractérise la présence d'un navire, sans aucune heure de document."""
+    tonnage = "" if obs.tonnage_t is None else f"{obs.tonnage_t:.3f}"
+    event = "" if obs.event_time is None else obs.event_time.isoformat()
+    return [
+        strip_accents(clean_cell(obs.vessel)).upper(),
+        obs.status,
+        clean_cell(obs.dock or "").upper(),
+        strip_accents(clean_cell(obs.cargo_raw)).upper(),
+        tonnage,
+        event,
+    ]
+
+
+def content_fingerprint(observations: list[VesselObservation]) -> str:
+    """Empreinte SHA-256 de la situation décrite, indépendante de l'heure du document.
+
+    Porte sur (navire, statut, poste, cargaison, tonnage, heure d'événement), normalisés
+    puis triés. En sont exclues l'heure d'en-tête et l'heure de collecte, qui changent à
+    chaque téléchargement : deux collectes de même empreinte décrivent la même situation,
+    même si leurs fichiers diffèrent octet par octet.
+    """
+    rows = sorted(_fingerprint_row(obs) for obs in observations)
+    canonical = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
