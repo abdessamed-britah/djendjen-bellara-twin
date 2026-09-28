@@ -355,3 +355,49 @@ def test_la_provenance_est_dans_le_resultat(run_baseline, baseline):
 def test_resultat_immuable(run_baseline):
     with pytest.raises((AttributeError, TypeError)):
         run_baseline.dri_production_t = 0.0
+
+
+# --- stock flottant en rade -------------------------------------------------
+
+
+def test_time_integral_integre_une_masse_et_sa_moyenne():
+    integrale = md.TimeIntegral()
+    integrale.change(0.0, +140_000.0)   # un navire en rade
+    integrale.change(10.0, -140_000.0)  # accosté au bout de 10 h
+    assert integrale.read(100.0) == pytest.approx(1_400_000.0)  # t × h
+    assert integrale.mean(100.0, 100.0) == pytest.approx(14_000.0)
+
+
+def test_sans_attente_le_stock_flottant_est_nul(run_baseline):
+    assert run_baseline.wait_mean_h == pytest.approx(0.0, abs=1e-6)
+    assert run_baseline.waiting_tonnage_mean_t == pytest.approx(0.0, abs=1.0)
+
+
+def test_le_stock_flottant_suit_l_attente(baseline):
+    irregulier = md.simulate(
+        dataclasses.replace(baseline, dispersion_arrivees=1.0), seed=GRAINE, years=1.0
+    )
+    assert irregulier.waiting_tonnage_mean_t > 0.0
+    # ordre de grandeur : tonnage moyen ≈ navires/an × taille × attente moyenne / heures
+    attendu = (
+        irregulier.vessels_arrived
+        * baseline.taille_navire_moyenne_t
+        * irregulier.wait_mean_h
+        / baseline.heures_par_an
+    )
+    assert irregulier.waiting_tonnage_mean_t == pytest.approx(attendu, rel=0.35)
+
+
+def test_un_navire_encore_en_rade_a_la_fin_compte(baseline):
+    """Comme pour les autres intégrales : ce qui n'a pas fini d'attendre compte quand même."""
+    engorge = dataclasses.replace(
+        baseline,
+        capacite_stockyard_t=10_000.0,
+        stock_initial_stockyard_t=0.0,
+        nombre_de_rames=0,
+        dispersion_arrivees=0.0,
+    )
+    resultat = md.simulate(engorge, seed=GRAINE, years=0.5)
+    # le premier navire bloque le poste, les suivants s'accumulent en rade sans jamais accoster
+    assert resultat.vessels_served == 0
+    assert resultat.waiting_tonnage_mean_t > 0.0

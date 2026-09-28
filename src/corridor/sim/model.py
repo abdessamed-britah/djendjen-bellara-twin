@@ -26,6 +26,11 @@ donc intégrées par `TimeIntegral`, qui inclut la queue ouverte : accumuler au 
 où l'état se termine perdrait précisément les immobilisations les plus longues, celles
 qui n'ont pas fini avant la fin de la simulation.
 
+**Stock flottant.** `waiting_tonnage_mean_t` intègre de la même façon le tonnage présent
+en rade — chaque navire y pèse sa cargaison, de son arrivée à son accostage — puis le
+ramène à une moyenne sur l'horizon. C'est du minerai déjà là, payé et à quelques heures
+du quai : un tampon que le corridor peut rappeler, et non une simple file d'attente.
+
 Les exports sont hors périmètre v1, comme la houle (`seuil_houle_arret` reste inutilisé)
 et les temps morts à quai (amarrage, ouverture des cales) : l'occupation du poste est
 donc une borne basse.
@@ -68,24 +73,31 @@ def percentile(values: list[float], q: float) -> float:
 
 @dataclass(slots=True)
 class TimeIntegral:
-    """Intègre un effectif dans le temps : l'aire sous la courbe du nombre d'occupants.
+    """Intègre une grandeur dans le temps : l'aire sous sa courbe, en unité × heure.
 
-    `change(now, +1)` à l'entrée dans l'état, `change(now, -1)` à la sortie, `read(now)`
-    à tout moment — y compris quand des occupants sont encore là, dont le temps déjà
-    écoulé est compté.
+    `change(now, +x)` quand la grandeur augmente, `change(now, -x)` quand elle diminue,
+    `read(now)` à tout moment — y compris quand elle est encore non nulle, dont le temps
+    déjà écoulé est compté. La grandeur est un effectif (un poste occupé vaut +1) ou une
+    masse (un navire en rade vaut +son tonnage).
+
+    `mean(now, horizon)` ramène l'aire à une valeur moyenne sur l'horizon.
     """
 
-    count: int = 0
+    level: float = 0.0
     area: float = 0.0
     last_change: float = 0.0
 
-    def change(self, now: float, delta: int) -> None:
-        self.area += self.count * (now - self.last_change)
-        self.count += delta
+    def change(self, now: float, delta: float) -> None:
+        self.area += self.level * (now - self.last_change)
+        self.level += delta
         self.last_change = now
 
     def read(self, now: float) -> float:
-        return self.area + self.count * (now - self.last_change)
+        return self.area + self.level * (now - self.last_change)
+
+    def mean(self, now: float, horizon: float) -> float:
+        """Valeur moyenne sur `horizon` heures ; 0 si l'horizon est nul."""
+        return self.read(now) / horizon if horizon else 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +136,8 @@ class SimResult:
     # rail
     rame_utilisation: float
     rame_blocked_h: float
+    # stock flottant : tonnage en attente en rade, moyenné sur l'horizon
+    waiting_tonnage_mean_t: float
 
 
 @dataclass(slots=True)
@@ -142,6 +156,7 @@ class _Metrics:
     berth: TimeIntegral = field(default_factory=TimeIntegral)
     rame_rolling: TimeIntegral = field(default_factory=TimeIntegral)
     rame_blocked: TimeIntegral = field(default_factory=TimeIntegral)
+    anchorage_tonnage: TimeIntegral = field(default_factory=TimeIntegral)
     waits_h: list[float] = field(default_factory=list)
     stockyard_samples: list[float] = field(default_factory=list)
     plant_samples: list[float] = field(default_factory=list)
@@ -200,8 +215,11 @@ class _Corridor:
         """
         arrived_at = self.env.now
         self.metrics.vessels_arrived += 1
+        # le navire attend en rade avec sa cargaison : stock flottant, pas encore au port
+        self.metrics.anchorage_tonnage.change(arrived_at, +size_t)
         with self.berths.request() as berth:
             yield berth
+            self.metrics.anchorage_tonnage.change(self.env.now, -size_t)
             self.metrics.waits_h.append(self.env.now - arrived_at)
             self.metrics.berth.change(self.env.now, +1)
             rate = self.samplers.discharge_rate_t_par_h.sample(self.rng)
@@ -322,6 +340,7 @@ class _Corridor:
             plant_stock_final_t=self.plant.level,
             rame_utilisation=m.rame_rolling.read(now) / rame_hours if rame_hours else 0.0,
             rame_blocked_h=m.rame_blocked.read(now),
+            waiting_tonnage_mean_t=m.anchorage_tonnage.mean(now, horizon_h),
         )
 
 

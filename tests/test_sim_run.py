@@ -1,6 +1,8 @@
 """Tests des réplications, de l'écriture Parquet et de la ligne de commande."""
 
 import dataclasses
+import math
+import statistics
 
 import pyarrow.parquet as pq
 import pytest
@@ -101,18 +103,34 @@ def test_deux_ecritures_ne_s_ecrasent_pas(resultats, tmp_path):
 # --- synthèse --------------------------------------------------------------
 
 
-def test_summarize_moyenne_les_replications(resultats):
+def test_summarize_donne_moyenne_ecart_type_et_intervalle(resultats):
     synthese = rn.summarize(resultats)
-    assert synthese["reps"] == REPS
-    assert synthese["dri_production_t"] == pytest.approx(
-        sum(r.dri_production_t for r in resultats) / REPS
+    production = [r.dri_production_t for r in resultats]
+    e = synthese["dri_production_t"]
+    assert e.n == REPS
+    assert e.mean == pytest.approx(statistics.fmean(production))
+    assert e.std == pytest.approx(statistics.stdev(production))
+    demi = 1.96 * e.std / math.sqrt(REPS)
+    assert (e.low, e.high) == pytest.approx((e.mean - demi, e.mean + demi))
+
+
+def test_summarize_couvre_chaque_indicateur_agrege(resultats):
+    synthese = rn.summarize(resultats)
+    assert set(synthese) == set(rn.SUMMARY_FIELDS)
+    # le p90 d'attente est agrégé comme les autres : moyenne des p90 et son intervalle
+    assert synthese["wait_p90_h"].mean == pytest.approx(
+        statistics.fmean(r.wait_p90_h for r in resultats)
     )
-    # deux lectures du p90 : l'année typique et la pire année
-    assert synthese["wait_p90_h"] == pytest.approx(
-        sum(r.wait_p90_h for r in resultats) / REPS
-    )
-    assert synthese["wait_p90_max_h"] == max(r.wait_p90_h for r in resultats)
-    assert synthese["wait_p90_max_h"] >= synthese["wait_p90_h"]
+
+
+def test_la_table_de_synthese_a_une_ligne_par_indicateur(resultats):
+    table = rn.summary_table(rn.summarize(resultats), "baseline")
+    assert table.column_names == [
+        "scenario", "indicator", "mean", "std", "n", "ci95_low", "ci95_high"
+    ]
+    assert table.num_rows == len(rn.SUMMARY_FIELDS)
+    lignes = table.to_pylist()
+    assert all(r["ci95_low"] <= r["mean"] <= r["ci95_high"] for r in lignes)
 
 
 def test_summarize_refuse_une_liste_vide():
@@ -134,12 +152,16 @@ def test_main_ecrit_un_parquet_et_rend_zero(tmp_path, capsys):
         ]
     )
     assert code == 0
-    fichiers = list(tmp_path.glob("baseline_*.parquet"))
-    assert len(fichiers) == 1
-    assert pq.read_table(fichiers[0]).num_rows == 2
+    replications = [f for f in tmp_path.glob("baseline_*.parquet") if "synthese" not in f.name]
+    assert len(replications) == 1
+    assert pq.read_table(replications[0]).num_rows == 2
+    synthese = list(tmp_path.glob("baseline_*_synthese.parquet"))
+    assert len(synthese) == 1
+    assert pq.read_table(synthese[0]).num_rows == len(rn.SUMMARY_FIELDS)
     sortie = capsys.readouterr().out
     assert "baseline" in sortie
     assert "production DRI" in sortie
+    assert "IC 95 %" in sortie
 
 
 def test_main_refuse_un_scenario_inconnu(tmp_path):
@@ -160,5 +182,18 @@ def test_main_accepte_une_dispersion_imposee(tmp_path):
         ]
     )
     assert code == 0
-    table = pq.read_table(next(iter(tmp_path.glob("*.parquet"))))
-    assert table.column("dispersion_arrivees").to_pylist() == [1.2]
+    replications = next(f for f in tmp_path.glob("*.parquet") if "synthese" not in f.name)
+    assert pq.read_table(replications).column("dispersion_arrivees").to_pylist() == [1.2]
+
+
+def test_main_accepte_une_politique_imposee(tmp_path, capsys):
+    code = rn.main(
+        [
+            "--scenario", "baseline",
+            "--years", str(ANNEES),
+            "--reps", "2",
+            "--out", str(tmp_path),
+            "--politique", "push",
+        ]
+    )
+    assert code == 0

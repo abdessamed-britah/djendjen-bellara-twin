@@ -86,9 +86,10 @@ python scripts/fetch_raw.py                   # retélécharger les PDF depuis l
 python -m corridor.transform.observations_csv --rebuild   # régénérer observations.csv
 
 python -m corridor.sim.run --scenario baseline --years 1 --reps 50
-python -m corridor.sim.run --scenario phase2 --years 1 --reps 50 --dispersion 1.0
-python -m corridor.sim.sensitivity            # grille 5×5×2, 30 réplications : ~3 min 30
+python -m corridor.sim.run --scenario phase2 --years 1 --reps 50 --dispersion 1.0 --politique push
+python -m corridor.sim.sensitivity            # grille 5×5×2, 30 réplications : ~4 min
 python -m corridor.sim.sensitivity --reps 5   # version rapide
+python scripts/compare_scenarios.py --reps 50 # tableaux appariés pull/push et régulier/Poisson
 ```
 
 Scénarios disponibles : `baseline`, `phase2`, `phase2_plus_stockage`.
@@ -141,13 +142,31 @@ Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et `docs/sensibil
   pleine est publié à part (`rame_blocked_h`) — ce n'est pas de l'utilisation, c'est un symptôme.
 - **Politique d'expédition `pull` par défaut** : une rame réserve la place à l'usine avant d'aller
   charger, donc `rame_blocked_h` est nul par construction et le tampon reste au port. `push`
-  (l'ancien comportement) est conservé pour comparaison. En arrivées irrégulières, `pull` perd
-  moins de production que `push` (7,9 % contre 10,8 % en baseline) mais crée plus d'attente en rade.
+  (l'ancien comportement) est conservé pour comparaison. **Sur 50 réplications appariées, le choix
+  de politique ne change la production de façon significative que dans un seul cas** : baseline en
+  arrivées de Poisson (+0,059 ± 0,040 Mt en faveur de `pull`). En phase 2, avec ou sans stockage
+  supplémentaire, la différence de production reste dans son intervalle. L'écart d'attente en rade
+  que laissaient croire les moyennes (297 h contre 204 h) n'est **pas** significatif non plus
+  (+93 ± 120 h). Seul `rame_blocked_h` diffère toujours, et c'est structurel.
 - `baseline` est **volontairement régulier** (`dispersion_arrivees = 0`) : c'est le cas de
   référence qui isole la capacité du corridor de l'irrégularité de l'affrètement. L'irrégularité
   s'étudie avec `--dispersion` ou par la grille de sensibilité.
 - Tous les aléas passent par `Sampler.sample(rng)` et un jeu `Samplers` : une version empirique
   alimentée par `build_escales` se substitue sans toucher au modèle (c'est la tâche 3 ci-dessous).
+- **Tout indicateur agrégé est une `Estimate`** (moyenne, écart-type, IC 95 % à ±1,96 σ/√n, dans
+  `corridor.sim.stats`). Deux configurations se comparent en **données appariées** : toutes
+  partagent la même graine maîtresse, donc la réplication i de A et celle de B voient la même
+  séquence aléatoire, et c'est l'intervalle de la *différence* qui tranche — pas le chevauchement
+  des deux intervalles, critère bien plus conservateur qui masquerait des écarts réels.
+- `waiting_tonnage_mean_t` mesure le **stock flottant** : le tonnage en rade intégré dans le temps
+  puis moyenné sur l'horizon, comme `rame_blocked_h`. Un navire encore en rade à la fin de
+  l'horizon y compte pour le temps déjà écoulé.
+- **L'hypothèse du tampon flottant est réfutée par le modèle.** On attendait qu'un fort tonnage
+  en rade *réduise* la perte de production (minerai mobilisable dès que le stock usine baisse) :
+  la corrélation mesurée sur les 50 points de la grille est **+0,87** (Spearman +0,91), et reste
+  positive à stockage fixé comme à dispersion fixée. Le minerai en rade est coincé **en amont** du
+  goulot — le poste de déchargement unique — qui est aussi ce qui affame le four. Un tampon n'aide
+  que s'il est en aval de la contrainte. Détail et mises en garde dans le README.
 - Un scénario n'exprime que ses **écarts**, sous forme `{value: x}` ou `{multiply_by: autre.clé}`.
   La capacité DRI de la phase 2 pointe sur `phase_2.facteur_dri` : aucun chiffre n'y est recopié.
 
@@ -238,14 +257,18 @@ Pièges observés sur des cas réels, tous couverts par un test :
 
 ## Trois prochaines tâches
 
-**1. Constituer une vraie série d'instantanés et valider l'étape 3 dessus.** *(débloque tout le reste)*
+**1. Valider l'étape 3 sur la série réelle.** *(débloque tout le reste ; la collecte tourne déjà)*
 
-Laisser tourner la collecte 3×/jour pendant au moins trois semaines, puis déposer les PDF dans
-`tests/fixtures/` et faire tourner `build_from_pdfs` sur la série réelle.
-*Réussi quand* : au moins 30 instantanés réels archivés ; au moins une escale complète observée de
-l'annonce au départ (`departure_max is not None`) ; `test_fixtures_reelles_invariants` vert sur la
-chaîne réelle ; au moins un test de transition rejoué sur du réel et non sur du synthétique ; le
-taux d'anomalies par code publié dans le README.
+La collecte tourne et `data/clean/observations.csv` s'allonge à chaque exécution : au 2026-09-28,
+13 collectes et 225 lignes. Il reste à faire tourner `build_escales` dessus et à confronter le
+résultat à ce que le port publie. Attention en choisissant les fixtures : ajouter une série
+complète à `tests/fixtures/` coûte ~580 Ko par PDF et ~1,2 s de parsing par fichier dans les
+tests — préférer 4 à 6 instantanés couvrant un cycle complet, et laisser le reste dans les
+releases.
+*Réussi quand* : au moins une escale complète observée de l'annonce au départ
+(`departure_max is not None`) ; `test_fixtures_reelles_invariants` vert sur une vraie chaîne ;
+au moins un test de transition rejoué sur du réel et non sur du synthétique ; le taux d'anomalies
+par code publié dans le README ; la durée totale de `pytest -q` restée sous ~30 s.
 
 **2. Sourcer les deux capacités de stockage.** *(retire la principale incertitude)*
 
