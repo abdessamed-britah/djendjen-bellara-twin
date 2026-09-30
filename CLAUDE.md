@@ -92,7 +92,7 @@ python -m corridor.sim.sensitivity --reps 5   # version rapide
 python scripts/compare_scenarios.py --reps 50 # tableaux appariés pull/push et régulier/Poisson
 ```
 
-Scénarios disponibles : `baseline`, `phase2`, `phase2_plus_stockage`.
+Scénarios disponibles : `baseline`, `phase2`, `phase2_plus_stockage`, `phase2_plus_poste`.
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et `docs/sensibilite_dri.png`
 (versionné, c'est la figure du README).
 
@@ -165,8 +165,12 @@ Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et `docs/sensibil
   en rade *réduise* la perte de production (minerai mobilisable dès que le stock usine baisse) :
   la corrélation mesurée sur les 50 points de la grille est **+0,87** (Spearman +0,91), et reste
   positive à stockage fixé comme à dispersion fixée. Le minerai en rade est coincé **en amont** du
-  goulot — le poste de déchargement unique — qui est aussi ce qui affame le four. Un tampon n'aide
-  que s'il est en aval de la contrainte. Détail et mises en garde dans le README.
+  goulot présumé — le poste de déchargement unique — qui serait aussi ce qui affame le four. Un
+  tampon n'aide que s'il est en aval de la contrainte. Détail et mises en garde dans le README.
+- **Le second poste (`phase2_plus_poste`) ne prouve pas que le poste soit le goulot.** 30
+  réplications appariées : +0,129 ± 0,157 Mt en Poisson, 0,000 ± 0,001 Mt à arrivées régulières,
+  attente −128 ± 153 h : aucun écart significatif. Résultat non concluant, pas une réfutation ;
+  il faudrait ~200 réplications pour trancher.
 - Un scénario n'exprime que ses **écarts**, sous forme `{value: x}` ou `{multiply_by: autre.clé}`.
   La capacité DRI de la phase 2 pointe sur `phase_2.facteur_dri` : aucun chiffre n'y est recopié.
 
@@ -207,7 +211,7 @@ src/corridor/ingest/     port_status.py (collecte), releases.py (archive GitHub)
 src/corridor/transform/  parse_status.py, observations_csv.py, build_escales.py
 src/corridor/sim/        config.py, samplers.py, model.py, run.py, sensitivity.py
 config/assumptions.yaml  toutes les valeurs numériques du domaine
-config/scenarios/        baseline, phase2, phase2_plus_stockage (écarts seulement)
+config/scenarios/        baseline, phase2, phase2_plus_stockage, phase2_plus_poste (écarts seulement)
 scripts/                 inspect_latest.py, fetch_raw.py
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
 releases raw-AAAA-MM     les PDF bruts eux-mêmes, un asset par collecte

@@ -86,6 +86,25 @@ seulement par deux l'utilisation des rames), et à arrivées de Poisson il ne r�
 les deux capacités de stockage en haut de leur fourchette et récupère, lui, 4,6 points
 (10,0 % → 5,4 %) : à effort comparable, le stockage rend trois fois plus que le rail.
 
+**Un second poste de déchargement ne change pas la production (résultat non concluant).** Le
+scénario `phase2_plus_poste` double le poste de déchargement (`postes_minerai` 1 → 2, haut de sa
+fourchette) sans toucher au reste. 30 réplications appariées, politique `pull` :
+
+| Phase 2, 1 poste − 2 postes | 1 poste | 2 postes | Production, 2 postes − 1 poste |
+| --- | ---: | ---: | --- |
+| arrivées régulières | 4,011 ± 0,002 Mt | 4,011 ± 0,002 Mt | 0,000 ± 0,001 Mt, non significatif |
+| arrivées de Poisson | 3,515 ± 0,184 Mt | 3,644 ± 0,129 Mt | +0,129 ± 0,157 Mt, non significatif |
+
+À arrivées régulières le poste n'a aucun effet, comme attendu : il n'est occupé qu'à 64 %. En
+Poisson, l'estimation ponctuelle va dans le bon sens (+0,13 Mt, attente en rade 291 h → 163 h)
+mais **les intervalles contiennent zéro** : ni la production ni l'attente ne se distinguent
+significativement (l'occupation du poste, elle, baisse de façon significative, ce qui est
+mécanique). Ce test **n'établit donc pas** que le poste unique soit le goulot, et n'établit pas
+non plus le contraire : 30 réplications ne suffisent pas à trancher un écart de cet ordre. Il
+affaiblit la formule « le poste unique est la ressource contrainte » de la section sur le stock
+flottant, qui doit être lue comme une hypothèse de mécanisme, pas comme un résultat. Trancher
+demanderait plus de réplications (`python scripts/compare_scenarios.py --reps 200`).
+
 ### Ce qui limite vraiment : régularité des arrivées × stockage
 
 ![Perte de production de DRI selon la régularité des arrivées et la capacité de stockage](docs/sensibilite_dri.png)
@@ -151,8 +170,9 @@ l'occupation du poste et l'attente en rade, pas contre elles.
 | 200 kt | 1,00 | 190,3 kt | 446 h | 65,4 % | 14,1 % |
 
 **Le minerai en rade n'est pas un stock mobilisable : c'est du minerai coincé derrière le même
-goulot qui affame l'aciérie.** Le poste de déchargement unique est la ressource contrainte ; quand
-il sature, le minerai s'accumule en rade *et* le four s'arrête, pour la même raison. Un tampon ne
+goulot qui affame l'aciérie.** Le poste de déchargement unique serait la ressource contrainte
+(hypothèse **non confirmée** : un second poste n'améliore pas la production de façon
+significative, voir plus haut) ; quand il sature, le minerai s'accumule en rade *et* le four s'arrête, pour la même raison. Un tampon ne
 sert que s'il est en aval du goulot — ici, le stock flottant est en amont.
 
 > **Corrélation n'est pas causalité.** Ces 50 points sont des sorties d'un même modèle, pas des

@@ -83,8 +83,8 @@ def test_une_forme_d_ecart_inconnue_est_refusee():
                             {"rail.nombre_de_rames": {"plus": 1}})
 
 
-def test_les_trois_scenarios_se_chargent():
-    for name in ("baseline", "phase2", "phase2_plus_stockage"):
+def test_les_scenarios_se_chargent():
+    for name in ("baseline", "phase2", "phase2_plus_stockage", "phase2_plus_poste"):
         scenario = cfg.load_scenario(name)
         assert scenario.name == name
         assert scenario.description
@@ -106,6 +106,16 @@ def test_phase2_double_la_capacite_dri_via_le_facteur():
     phase2 = cfg.SimConfig.from_scenario(cfg.load_scenario("phase2"))
     attendu = _value("usine.capacite_dri") * _value("phase_2.facteur_dri")
     assert phase2.capacite_dri_t_par_an == pytest.approx(attendu * 1e6)
+
+
+def test_phase2_plus_poste_double_le_poste_seulement():
+    phase2 = cfg.SimConfig.from_scenario(cfg.load_scenario("phase2"))
+    plus = cfg.SimConfig.from_scenario(cfg.load_scenario("phase2_plus_poste"))
+    assert plus.postes_minerai == 2 * phase2.postes_minerai
+    assert plus.postes_minerai <= ASSUMPTIONS["navires_minerai"]["postes_minerai"]["range"][1]
+    assert plus.capacite_dri_t_par_an == pytest.approx(phase2.capacite_dri_t_par_an)
+    assert plus.capacite_stockyard_t == phase2.capacite_stockyard_t
+    assert plus.capacite_stock_usine_t == phase2.capacite_stock_usine_t
 
 
 def test_phase2_plus_stockage_augmente_les_deux_stocks():

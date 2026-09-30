@@ -17,7 +17,7 @@ from corridor.sim.config import SimConfig, load_scenario
 from corridor.sim.run import replicate
 from corridor.sim.stats import estimate, paired_difference, significant
 
-SCENARIOS = ("baseline", "phase2", "phase2_plus_stockage")
+SCENARIOS = ("baseline", "phase2", "phase2_plus_stockage", "phase2_plus_poste")
 INDICATEURS = (
     ("production DRI (Mt)", "dri_production_t", 1e-6, 3),
     ("arrêts DRI (h)", "dri_stop_hours", 1.0, 0),
@@ -78,6 +78,14 @@ def main(argv=None) -> int:
                             dispersion_arrivees=1.0, politique_expedition="pull")
         compare(f"{scenario}, politique pull : régulières contre Poisson",
                 regulier, poisson, "régulières", "Poisson")
+
+    for dispersion, nom in ((0.0, "régulières"), (1.0, "Poisson")):
+        _, seul = rejoue("phase2", args.reps, args.years, args.seed,
+                         dispersion_arrivees=dispersion, politique_expedition="pull")
+        _, double = rejoue("phase2_plus_poste", args.reps, args.years, args.seed,
+                           dispersion_arrivees=dispersion, politique_expedition="pull")
+        compare(f"phase2, arrivées {nom} : 1 poste contre 2 postes",
+                seul, double, "1 poste", "2 postes")
     return 0
 
 

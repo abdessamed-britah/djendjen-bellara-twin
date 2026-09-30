@@ -1,0 +1,15 @@
+# Phase 2 avec un second poste de déchargement du minerai.
+#
+# La grille de sensibilité et l'hypothèse du stock flottant désignent le poste unique comme la
+# ressource contrainte : le minerai en rade est coincé en amont de ce goulot. Ce scénario teste
+# cette lecture directement en doublant le poste, sans toucher au stockage ni au rail.
+#
+# postes_minerai = 1 repose sur une seule observation (fourchette [1, 2]) : le second poste est
+# le haut de la fourchette publiée, pas une situation observée.
+nom: phase2_plus_poste
+description: "Phase 2 avec deux postes de déchargement du minerai"
+overrides:
+  usine.capacite_dri:
+    multiply_by: phase_2.facteur_dri
+  navires_minerai.postes_minerai:
+    value: 2   # haut de la fourchette [1, 2]
