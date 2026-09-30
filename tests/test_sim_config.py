@@ -32,7 +32,8 @@ def test_assumption_values_aplatit_en_cles_pointees():
     assert values["usine.capacite_dri"] == _value("usine.capacite_dri")
     assert values["rail.nombre_de_rames"] == _value("rail.nombre_de_rames")
     # une hypothèse sans valeur reste présente, à None : son absence doit se voir
-    assert values["couts.cout_journee_arret_dri"] is None
+    # (aucune n'est vide dans assumptions.yaml : jeu synthétique)
+    assert cfg.assumption_values({"couts": {"x": {"value": None}}})["couts.x"] is None
 
 
 def test_value_of_leve_sur_une_cle_inconnue():
@@ -42,9 +43,9 @@ def test_value_of_leve_sur_une_cle_inconnue():
 
 
 def test_value_of_leve_sur_une_hypothese_sans_valeur():
-    values = cfg.assumption_values(ASSUMPTIONS)
+    values = cfg.assumption_values({"couts": {"x": {"value": None}}})
     with pytest.raises(ValueError, match="sans valeur"):
-        cfg.value_of(values, "couts.cout_journee_arret_dri")
+        cfg.value_of(values, "couts.x")
 
 
 def test_toutes_les_hypotheses_portent_un_statut_connu():

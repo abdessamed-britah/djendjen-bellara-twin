@@ -178,11 +178,30 @@ sert que s'il est en aval du goulot — ici, le stock flottant est en amont.
 > **Corrélation n'est pas causalité.** Ces 50 points sont des sorties d'un même modèle, pas des
 > observations : la corrélation décrit le comportement du modèle sous ses hypothèses, elle ne
 > démontre aucun mécanisme dans le port réel. Elle est de plus mesurée sur des moyennes de points
-> de grille, et non sur des réplications individuelles. Enfin, **rien de tout cela n'est chiffré
-> en argent** : `couts.cout_journee_arret_dri` est encore `null` dans
-> [`config/assumptions.yaml`](config/assumptions.yaml) et la marge par tonne de DRI est inconnue.
-> Arbitrer entre une heure d'arrêt du four et une journée de surestaries reste impossible en
-> l'état — c'est précisément ce que l'étape 5 devra permettre.
+> de grille, et non sur des réplications individuelles. Enfin, le chiffrage en argent ci-dessous repose sur une hypothèse **estimée** et non
+spécifique à l'Algérie.
+
+### Ce que cela coûte : ordres de grandeur seulement
+
+`couts.cout_journee_arret_dri` vaut 130 000 USD/jour, fourchette [40 000 ; 230 000], statut
+`estimé` : il est dérivé de marges de fours à arc électrique chinois sur le rond à béton
+(7 à 44 USD/t), pas de données algériennes. Il correspond à une journée de production de la
+capacité actuelle (~22 USD/t, [7 ; 40]). `python scripts/economic_summary.py` convertit la perte
+de production (politique `pull`, 30 réplications) en coût annuel ; la fourchette cumule l'IC 95 %
+de la simulation et celle de l'hypothèse :
+
+| Scénario | Arrivées | Perte de DRI | Coût annuel (fourchette) |
+| --- | --- | ---: | ---: |
+| baseline | régulières | ≈ 0 | < 1 M USD |
+| baseline | Poisson | 0,16 ± 0,08 Mt | ~4 M USD (1 à 10) |
+| phase 2 | régulières | ≈ 0 | < 1 M USD |
+| phase 2 | Poisson | 0,50 ± 0,18 Mt | ~11 M USD (2 à 27) |
+| phase 2 + stockage | Poisson | 0,23 ± 0,09 Mt | ~5 M USD (1 à 13) |
+| phase 2 + second poste | Poisson | 0,37 ± 0,13 Mt | ~8 M USD (2 à 20) |
+
+Ces montants sont **des ordres de grandeur**, arrondis au million : ils dépendent d'une marge
+étrangère au site, d'une dispersion des arrivées non mesurée et de capacités de stockage
+inconnues. Ils servent à comparer des scénarios entre eux, pas à chiffrer un préjudice.
 
 ### Limites de ces résultats
 

@@ -166,10 +166,11 @@ couts:
     unit: fraction/an
     status: estimé
   cout_journee_arret_dri:
-    value: null
+    value: 130000
+    range: [40000, 230000]
     unit: USD/jour
-    status: inconnu
-    note: "À calculer : production perdue × marge unitaire. Marge inconnue."
+    status: estimé
+    note: "Dérivé de marges EAF chinoises sur le rond à béton (7 à 44 USD/t), non spécifique à l'Algérie : à corriger dès qu'une donnée locale existe. Correspond à une journée de production DRI du site actuel (capacité de la baseline) ; ordre de grandeur, pas une mesure."
 
 traitement_donnees:
   long_stay_jours:
