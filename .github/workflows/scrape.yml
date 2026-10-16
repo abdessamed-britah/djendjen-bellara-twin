@@ -57,8 +57,8 @@ jobs:
       - name: Enregistrer dans le dépôt
         if: always()   # même en cas d'échec, la ligne d'erreur du manifeste est conservée
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "abdessamed-britah"
+          git config user.email "abdessamed.britah@g.enp.edu.dz"
           git add data/raw/port_status/_manifest.csv data/clean/observations.csv
           if git diff --cached --quiet; then echo "Rien à enregistrer"; exit 0; fi
           git commit -m "data: situation portuaire $(date -u +%Y-%m-%dT%H:%MZ)"
