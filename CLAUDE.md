@@ -1,7 +1,7 @@
 ﻿# CLAUDE.md
 
 Contexte permanent du projet, écrit pour une **reprise après plusieurs semaines sans aucun
-contexte**. Dernière mise à jour : 2026-09-30. Lis-le en entier avant toute tâche : état réel de
+contexte**. Dernière mise à jour : 2026-10-22. Lis-le en entier avant toute tâche : état réel de
 chaque étape, décisions prises et leurs raisons, limites connues, commandes, puis les trois
 prochaines tâches avec des critères de réussite vérifiables.
 
@@ -35,7 +35,7 @@ millions d'USD par an, sur une hypothèse de marge étrangère au site (voir REA
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **310 tests**, ~15 à 30 s selon la machine (la limite
+`ruff check .` et `pytest -q` passent : **325 tests**, ~15 à 30 s selon la machine (la limite
 visée est ~30 s : voir tâche 1). Les cinq validations obligatoires de la simulation sont des
 tests : reproductibilité, conservation de la masse, production de référence, attente nulle à
 arrivées régulières, une année simulée en moins de dix secondes (~65 ms mesuré).
@@ -64,7 +64,7 @@ fichier** et valent tous `new` ; ils n'ont pas été réécrits. Pour ces lignes
 **Le workflow commite sur `main` pendant que tu travailles** : fais `git pull --rebase` avant
 tout `git push`, sinon le push est refusé.
 
-Mesure au 2026-09-30 : 18 collectes réussies (24/09 → 30/09, ~3 par jour), 0 erreur, 315 lignes
+Mesure au 2026-10-22 : 82 collectes réussies (24/09 → 22/10, ~3 par jour), 0 erreur, 1 138 lignes
 d'observations.
 
 ### Étape 2 — parsing
@@ -82,12 +82,21 @@ donne l'empreinte de la situation décrite.
 utiliser pour des statistiques de durée). Le départ n'est jamais observé : il est encadré par
 `departure_min` / `departure_max`, et `departure_max is None` marque une escale en cours.
 
-**Ce qui a été mesuré sur la vraie série (2026-09-30, 315 observations)** : 26 escales, 8
-terminées, 8 exploitables. Anomalies par escale : `left_censored` 14, `dock_changed` 4,
-`eta_revised` 1, `cargo_changed` 1, les neuf autres codes 0. **Une seule escale est complète de
-l'annonce au départ** (FALCON KIZUNA, cargaison « other » : 1 h d'attente, ≥ 22 h à quai) ; les
-sept autres escales terminées étaient déjà en cours au premier instantané (`left_censored`) ou
-sont arrivées directement à quai, donc sans attente mesurable. **Ce que cela ne prouve pas** :
+**Ce qui a été mesuré sur la vraie série (2026-10-22, 1 138 observations)** : 49 escales, 32
+terminées, 31 exploitables. Anomalies par escale : `left_censored` 14, `eta_revised` 8,
+`dock_changed` 7, `cargo_changed` 4, les neuf autres codes 0.
+
+Dont **4 escales minerai** (`cargo_category == iron_ore`), 3 terminées, toutes au poste QW/7,
+qui ont servi à calibrer `navires_minerai.cadence_dechargement` — voir
+`scripts/ore_calls_report.py` et la section « Premiers résultats observés » du README. La seule
+attente en rade mesurable de la série minerai est celle de BERGE NIMBA : 183 h, et son accostage
+tombe dans la fenêtre de départ de GH NIGHTINGALE au même poste. La relève est observée d'un
+instantané au suivant (24/09 15:58 → 23:03) ; les heures d'entrée en rade et d'accostage
+antérieures sont lues dans le PDF, pas observées par nous (les deux escales sont
+`left_censored`). Ce n'est pas une file FIFO : NIMBA attendait depuis le 17/09 quand NIGHTINGALE
+a accosté le 18/09.
+
+**Ce que cela ne prouve pas** :
 `build_escales` tourne sans erreur et ses invariants tiennent, mais les sorties n'ont **pas été
 confrontées une à une** à ce que le port publie, et `tests/fixtures/` ne contient toujours qu'un
 seul PDF. Les transitions restent testées sur des séquences synthétiques.
@@ -106,6 +115,11 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
 
 - rail : doubler le parc de rames ne change rien à arrivées régulières et ne récupère que
   1,4 point de perte en Poisson (scénario abandonné) ;
+- cadence de déchargement : recalibrée à 24 000 t/jour (statut **observé**) sur les 3 escales
+  minerai terminées de la série. Aucune conclusion ne change — l'écart apparié de production
+  avec l'ancienne valeur estimée (25 000) n'est significatif nulle part ; seule l'occupation du
+  poste monte de 1 à 3 points à arrivées régulières. Pertes en Poisson, 50 réplications :
+  baseline 7,6 %, phase 2 9,7 %, phase 2 + stockage 5,1 % ;
 - stockage : de 200 kt à 900 kt de capacité totale, la perte baseline en Poisson passe de
   14,1 % à 5,8 % ;
 - politique `pull` contre `push` : un seul cas significatif sur six (baseline, Poisson,
@@ -186,6 +200,12 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   la contrainte » reste une hypothèse de mécanisme : `phase2_plus_poste` donne +0,129 ± 0,157 Mt
   en Poisson, aucun écart significatif à 30 réplications. Résultat non concluant, pas une
   réfutation ; ~200 réplications (`compare_scenarios.py --reps 200`) permettraient de trancher.
+- **`cadence_dechargement` est une cadence apparente sur l'occupation du poste**, mesurée
+  tonnage publié ÷ séjour à quai, donc amarrage, temps morts et attente de rames compris. Ce
+  n'est pas un débit de grue, et c'est bien ce que le modèle consomme (le poste reste occupé
+  pendant toute la durée du déchargement, pauses incluses). Chaque escale donne une fourchette
+  et non un point, parce que le départ n'est jamais observé : borne haute sur `departure_min`,
+  borne basse sur `departure_max`.
 - Un scénario n'exprime que ses **écarts**, sous forme `{value: x}` ou `{multiply_by: autre.clé}`.
   Aucun chiffre n'y est recopié : corriger `phase_2.facteur_dri` corrige `phase2`.
 
@@ -206,8 +226,8 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
 
 À lire avant de croire un résultat.
 
-1. **L'étape 3 n'est validée que partiellement sur du réel.** Elle tourne sur 18 instantanés
-   (26 escales, 8 exploitables, une seule complète de l'annonce au départ) et ses invariants
+1. **L'étape 3 n'est validée que partiellement sur du réel.** Elle tourne sur 82 instantanés
+   (49 escales, 31 exploitables, dont 4 escales minerai) et ses invariants
    tiennent, mais rien n'a été confronté à une vérité terrain, et `tests/fixtures/` ne contient
    qu'un PDF : transitions, réapparitions et trous de collecte restent testés sur du synthétique.
    `test_fixtures_reelles_invariants` balaie `tests/fixtures/*.pdf` par `glob` et se renforcera
@@ -223,8 +243,11 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
 4. **Les deux capacités de stockage sont de statut `inconnu`** et pilotent tout le résultat : de
    200 kt à 900 kt, la perte de production passe de 14,1 % à 5,8 % (baseline, Poisson). Aucune
    conclusion chiffrée sans cette fourchette.
-5. **`dispersion_arrivees` n'est pas mesurée** (statut `estimé`) : second axe de la figure, sans
-   source. Il faut l'estimer sur les escales réelles (tâche 3).
+5. **`dispersion_arrivees` n'est toujours pas mesurée** (statut `estimé`) : second axe de la
+   figure, sans source. La série ne contient que 4 arrivées de minéraliers, donc 2 intervalles
+   (1,6 jour, puis 25,1 jours) : le schéma suggère des arrivées très irrégulières, mais on ne
+   tire pas un coefficient de variation de deux intervalles. Il faut l'estimer sur les escales
+   réelles (tâche 3), ce qui demande d'attendre une dizaine d'arrivées minerai.
 6. **Le coût de la journée d'arrêt vient de marges chinoises** (statut `estimé`) et donne des
    ordres de grandeur seulement. Les chiffres en USD héritent en plus des limites 4 et 5.
 7. Dans la grille de sensibilité, la répartition port/usine suit les proportions des valeurs
@@ -240,6 +263,12 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
 11. Le DRI s'arrête entièrement dès qu'il manque une heure de pellets : pas de marche dégradée.
 12. Le premier instantané de la série (24/09) contient un navire à quai depuis février (long
     séjour) : toujours l'exclure des durées (`usable_escales` le fait).
+13. **La cadence observée repose sur 3 navires**, tous au poste QW/7 et tous de 139 à 143 kt.
+    Rien ne dit ce qu'elle vaudrait ailleurs ou sur un autre gabarit, et rien ne prouve que le
+    tonnage publié ait été déchargé en entier à Djen Djen (s'il reste du fret à bord, la cadence
+    est surestimée). La dispersion inter-navires (`cv_cadence_dechargement` = 0,15) reste
+    `estimé` : les 3 centres mesurés sont à ± 2,5 % l'un de l'autre, bien moins dispersés, mais
+    3 observations ne suffisent pas à resserrer ce coefficient.
 
 ## Reprise après une longue pause
 
@@ -263,6 +292,7 @@ pip install -e ".[dev]"
 ruff check . && pytest -q                     # doivent passer avant tout commit
 
 python scripts/health_check.py                # bilan de la collecte et des escales
+python scripts/ore_calls_report.py            # escales minerai : cadences, attentes, intervalles
 python -m corridor.ingest.port_status         # une collecte (PDF local + ligne de manifeste)
 python scripts/inspect_latest.py              # voir le contenu du dernier PDF
 python scripts/fetch_raw.py                   # retélécharger les PDF depuis les releases
@@ -287,8 +317,8 @@ src/corridor/transform/  parse_status.py, observations_csv.py, build_escales.py
 src/corridor/sim/        config.py, samplers.py, model.py, run.py, sensitivity.py, stats.py
 config/assumptions.yaml  toutes les valeurs numériques du domaine
 config/scenarios/        baseline, phase2, phase2_plus_stockage, phase2_plus_poste
-scripts/                 health_check, economic_summary, compare_scenarios,
-                         inspect_latest, fetch_raw
+scripts/                 health_check, ore_calls_report, economic_summary,
+                         compare_scenarios, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
 releases raw-AAAA-MM     les PDF bruts eux-mêmes, un asset par collecte
 data/clean/              observations.csv : une ligne par navire et par collecte (versionné)
@@ -372,6 +402,13 @@ relancé et le tableau de coûts du README mis à jour.
 **3. Brancher les samplers empiriques sur `build_escales`.** *(dépend de la tâche 1, et de
 suffisamment d'escales : viser ≥ 20 escales exploitables à `health_check.py`, la série continue
 de s'allonger pendant la pause)*
+
+Au 2026-10-22, `health_check.py` annonce 31 escales exploitables, donc le seuil est franchi —
+**mais toutes cargaisons confondues**. Pour les lois qui comptent ici (intervalles entre
+arrivées de minéraliers, tonnages, cadences), la série n'offre que **4 escales minerai dont 3
+terminées** : assez pour la cadence (déjà fait, statut `observé`), pas pour la dispersion des
+arrivées. Le seuil à viser est donc une dizaine d'escales **minerai**, soit, au rythme observé
+d'environ une par semaine, plutôt début 2027.
 
 Ajouter `Samplers.from_escales(escales)` qui tire avec remise dans les intervalles entre
 arrivées, les tonnages et les cadences de déchargement réellement observés (`usable_escales`

@@ -79,11 +79,29 @@ navires_minerai:
     status: observé
     note: "Seul QW/7 vu en minerai ; un 2e navire attendait en rade (BERGE NIMBA, 24/09)."
   cadence_dechargement:
-    value: 25000
-    range: [15000, 40000]
+    value: 24000
+    range: [22900, 25400]
     unit: t/jour
-    status: estimé
-    note: "Borne observée : GH NIGHTINGALE à quai ≥ 5,8 jours pour 142 533 t, soit ≤ 24 600 t/jour s'il déchargeait encore."
+    status: observé
+    source: "Série de situations portuaires collectée du 2026-09-24 au 2026-10-22 (scripts/ore_calls_report.py)"
+    note: >
+      Mesuré sur les 3 escales minerai terminées de la série, toutes au poste QW/7 et
+      toutes de l'ordre de 140 kt : GH NIGHTINGALE 142 533 t (23 390 à 24 581 t/jour),
+      BERGE NIMBA 140 571 t (22 906 à 23 896), SOMNIUM AUSTRALIS 138 955 t (23 844 à
+      25 396). La valeur est la moyenne des centres de fourchette (24 002 t/jour,
+      arrondie) ; la fourchette enveloppe toutes les bornes, arrondie vers l'extérieur
+      à la centaine. Calcul du 2026-10-22.
+      Chaque escale donne une fourchette parce que le départ n'est jamais observé : la
+      borne haute se calcule sur `departure_min` (séjour le plus court), la borne basse
+      sur `departure_max`. Trois réserves : c'est une cadence **apparente** sur
+      l'occupation du poste (amarrage, temps morts et attente de rames inclus, ce qui est
+      bien ce que le modèle appelle cadence_dechargement) ; rien ne prouve que le tonnage
+      publié ait été déchargé en entier à Djen Djen ; et 3 navires de même gabarit au même
+      poste ne disent pas si la cadence serait la même sur un autre poste ou un autre
+      gabarit. La dispersion inter-navires reste portée par
+      `simulation.cv_cadence_dechargement`, toujours de statut estimé : les 3 centres
+      mesurés sont à ± 2,5 % l'un de l'autre, bien moins dispersés que le CV de 0,15
+      retenu, mais 3 observations ne suffisent pas à le resserrer.
   seuil_houle_arret:
     value: 2.0
     range: [1.5, 3.0]
@@ -208,6 +226,13 @@ simulation:
       (cas de référence), 1 = processus de Poisson, au-delà = arrivées groupées.
       Le baseline est volontairement régulier : c'est le cas de référence qui isole
       la capacité du corridor de l'irrégularité de l'affrètement.
+      Reste `estimé` au 2026-10-22 : la série ne contient que 4 arrivées de minéraliers,
+      donc 2 intervalles seulement, ce qui ne permet aucune estimation de dispersion.
+      Le schéma observé va néanmoins dans le sens d'arrivées très irrégulières : deux
+      arrivées à 1,6 jour d'écart (BERGE NIMBA en rade le 17/09, GH NIGHTINGALE à quai
+      le 18/09), puis 25,1 jours sans aucune arrivée minerai (SOMNIUM AUSTRALIS le
+      13/10). À prendre comme une indication, pas comme une mesure : il faut au moins
+      une dizaine d'intervalles (voir tâche 3 du CLAUDE.md).
   cv_taille_navire:
     value: 0.02
     range: [0.0, 0.10]

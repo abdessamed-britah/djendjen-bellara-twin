@@ -374,6 +374,17 @@ def test_sans_attente_le_stock_flottant_est_nul(run_baseline):
 
 
 def test_le_stock_flottant_suit_l_attente(baseline):
+    """Le stock flottant vaut la formule de Little, mais **au-dessus** et pas à ±35 %.
+
+    `waiting_tonnage_mean_t` intègre le tonnage en rade sur tout l'horizon, alors que
+    `wait_mean_h` ne moyenne que les navires qui ont fini par accoster (`waits_h` n'est
+    alimenté qu'après l'obtention du poste). Un navire encore en rade à la fin pèse donc
+    dans l'intégrale sans peser dans l'attente moyenne, et l'écart est d'autant plus grand
+    que la file est longue à l'horizon. Mesuré sur 60 graines et sur toute la fourchette de
+    `cadence_dechargement` : ratio médian 1,00, minimum 0,92, maximum 1,96. L'encadrement
+    ci-dessous est volontairement asymétrique pour cette raison ; une tolérance symétrique
+    serrée ne tenait que par chance sur une graine.
+    """
     irregulier = md.simulate(
         dataclasses.replace(baseline, dispersion_arrivees=1.0), seed=GRAINE, years=1.0
     )
@@ -385,7 +396,7 @@ def test_le_stock_flottant_suit_l_attente(baseline):
         * irregulier.wait_mean_h
         / baseline.heures_par_an
     )
-    assert irregulier.waiting_tonnage_mean_t == pytest.approx(attendu, rel=0.35)
+    assert 0.8 * attendu <= irregulier.waiting_tonnage_mean_t <= 2.5 * attendu
 
 
 def test_un_navire_encore_en_rade_a_la_fin_compte(baseline):
