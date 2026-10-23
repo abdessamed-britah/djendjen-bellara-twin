@@ -35,17 +35,24 @@ from corridor.sim.samplers import Samplers
 DEFAULT_MOMENT_DRAWS = 200_000
 
 
-def utilisation(lam: float, es: float) -> float:
-    """Taux d'occupation d'un serveur unique : ρ = λ × E[S].
+def utilisation(lam: float, es: float, servers: int = 1) -> float:
+    """Taux d'occupation **par serveur** : ρ = λ × E[S] / c, avec c le nombre de serveurs.
 
-    Au-delà de 1, la file est instable : il arrive plus de navires que le poste ne peut
-    en servir, et l'attente moyenne n'a pas de limite finie.
+    Au-delà de 1, la file est instable : il arrive plus de navires que les postes ne
+    peuvent en servir, et l'attente moyenne n'a pas de limite finie.
+
+    `servers` vaut 1 par défaut, le seul cas que couvrent Pollaczek-Khinchine et la forme
+    de Kingman utilisée ici. Il sert à comparer des configurations à nombre de postes
+    différent sur une même échelle : à demande égale, deux postes sont deux fois moins
+    chargés qu'un seul, et c'est bien cette charge-là qu'il faut regarder.
     """
     if lam <= 0:
         raise ValueError(f"taux d'arrivée attendu strictement positif, reçu {lam}")
     if es <= 0:
         raise ValueError(f"durée de service attendue strictement positive, reçue {es}")
-    return lam * es
+    if servers < 1:
+        raise ValueError(f"au moins un serveur attendu, reçu {servers}")
+    return lam * es / servers
 
 
 def scv(es: float, es2: float) -> float:

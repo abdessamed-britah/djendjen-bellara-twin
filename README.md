@@ -184,13 +184,9 @@ fourchette) sans toucher au reste. 30 réplications appariées, politique `pull`
 
 À arrivées régulières le poste n'a aucun effet, comme attendu : il n'est occupé qu'à 66 %. En
 Poisson, l'estimation ponctuelle va dans le bon sens (+0,13 Mt, attente en rade 291 h → 163 h)
-mais **les intervalles contiennent zéro** : ni la production ni l'attente ne se distinguent
-significativement (l'occupation du poste, elle, baisse de façon significative, ce qui est
-mécanique). Ce test **n'établit donc pas** que le poste unique soit le goulot, et n'établit pas
-non plus le contraire : 30 réplications ne suffisent pas à trancher un écart de cet ordre. Il
-affaiblit la formule « le poste unique est la ressource contrainte » de la section sur le stock
-flottant, qui doit être lue comme une hypothèse de mécanisme, pas comme un résultat. Trancher
-demanderait plus de réplications (`python scripts/compare_scenarios.py --reps 200`).
+mais **les intervalles contiennent zéro**. Ce test, à 30 réplications, n'établissait donc rien —
+ni que le poste unique soit le goulot, ni le contraire. **Il a depuis été tranché à
+200 réplications dans un plan factoriel ; voir plus bas.**
 
 ### Ce qui limite vraiment : régularité des arrivées × stockage
 
@@ -354,10 +350,11 @@ desserre le stockage. Volet 2 : ρ_eff réduit fortement cet écart, d'un facteu
 **Ce que cela change pour la lecture du corridor.** Le poste de déchargement *est* bien saturé
 en régime dégradé — jusqu'à 3 087 h de quai immobilisé par an en baseline à 200 kt, pour une
 occupation réelle de 0,75 là où le déchargement seul n'en demande que 0,34. Mais il est saturé
-**par l'aval**, pas par sa propre cadence. Cela réconcilie un résultat jusqu'ici inexpliqué : un
-second poste de déchargement (voir plus haut) n'améliore pas la production de façon
-significative, parce qu'il ne s'attaque pas à la cause —
-deux quais bloqués par un stockyard plein ne valent pas mieux qu'un seul.
+**par l'aval**, pas par sa propre cadence. Cela explique qu'un second poste de déchargement
+n'améliore pas la production : deux quais bloqués par un stockyard plein ne valent pas mieux
+qu'un seul. En revanche, H2 suggérait aussi que **le second poste devrait payer si on desserrait
+le stockage en même temps** — cette prédiction-là a été testée, et elle est fausse. Voir la
+section suivante.
 
 **Quatre réserves, à lire avant d'en faire un résultat.**
 
@@ -377,6 +374,60 @@ deux quais bloqués par un stockyard plein ne valent pas mieux qu'un seul.
   sourcées (statuts *estimé* et *inconnu*).
 
 Reproductible par `python scripts/h2_blocking.py --reps 30` (~5 min).
+
+### Le second poste déplace la file, il ne la supprime pas : un plan factoriel 2 × 2
+
+H2 prédit que le second poste de déchargement ne devrait payer **que** si le stockage est
+desserré en même temps. C'est une prédiction testable, et il fallait pour cela la case
+manquante : [`phase2_plus_poste_plus_stockage`](config/scenarios/phase2_plus_poste_plus_stockage.yaml),
+qui actionne les deux leviers. Quatre configurations, arrivées de Poisson, **200 réplications
+appariées** (même graine maîtresse, donc la réplication *i* des quatre voit la même séquence
+aléatoire) :
+
+| | Perte DRI | Quai bloqué (h/poste) | Occupation effective | Attente en rade |
+| --- | ---: | ---: | ---: | ---: |
+| 1 poste, stockage de base | 10,31 ± 1,20 % | 775 ± 104 h | 0,772 ± 0,012 | 237,5 ± 34,3 h |
+| 2 postes, stockage de base | 9,40 ± 1,20 % | 2 052 ± 217 h | 0,587 ± 0,025 | 177,8 ± 33,9 h |
+| 1 poste, stockage haut | 5,33 ± 0,92 % | 384 ± 88 h | 0,722 ± 0,009 | 184,9 ± 25,5 h |
+| 2 postes, stockage haut | 6,17 ± 1,04 % | 869 ± 181 h | 0,437 ± 0,020 | 64,6 ± 18,6 h |
+
+**La prédiction est fausse.** En points de perte de DRI récupérés :
+
+| Levier | Gain | Verdict |
+| --- | ---: | --- |
+| second poste seul (stockage de base) | +0,90 ± 1,33 | non significatif |
+| **stockage seul (1 poste)** | **+4,98 ± 1,50** | **significatif** |
+| second poste, stockage déjà haut | **−0,84 ± 1,32** | non significatif |
+| les deux leviers ensemble | +4,13 ± 1,50 | significatif |
+| interaction (combiné − somme des gains séparés) | −1,75 ± 1,88 | non significative |
+
+Le second poste ne récupère de production dans **aucune** des deux configurations de stockage, y
+compris celle où H2 le prédisait. Il n'y a pas d'interaction : les deux leviers ensemble
+(+4,13) ne font pas mieux que le stockage seul (+4,98), l'écart étant du bruit. **Tout le gain
+vient du stockage.**
+
+**Mais le poste n'est pas sans effet — il déplace la file.** Les trois indicateurs de congestion
+bougent tous de façon significative quand on ajoute un poste :
+
+| Variation (2 postes − 1 poste) | à stockage de base | à stockage haut |
+| --- | ---: | ---: |
+| attente en rade | **−59,7 ± 49,3 h** | **−120,3 ± 32,0 h** |
+| quai bloqué, par poste | **+1 277 ± 242 h** | **+486 ± 201 h** |
+| occupation effective | **−0,185 ± 0,028** | **−0,285 ± 0,022** |
+
+Les navires accostent plus tôt — l'attente en rade baisse nettement — mais ils passent alors à
+quai le temps qu'ils passaient en rade, immobilisés faute de place au stockyard : le blocage par
+poste est multiplié par 2,6 à stockage de base. **La file n'a pas disparu, elle a changé
+d'endroit.** Et comme ce qui plafonne la production est le débit que le stockage et le rail
+peuvent absorber, la déplacer ne produit pas une tonne de plus.
+
+C'est le résultat qui tranche la question laissée ouverte depuis le test à 30 réplications : le
+poste de déchargement **n'est pas** la ressource contrainte du corridor, ni seul ni en
+combinaison. Il faut y ajouter les réserves habituelles : les deux capacités de stockage sont de
+statut *inconnu* et « stockage haut » est le haut de leurs fourchettes, `postes_minerai = 1`
+repose sur une seule observation, et tout ceci décrit le modèle, pas le port.
+
+Reproductible par `python scripts/poste_stockage_factoriel.py --reps 200` (~3 min).
 
 ### Ce que cela coûte : ordres de grandeur seulement
 

@@ -39,7 +39,10 @@ file voit vaut donc E[S] + B/N et non E[S] (voir
 `corridor.sim.analytic.effective_service`). À stockage infini l'indicateur est nul par
 construction, et c'est exactement la condition d'application de Pollaczek-Khinchine.
 Comme les autres temps d'occupation, il est intégré : un navire encore bloqué à la fin de
-l'horizon compte pour le temps déjà passé à l'être.
+l'horizon compte pour le temps déjà passé à l'être. L'unité est le **poste-heure**, sommée sur
+les postes : avec deux postes, deux navires peuvent être bloqués en même temps et l'indicateur
+avance alors de deux heures par heure écoulée. Comparer deux configurations qui n'ont pas le
+même nombre de postes demande donc de diviser par `postes_minerai`.
 
 Les exports sont hors périmètre v1, comme la houle (`seuil_houle_arret` reste inutilisé)
 et les temps morts à quai (amarrage, ouverture des cales) : l'occupation du poste est

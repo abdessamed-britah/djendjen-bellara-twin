@@ -35,7 +35,7 @@ millions d'USD par an, sur une hypothèse de marge étrangère au site (voir REA
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **377 tests**, ~22 à 34 s selon la machine et sa charge (limite
+`ruff check .` et `pytest -q` passent : **394 tests**, ~22 à 34 s selon la machine et sa charge (limite
 visée : ~30 s). S'y ajoutent **5 tests marqués `slow`**, exclus de `pytest -q` par `addopts`
 dans `pyproject.toml` et lancés par `pytest -m slow -q` (~6 s) : c'est la validation analytique
 du moteur de file, trop lourde pour la boucle courte mais obligatoire avant tout commit qui
@@ -108,7 +108,7 @@ seul PDF. Les transitions restent testées sur des séquences synthétiques.
 
 ### Étape 4 — simulation
 
-Modèle SimPy à cinq processus (`arrivals`, `vessel`, `rame`, `dri`, `monitor`), cinq
+Modèle SimPy à cinq processus (`arrivals`, `vessel`, `rame`, `dri`, `monitor`), six
 scénarios, réplications en Parquet, analyse de sensibilité à deux dimensions (dispersion des
 arrivées × capacité de stockage) dont la figure est celle du README, et conversion en coût.
 
@@ -131,8 +131,11 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   +0,059 ± 0,040 Mt) ;
 - blocage du poste (H2) : jusqu'à 3 087 h de quai immobilisé par an (baseline, Poisson,
   200 kt), pour une occupation réelle de 0,75 là où le déchargement seul en demande 0,34 ;
-- second poste (`phase2_plus_poste`, 30 réplications) : +0,129 ± 0,157 Mt en Poisson, 0,000 ±
-  0,001 Mt à arrivées régulières : **non concluant** ;
+- second poste : **tranché à 200 réplications dans un plan factoriel 2×2** (poste × stockage,
+  Poisson). Le poste ne récupère de production dans aucune configuration de stockage —
+  +0,90 ± 1,33 point à stockage de base, −0,84 ± 1,32 à stockage haut, aucune interaction
+  (−1,75 ± 1,88). Tout le gain vient du stockage (+4,98 ± 1,50). Le poste déplace en revanche
+  la file de la rade vers le quai, de façon significative (voir décisions) ;
 - coût de la perte, politique `pull`, Poisson (`scripts/economic_summary.py`) : baseline ~4 M
   USD/an (1 à 10), phase 2 ~11 M USD/an (2 à 27), phase 2 + stockage ~5 M (1 à 13), phase 2 +
   second poste ~8 M (2 à 20). À arrivées régulières : moins de 1 M USD/an.
@@ -203,10 +206,21 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   (Spearman +0,91), positive aussi à stockage fixé et à dispersion fixée. Le minerai en rade est
   coincé en amont du goulot présumé, qui affame aussi le four. Un tampon n'aide que s'il est en
   aval de la contrainte. Corrélation entre sorties d'un même modèle, pas causalité démontrée.
-- **Le second poste ne prouve pas que le poste soit le goulot.** La lecture « le poste unique est
-  la contrainte » reste une hypothèse de mécanisme : `phase2_plus_poste` donne +0,129 ± 0,157 Mt
-  en Poisson, aucun écart significatif à 30 réplications. Résultat non concluant, pas une
-  réfutation ; ~200 réplications (`compare_scenarios.py --reps 200`) permettraient de trancher.
+- **Le poste de déchargement n'est pas la ressource contrainte : tranché, pas supposé.** Plan
+  factoriel 2×2 (poste × stockage) en Poisson, 200 réplications appariées
+  (`poste_stockage_factoriel.py`). Le second poste ne récupère de production **dans aucune des
+  deux configurations de stockage** : +0,90 ± 1,33 point à stockage de base, −0,84 ± 1,32 à
+  stockage haut, et aucune interaction (−1,75 ± 1,88). Les deux leviers ensemble (+4,13 ± 1,50)
+  ne font pas mieux que le stockage seul (+4,98 ± 1,50). L'ancien résultat « non concluant » à
+  30 réplications est donc clos, et dans le sens négatif.
+- **Le second poste déplace la file, il ne la supprime pas.** Les trois indicateurs de
+  congestion bougent significativement quand on l'ajoute : l'attente en rade baisse
+  (−59,7 ± 49,3 h à stockage de base, −120,3 ± 32,0 h à stockage haut) pendant que le blocage
+  **par poste** monte (+1 277 ± 242 h et +486 ± 201 h) et que l'occupation effective baisse. Les
+  navires accostent plus tôt et attendent à quai au lieu d'attendre en rade. Comme ce qui
+  plafonne la production est le débit absorbable en aval, déplacer la file ne produit rien de
+  plus. C'est aussi un garde-fou de lecture : **ne jamais conclure d'une baisse d'attente en
+  rade qu'un goulot a été levé.**
 - **Le moteur de file est validé contre une formule exacte.** `corridor.sim.analytic` donne
   Pollaczek-Khinchine (M/G/1, exacte) et Kingman (G/G/1, approchée). Le scénario
   `baseline_sans_blocage` porte les deux stockages à 10^9 t pour que la durée d'occupation du
@@ -226,8 +240,11 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
 - **H2 est soutenue : ce qui sature le poste, c'est le stockage plein, pas le déchargement.**
   Avec E[S_eff] = E[S] + B/N, l'écart médian de Kingman à la simulation passe d'un facteur 2,8×
   à 1,4× sur 39 cases de la grille, et la correction est d'autant plus forte que le blocage est
-  grand (200 kt : 6,3× → 1,3× ; 900 kt : 2,0× → 1,7×). Cela explique le résultat non concluant
-  du second poste : deux quais bloqués par un stockyard plein ne valent pas mieux qu'un seul.
+  grand (200 kt : 6,3× → 1,3× ; 900 kt : 2,0× → 1,7×). Cela explique que doubler le poste
+  n'apporte rien : deux quais bloqués par un stockyard plein ne valent pas mieux qu'un seul.
+  **Mais la prédiction que H2 en tirait est fausse** : on en déduisait que le second poste
+  paierait si le stockage suivait, et le plan factoriel montre que non (voir ci-dessus). H2
+  décrit correctement la charge du quai, elle ne prédit pas correctement l'effet des leviers.
   **Cohérence interne, pas validation indépendante** : ρ_eff est calculé à partir de la
   simulation qu'il prédit. Voir limite 14.
 - **`cadence_dechargement` est une cadence apparente sur l'occupation du poste**, mesurée
@@ -350,6 +367,7 @@ python -m corridor.sim.run --scenario baseline --years 1 --reps 50
 python -m corridor.sim.run --scenario phase2 --years 1 --reps 50 --dispersion 1.0 --politique push
 python -m corridor.sim.sensitivity            # grille 5×5×2, 30 réplications : ~4 min
 python scripts/h2_blocking.py --reps 30       # hypothèse H2 : blocage du poste (~5 min)
+python scripts/poste_stockage_factoriel.py    # plan 2x2 poste x stockage, 200 rép. (~3 min)
 python -m corridor.sim.sensitivity --reps 5   # version rapide
 python scripts/compare_scenarios.py --reps 50 # pull/push, régulier/Poisson, 1 contre 2 postes
 python scripts/economic_summary.py --reps 30  # coût annuel de la perte, avec fourchette
@@ -367,9 +385,11 @@ src/corridor/sim/        config.py, samplers.py, model.py, run.py, sensitivity.p
                          analytic.py (files d'attente : le repère hors simulation)
 config/assumptions.yaml  toutes les valeurs numériques du domaine
 config/scenarios/        baseline, phase2, phase2_plus_stockage, phase2_plus_poste,
+                         phase2_plus_poste_plus_stockage (plan factoriel 2x2),
                          baseline_sans_blocage (validation analytique, pas un cas physique)
 scripts/                 health_check, ore_calls_report, economic_summary,
-                         compare_scenarios, h2_blocking, inspect_latest, fetch_raw
+                         compare_scenarios, h2_blocking, poste_stockage_factoriel,
+                         inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
 releases raw-AAAA-MM     les PDF bruts eux-mêmes, un asset par collecte
 data/clean/              observations.csv : une ligne par navire et par collecte (versionné)

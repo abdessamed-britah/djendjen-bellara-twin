@@ -1,0 +1,26 @@
+# Phase 2 avec les deux leviers à la fois : second poste de déchargement ET stockage haut.
+#
+# C'est la case manquante d'un plan factoriel 2 × 2 (poste × stockage) construit pour trancher
+# une question laissée ouverte : pourquoi un second poste n'améliore-t-il pas la production ?
+#
+# L'hypothèse H2 (voir README) répond que le quai n'est pas saturé par sa propre cadence mais
+# par l'aval — un navire y reste immobilisé quand le stockyard est plein, jusqu'à 1 586 h par an
+# en phase 2 à 200 kt. Si c'est vrai, doubler le poste à stockage inchangé ne fait que doubler
+# le nombre de quais bloqués, et le gain ne doit apparaître **que** lorsque les deux leviers
+# sont actionnés ensemble. Ce scénario est la condition de ce test : sans lui, l'interaction
+# entre les deux leviers n'est pas mesurable.
+#
+# Les écarts sont exactement l'union de ceux de phase2_plus_poste et de phase2_plus_stockage :
+# aucune valeur nouvelle n'est introduite ici, et les deux capacités restent le haut de
+# fourchettes de statut `inconnu`, donc un majorant plausible et non une situation observée.
+nom: phase2_plus_poste_plus_stockage
+description: "Phase 2 avec deux postes de déchargement et le stockage en haut de fourchette"
+overrides:
+  usine.capacite_dri:
+    multiply_by: phase_2.facteur_dri
+  navires_minerai.postes_minerai:
+    value: 2        # haut de la fourchette [1, 2]
+  stockage_port.capacite_stockyard_pellets:
+    value: 600000   # haut de la fourchette [150000, 600000]
+  usine.capacite_stock_pellets_usine:
+    value: 300000   # haut de la fourchette [50000, 300000]
