@@ -45,6 +45,7 @@ SUMMARY_FIELDS = (
     "wait_mean_h",
     "wait_p90_h",
     "berth_occupancy",
+    "berth_blocked_h",
     "stockyard_min_t",
     "stockyard_mean_t",
     "plant_stock_min_t",

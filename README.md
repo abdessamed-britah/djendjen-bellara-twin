@@ -18,12 +18,13 @@ peut-il absorber un doublement de la production ? Si non, quel est le premier go
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows : .venv\Scripts\activate
 pip install -e ".[dev]"
-pytest -q                                   # 325 tests, hors ligne
+pytest -q                                   # 382 tests, hors ligne
 python -m corridor.ingest.port_status       # une collecte
 python scripts/inspect_latest.py            # voir le contenu du dernier PDF
 
 python -m corridor.sim.run --scenario baseline --years 1 --reps 50
 python -m corridor.sim.sensitivity          # la figure ci-dessous, ~3 min 30
+python scripts/h2_blocking.py --reps 30     # hypothèse H2 : blocage du poste, ~5 min
 ```
 
 ## Premiers résultats observés
@@ -266,6 +267,116 @@ sert que s'il est en aval du goulot — ici, le stock flottant est en amont.
 > démontre aucun mécanisme dans le port réel. Elle est de plus mesurée sur des moyennes de points
 > de grille, et non sur des réplications individuelles. Enfin, le chiffrage en argent ci-dessous repose sur une hypothèse **estimée** et non
 spécifique à l'Algérie.
+
+### Le moteur de file est juste : validation contre Pollaczek-Khinchine
+
+Tous les résultats ci-dessus reposent sur une simulation à événements discrets. Avant de leur
+faire confiance, il faut savoir si elle calcule juste. La théorie des files donne un point de
+comparaison **exact** : pour une file M/G/1 — arrivées de Poisson, un serveur, service
+indépendant de l'état du système — l'attente moyenne vaut exactement
+
+> Wq = λ × E[S²] / (2 × (1 − ρ)),  avec ρ = λ × E[S]   *(Pollaczek-Khinchine)*
+
+La difficulté est la troisième hypothèse : dans le corridor, dès que le stockyard sature, le
+navire reste à quai sans décharger et la durée d'occupation du poste dépend de l'état du
+système. Le scénario [`baseline_sans_blocage`](config/scenarios/baseline_sans_blocage.yaml)
+porte donc les deux capacités de stockage à 10⁹ t : aucun blocage ni aucune rupture n'est
+possible, et l'occupation du quai vaut exactement tonnage ÷ cadence.
+
+| Grandeur | Théorie | Simulation (200 réplications × 8 ans) |
+| --- | ---: | ---: |
+| attente moyenne en rade | **38,53 h** | **37,96 ± 1,40 h** ✅ contient la théorie |
+| occupation du poste | ρ = **0,3401** | **0,3404 ± 0,0037** ✅ |
+
+L'horizon de 8 ans n'est pas un réglage de confort, et c'est le point le plus instructif de
+cette validation. **À 1 an, le test échoue** : la moyenne simulée est biaisée de −9,4 % sous la
+théorie. La cause n'est pas le modèle, c'est la mesure — le système démarre à vide, donc les
+premiers navires attendent moins qu'en régime stationnaire, et les navires encore en rade à
+l'horizon sont exclus de la moyenne alors que ce sont justement les attentes longues. Avec
+~21 navires par an, ce transitoire domine. Pollaczek-Khinchine prédit un régime **stationnaire**,
+il faut donc le comparer à une mesure stationnaire :
+
+| Horizon | 1 an | 2 ans | 4 ans | 8 ans | 16 ans |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| biais de la moyenne simulée | −9,41 % | −4,21 % | −1,84 % | −1,41 % | −0,95 % |
+| graines dont l'IC contient la théorie | 10/20 | 13/20 | 19/20 | 19/20 | 17/20 |
+
+(20 graines maîtresses × 200 réplications par case.) Au-delà de 8 ans, l'intervalle se resserre
+plus vite que le biais ne décroît : le test redevient fragile sans rien valider de plus.
+
+**Ce que cette validation prouve, et ce qu'elle ne prouve pas.** Elle prouve que la file
+d'attente devant le poste est correctement simulée — gestion de la ressource, horloge, lois des
+aléas. Elle ne dit **rien** du rail, du four, des stocks, ni des scénarios réalistes, où la
+condition d'indépendance du service est précisément violée. Reproductible par
+`pytest -q tests/test_analytic.py`.
+
+### Ce qui sature le poste, c'est le stockage plein, pas le déchargement (hypothèse H2)
+
+La validation ci-dessus ne s'applique qu'avec un stockage infini. Dans les scénarios réalistes,
+l'attente simulée dépasse largement ce que prédit la théorie appliquée naïvement. **H2** propose
+l'explication : le serveur n'est pas « le déchargement » mais « le quai », et sa durée de service
+inclut le temps passé à quai sans décharger parce que le stockyard est plein. Le modèle publie
+désormais ces heures-là (`berth_blocked_h`), ce qui permet de calculer un service effectif
+E[S_eff] = E[S] + B/N et une utilisation effective ρ_eff = λ·E[S_eff].
+
+Arrivées de Poisson, 30 réplications d'un an, approximation de Kingman :
+
+| Scénario | Stockage | Attente simulée | Quai bloqué | ρ | ρ_eff | Kingman(ρ) | Kingman(ρ_eff) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline | 200 kt | 444 ± 175 h | 3 087 h | 0,34 | 0,75 | 39 h (×11,5) | 503 h (×0,88) |
+| baseline | 375 kt | 277 ± 117 h | 2 184 h | 0,34 | 0,61 | 39 h (×7,2) | 216 h (×1,28) |
+| baseline | 550 kt | 180 ± 84 h | 1 583 h | 0,34 | 0,53 | 39 h (×4,7) | 134 h (×1,34) |
+| baseline | 725 kt | 149 ± 82 h | 1 130 h | 0,34 | 0,48 | 39 h (×3,9) | 96 h (×1,55) |
+| baseline | 900 kt | 142 ± 81 h | 1 013 h | 0,34 | 0,46 | 39 h (×3,7) | 88 h (×1,62) |
+| phase2 | 200 kt | 358 ± 95 h | 1 586 h | 0,68 | 0,88 | 159 h (×2,3) | 703 h (×0,51) |
+| phase2 | 900 kt | 196 ± 85 h | 362 h | 0,68 | 0,72 | 159 h (×1,2) | 209 h (×0,94) |
+
+Le chiffre entre parenthèses est le rapport attente simulée ÷ attente prédite : au-dessus de 1,
+la formule sous-estime. La figure couvre les 50 points de la grille :
+
+![Écart entre attente simulée et théorie des files, avec et sans correction du blocage](docs/h2_blocage.png)
+
+**Verdict : H2 est soutenue, sur ses deux volets.** Mesuré en |log(simulé ÷ prédit)| sur les
+39 cases où une attente est mesurable (dispersion > 0) :
+
+| | avec ρ | avec ρ_eff |
+| --- | ---: | ---: |
+| toutes cases, écart médian | 1,035 (facteur **2,8×**) | 0,341 (facteur **1,4×**) |
+| stockage 200 kt | 1,844 (facteur **6,3×**) | 0,280 (facteur **1,3×**) |
+| stockage 900 kt | 0,687 (facteur **2,0×**) | 0,512 (facteur **1,7×**) |
+
+Volet 1 : l'écart avec ρ est bien plus grand quand le stockage est faible — 6,3× à 200 kt contre
+2,0× à 900 kt, et en baseline/Poisson le rapport décroît sans exception de ×11,5 à ×3,7 quand on
+desserre le stockage. Volet 2 : ρ_eff réduit fortement cet écart, d'un facteur typique de 2,8× à
+1,4×, et la correction est d'autant plus forte que le blocage est important (à 200 kt, 6,3× →
+1,3× ; à 900 kt, 2,0× → 1,7× seulement).
+
+**Ce que cela change pour la lecture du corridor.** Le poste de déchargement *est* bien saturé
+en régime dégradé — jusqu'à 3 087 h de quai immobilisé par an en baseline à 200 kt, pour une
+occupation réelle de 0,75 là où le déchargement seul n'en demande que 0,34. Mais il est saturé
+**par l'aval**, pas par sa propre cadence. Cela réconcilie un résultat jusqu'ici inexpliqué : un
+second poste de déchargement (voir plus haut) n'améliore pas la production de façon
+significative, parce qu'il ne s'attaque pas à la cause —
+deux quais bloqués par un stockyard plein ne valent pas mieux qu'un seul.
+
+**Quatre réserves, à lire avant d'en faire un résultat.**
+
+- **C'est de la cohérence interne, pas une validation indépendante.** ρ_eff est calculé à partir
+  de la simulation qu'il sert à prédire : il lui emprunte de l'information. Seule la validation
+  Pollaczek-Khinchine ci-dessus ne doit rien à la simulation.
+- **ρ_eff ne corrige pas, il recentre.** L'erreur ne disparaît pas, elle change de signe par
+  endroits : en phase 2 la formule corrigée *sur*estime désormais l'attente (×0,51 à 200 kt), et
+  en baseline à fort stockage elle la sous-estime encore (×1,62). L'accord est bien meilleur en
+  médiane, il n'est pas bon case par case.
+- **La grille ne contient aucune case sans blocage.** Même à 900 kt — le haut des deux
+  fourchettes publiées — la baseline perd encore 1 013 h de quai par an. « Stockage faible » est
+  donc relatif : tout le domaine exploré est en régime de contre-pression.
+- **c_s² reste celui du service sans blocage.** La variabilité du service *effectif* n'est pas
+  mesurée et elle est certainement plus grande, ce qui rend Kingman(ρ_eff) encore conservateur.
+  Et comme partout ailleurs, dispersion des arrivées et capacités de stockage ne sont pas
+  sourcées (statuts *estimé* et *inconnu*).
+
+Reproductible par `python scripts/h2_blocking.py --reps 30` (~5 min).
 
 ### Ce que cela coûte : ordres de grandeur seulement
 

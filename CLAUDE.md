@@ -1,7 +1,7 @@
 ﻿# CLAUDE.md
 
 Contexte permanent du projet, écrit pour une **reprise après plusieurs semaines sans aucun
-contexte**. Dernière mise à jour : 2026-10-22. Lis-le en entier avant toute tâche : état réel de
+contexte**. Dernière mise à jour : 2026-10-23. Lis-le en entier avant toute tâche : état réel de
 chaque étape, décisions prises et leurs raisons, limites connues, commandes, puis les trois
 prochaines tâches avec des critères de réussite vérifiables.
 
@@ -35,10 +35,12 @@ millions d'USD par an, sur une hypothèse de marge étrangère au site (voir REA
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **325 tests**, ~15 à 30 s selon la machine (la limite
-visée est ~30 s : voir tâche 1). Les cinq validations obligatoires de la simulation sont des
-tests : reproductibilité, conservation de la masse, production de référence, attente nulle à
-arrivées régulières, une année simulée en moins de dix secondes (~65 ms mesuré).
+`ruff check .` et `pytest -q` passent : **382 tests**, ~15 à 30 s selon la machine (la limite
+visée est ~30 s : la suite la dépasse aujourd'hui, voir « Limites connues » 15). Les cinq
+validations obligatoires de la simulation sont des tests : reproductibilité, conservation de la
+masse, production de référence, attente nulle à arrivées régulières, une année simulée en moins
+de dix secondes (~65 ms mesuré). S'y ajoute une **sixième, analytique** : l'attente simulée doit
+contenir la valeur exacte de Pollaczek-Khinchine (`tests/test_analytic.py`).
 
 ### Étape 1 — collecte
 
@@ -103,7 +105,7 @@ seul PDF. Les transitions restent testées sur des séquences synthétiques.
 
 ### Étape 4 — simulation
 
-Modèle SimPy à cinq processus (`arrivals`, `vessel`, `rame`, `dri`, `monitor`), quatre
+Modèle SimPy à cinq processus (`arrivals`, `vessel`, `rame`, `dri`, `monitor`), cinq
 scénarios, réplications en Parquet, analyse de sensibilité à deux dimensions (dispersion des
 arrivées × capacité de stockage) dont la figure est celle du README, et conversion en coût.
 
@@ -124,6 +126,8 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   14,1 % à 5,8 % ;
 - politique `pull` contre `push` : un seul cas significatif sur six (baseline, Poisson,
   +0,059 ± 0,040 Mt) ;
+- blocage du poste (H2) : jusqu'à 3 087 h de quai immobilisé par an (baseline, Poisson,
+  200 kt), pour une occupation réelle de 0,75 là où le déchargement seul en demande 0,34 ;
 - second poste (`phase2_plus_poste`, 30 réplications) : +0,129 ± 0,157 Mt en Poisson, 0,000 ±
   0,001 Mt à arrivées régulières : **non concluant** ;
 - coût de la perte, politique `pull`, Poisson (`scripts/economic_summary.py`) : baseline ~4 M
@@ -200,6 +204,29 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   la contrainte » reste une hypothèse de mécanisme : `phase2_plus_poste` donne +0,129 ± 0,157 Mt
   en Poisson, aucun écart significatif à 30 réplications. Résultat non concluant, pas une
   réfutation ; ~200 réplications (`compare_scenarios.py --reps 200`) permettraient de trancher.
+- **Le moteur de file est validé contre une formule exacte.** `corridor.sim.analytic` donne
+  Pollaczek-Khinchine (M/G/1, exacte) et Kingman (G/G/1, approchée). Le scénario
+  `baseline_sans_blocage` porte les deux stockages à 10^9 t pour que la durée d'occupation du
+  quai vaille exactement tonnage ÷ cadence — c'est l'hypothèse d'indépendance du service
+  qu'exige la formule. Résultat : 37,96 ± 1,40 h simulées contre 38,53 h théoriques, et
+  l'occupation tombe sur ρ = 0,3401. **Ne vaut que pour la file devant le poste** : rien n'est
+  dit du rail, du four ni des stocks.
+- **Une validation stationnaire se mesure sur un horizon long.** À 1 an le même test échoue
+  (biais de −9,4 %), non par défaut du modèle mais parce que le système démarre à vide et que
+  les navires encore en rade à l'horizon sont exclus de `waits_h`. Avec ~21 navires par an le
+  transitoire domine. Biais sur 20 graines × 200 réplications : −9,41 % (1 an), −4,21 % (2),
+  −1,84 % (4), −1,41 % (8), −0,95 % (16). 8 ans retenu : au-delà, l'IC se resserre plus vite que
+  le biais ne décroît et le test redevient fragile sans rien valider de plus.
+- **`berth_blocked_h` sépare le service du blocage.** Les heures où un navire tient le quai sans
+  décharger (stockyard plein) sont comprises dans `berth_occupancy` mais ne sont pas du service.
+  Intégrées comme les autres temps d'occupation, donc un navire encore bloqué à l'horizon compte.
+- **H2 est soutenue : ce qui sature le poste, c'est le stockage plein, pas le déchargement.**
+  Avec E[S_eff] = E[S] + B/N, l'écart médian de Kingman à la simulation passe d'un facteur 2,8×
+  à 1,4× sur 39 cases de la grille, et la correction est d'autant plus forte que le blocage est
+  grand (200 kt : 6,3× → 1,3× ; 900 kt : 2,0× → 1,7×). Cela explique le résultat non concluant
+  du second poste : deux quais bloqués par un stockyard plein ne valent pas mieux qu'un seul.
+  **Cohérence interne, pas validation indépendante** : ρ_eff est calculé à partir de la
+  simulation qu'il prédit. Voir limite 14.
 - **`cadence_dechargement` est une cadence apparente sur l'occupation du poste**, mesurée
   tonnage publié ÷ séjour à quai, donc amarrage, temps morts et attente de rames compris. Ce
   n'est pas un débit de grue, et c'est bien ce que le modèle consomme (le poste reste occupé
@@ -269,6 +296,20 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
     est surestimée). La dispersion inter-navires (`cv_cadence_dechargement` = 0,15) reste
     `estimé` : les 3 centres mesurés sont à ± 2,5 % l'un de l'autre, bien moins dispersés, mais
     3 observations ne suffisent pas à resserrer ce coefficient.
+14. **H2 est une cohérence interne, pas une preuve de mécanisme.** ρ_eff = λ·(E[S] + B/N) est
+    calculé à partir de la simulation qu'il sert à prédire : il lui emprunte de l'information.
+    La correction recentre l'erreur sans la supprimer — en phase 2 la formule corrigée
+    *sur*estime désormais l'attente (×0,51 à 200 kt), en baseline à fort stockage elle la
+    sous-estime encore (×1,62). Et aucune case de la grille n'est sans blocage : même à 900 kt,
+    haut des deux fourchettes publiées, la baseline perd 1 013 h de quai par an. « Stockage
+    faible » est donc relatif. Enfin c_s² reste celui du service sans blocage, faute de mesure
+    de la variabilité du service effectif. La seule validation qui ne doive rien à la simulation
+    est celle de `tests/test_analytic.py`.
+15. **`pytest -q` dépasse la limite visée de ~30 s** : mesuré 31 à 41 s selon la machine, contre
+    ~22 s sans `tests/test_analytic.py`. La validation analytique coûte à elle seule 2,5 à 6 s
+    (200 réplications × 8 ans). Levier si besoin : ramener `VALIDATION_YEARS` à 4 ans fait
+    gagner ~2 s au prix d'un biais de −1,8 % au lieu de −1,4 % (le test passe toujours). Les
+    autres postes lourds sont les tests qui parsent de vrais PDF.
 
 ## Reprise après une longue pause
 
@@ -301,6 +342,7 @@ python -m corridor.transform.observations_csv --rebuild   # régénérer observa
 python -m corridor.sim.run --scenario baseline --years 1 --reps 50
 python -m corridor.sim.run --scenario phase2 --years 1 --reps 50 --dispersion 1.0 --politique push
 python -m corridor.sim.sensitivity            # grille 5×5×2, 30 réplications : ~4 min
+python scripts/h2_blocking.py --reps 30       # hypothèse H2 : blocage du poste (~5 min)
 python -m corridor.sim.sensitivity --reps 5   # version rapide
 python scripts/compare_scenarios.py --reps 50 # pull/push, régulier/Poisson, 1 contre 2 postes
 python scripts/economic_summary.py --reps 30  # coût annuel de la perte, avec fourchette
@@ -314,11 +356,13 @@ Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et `docs/sensibil
 ```
 src/corridor/ingest/     port_status.py (collecte), releases.py (archive GitHub)
 src/corridor/transform/  parse_status.py, observations_csv.py, build_escales.py
-src/corridor/sim/        config.py, samplers.py, model.py, run.py, sensitivity.py, stats.py
+src/corridor/sim/        config.py, samplers.py, model.py, run.py, sensitivity.py, stats.py,
+                         analytic.py (files d'attente : le repère hors simulation)
 config/assumptions.yaml  toutes les valeurs numériques du domaine
-config/scenarios/        baseline, phase2, phase2_plus_stockage, phase2_plus_poste
+config/scenarios/        baseline, phase2, phase2_plus_stockage, phase2_plus_poste,
+                         baseline_sans_blocage (validation analytique, pas un cas physique)
 scripts/                 health_check, ore_calls_report, economic_summary,
-                         compare_scenarios, inspect_latest, fetch_raw
+                         compare_scenarios, h2_blocking, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
 releases raw-AAAA-MM     les PDF bruts eux-mêmes, un asset par collecte
 data/clean/              observations.csv : une ligne par navire et par collecte (versionné)

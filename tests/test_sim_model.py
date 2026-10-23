@@ -412,3 +412,76 @@ def test_un_navire_encore_en_rade_a_la_fin_compte(baseline):
     # le premier navire bloque le poste, les suivants s'accumulent en rade sans jamais accoster
     assert resultat.vessels_served == 0
     assert resultat.waiting_tonnage_mean_t > 0.0
+
+
+# --- blocage du poste de déchargement (hypothèse H2) ------------------------
+
+
+def test_sans_contre_pression_le_poste_n_est_jamais_bloque(baseline):
+    """Stockage immense : le déchargement n'est jamais mis en pause, donc B = 0 exactement.
+
+    C'est la condition d'application de Pollaczek-Khinchine (`corridor.sim.analytic`) :
+    un service dont la durée ne dépend pas de l'état du système.
+    """
+    large = dataclasses.replace(
+        baseline,
+        capacite_stockyard_t=1e9,
+        capacite_stock_usine_t=1e9,
+        stock_initial_stockyard_t=5e8,
+        stock_initial_usine_t=5e8,
+        dispersion_arrivees=1.0,
+    )
+    resultat = md.simulate(large, seed=GRAINE, years=1.0)
+    assert resultat.berth_blocked_h == 0.0
+    assert resultat.vessels_served > 0
+
+
+def test_un_stockyard_etroit_bloque_le_poste(baseline):
+    config = dataclasses.replace(
+        baseline, capacite_stockyard_t=50_000.0, stock_initial_stockyard_t=25_000.0,
+        dispersion_arrivees=1.0,
+    )
+    resultat = md.simulate(config, seed=GRAINE, years=1.0)
+    assert resultat.berth_blocked_h > 0.0
+
+
+def test_le_blocage_est_compris_dans_l_occupation_du_poste(baseline):
+    """B ne s'ajoute pas à l'occupation : il en fait partie. Le quai est pris, sans servir."""
+    config = dataclasses.replace(
+        baseline, capacite_stockyard_t=50_000.0, stock_initial_stockyard_t=25_000.0,
+        dispersion_arrivees=1.0,
+    )
+    resultat = md.simulate(config, seed=GRAINE, years=1.0)
+    heures_poste = resultat.horizon_h * config.postes_minerai
+    heures_occupees = resultat.berth_occupancy * heures_poste
+    assert resultat.berth_blocked_h <= heures_occupees + config.pas_h
+
+
+def test_un_navire_encore_bloque_a_la_fin_compte(baseline):
+    """Même convention que les autres intégrales : l'immobilisation en cours est comptée.
+
+    Le premier navire remplit le stockyard puis reste bloqué jusqu'à la fin de l'horizon,
+    sans jamais repartir. Accumuler à la sortie de l'état ne compterait rien du tout.
+    """
+    engorge = dataclasses.replace(
+        baseline,
+        capacite_stockyard_t=10_000.0,
+        stock_initial_stockyard_t=0.0,
+        nombre_de_rames=0,
+        dispersion_arrivees=0.0,
+    )
+    resultat = md.simulate(engorge, seed=GRAINE, years=0.5)
+    assert resultat.vessels_served == 0
+    assert resultat.berth_blocked_h > 0.0
+
+
+def test_le_blocage_croit_quand_le_stockage_se_resserre(baseline):
+    """Monotonie attendue : moins de tampon au port, plus d'heures de quai perdues."""
+    blocages = []
+    for capacite in (100_000.0, 300_000.0, 900_000.0):
+        config = dataclasses.replace(
+            baseline, capacite_stockyard_t=capacite,
+            stock_initial_stockyard_t=capacite / 2, dispersion_arrivees=1.0,
+        )
+        blocages.append(md.simulate(config, seed=GRAINE, years=1.0).berth_blocked_h)
+    assert blocages == sorted(blocages, reverse=True)

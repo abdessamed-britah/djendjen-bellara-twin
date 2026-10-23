@@ -31,6 +31,16 @@ en rade — chaque navire y pèse sa cargaison, de son arrivée à son accostage
 ramène à une moyenne sur l'horizon. C'est du minerai déjà là, payé et à quelques heures
 du quai : un tampon que le corridor peut rappeler, et non une simple file d'attente.
 
+**Blocage du poste.** `berth_blocked_h` compte les heures pendant lesquelles un navire
+occupe le quai sans décharger, parce que le stockyard est plein. Ces heures sont comprises
+dans `berth_occupancy` — c'est bien le quai qui est pris — mais ce n'est pas du service :
+c'est la contre-pression de l'aval qui remonte jusqu'au port. Le temps de service que la
+file voit vaut donc E[S] + B/N et non E[S] (voir
+`corridor.sim.analytic.effective_service`). À stockage infini l'indicateur est nul par
+construction, et c'est exactement la condition d'application de Pollaczek-Khinchine.
+Comme les autres temps d'occupation, il est intégré : un navire encore bloqué à la fin de
+l'horizon compte pour le temps déjà passé à l'être.
+
 Les exports sont hors périmètre v1, comme la houle (`seuil_houle_arret` reste inutilisé)
 et les temps morts à quai (amarrage, ouverture des cales) : l'occupation du poste est
 donc une borne basse.
@@ -126,6 +136,7 @@ class SimResult:
     wait_mean_h: float
     wait_p90_h: float
     berth_occupancy: float
+    berth_blocked_h: float
     # stocks
     stockyard_min_t: float
     stockyard_mean_t: float
@@ -154,6 +165,7 @@ class _Metrics:
     vessels_arrived: int = 0
     vessels_served: int = 0
     berth: TimeIntegral = field(default_factory=TimeIntegral)
+    berth_blocked: TimeIntegral = field(default_factory=TimeIntegral)
     rame_rolling: TimeIntegral = field(default_factory=TimeIntegral)
     rame_blocked: TimeIntegral = field(default_factory=TimeIntegral)
     anchorage_tonnage: TimeIntegral = field(default_factory=TimeIntegral)
@@ -228,7 +240,11 @@ class _Corridor:
                 step_h = min(self.config.pas_h, remaining / rate)
                 yield self.env.timeout(step_h)
                 chunk = min(remaining, rate * step_h)
+                # le navire tient le quai sans décharger tant que le stockyard est plein :
+                # ces heures-là sont du blocage, pas du service (voir berth_blocked_h)
+                self.metrics.berth_blocked.change(self.env.now, +1)
                 yield self.stockyard.put(chunk)  # bloque si plein : déchargement en pause
+                self.metrics.berth_blocked.change(self.env.now, -1)
                 self.metrics.pellets_delivered_t += chunk
                 remaining -= chunk
             self.metrics.berth.change(self.env.now, -1)
@@ -332,6 +348,7 @@ class _Corridor:
             wait_mean_h=fmean(m.waits_h) if m.waits_h else 0.0,
             wait_p90_h=percentile(m.waits_h, 0.90),
             berth_occupancy=m.berth.read(now) / berth_hours if berth_hours else 0.0,
+            berth_blocked_h=m.berth_blocked.read(now),
             stockyard_min_t=min(m.stockyard_samples) if m.stockyard_samples else 0.0,
             stockyard_mean_t=fmean(m.stockyard_samples) if m.stockyard_samples else 0.0,
             stockyard_final_t=self.stockyard.level,

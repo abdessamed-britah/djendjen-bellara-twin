@@ -80,6 +80,8 @@ GRID_INDICATORS = (
     "wait_mean_h",
     "wait_p90_h",
     "berth_occupancy",
+    "berth_blocked_h",
+    "vessels_served",
     "rame_utilisation",
     "waiting_tonnage_mean_t",
 )
@@ -108,6 +110,9 @@ class GridPoint:
     wait_mean_h: Estimate
     wait_p90_h: Estimate
     berth_occupancy: Estimate
+    #: heures de quai occupé sans décharger, faute de place au stockyard (hypothèse H2)
+    berth_blocked_h: Estimate
+    vessels_served: Estimate
     rame_utilisation: Estimate
     waiting_tonnage_mean_t: Estimate
     loss_by_rep: tuple[float, ...]
@@ -212,6 +217,8 @@ def evaluate(
         wait_mean_h=serie("wait_mean_h"),
         wait_p90_h=serie("wait_p90_h"),
         berth_occupancy=serie("berth_occupancy"),
+        berth_blocked_h=serie("berth_blocked_h"),
+        vessels_served=serie("vessels_served"),
         rame_utilisation=serie("rame_utilisation"),
         waiting_tonnage_mean_t=serie("waiting_tonnage_mean_t"),
         loss_by_rep=pertes,

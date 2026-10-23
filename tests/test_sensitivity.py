@@ -150,7 +150,8 @@ def _case(dispersion, total, pertes, stock=0.0):
         scenario="s", dispersion=dispersion, storage_total_t=total, stockyard_t=0.0,
         plant_stock_t=0.0, reps=len(pertes), years=1.0, dri_target_t=1.0,
         dri_production_t=e, dri_loss_pct=e, dri_stop_hours=e, wait_mean_h=e,
-        wait_p90_h=e, berth_occupancy=e, rame_utilisation=e,
+        wait_p90_h=e, berth_occupancy=e, berth_blocked_h=e, vessels_served=e,
+        rame_utilisation=e,
         waiting_tonnage_mean_t=estimate([stock] * len(pertes)), loss_by_rep=tuple(pertes),
     )
 
