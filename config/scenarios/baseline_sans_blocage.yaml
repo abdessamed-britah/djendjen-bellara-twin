@@ -1,0 +1,42 @@
+# Scénario de VALIDATION, pas un scénario physique : ne jamais s'en servir pour un résultat.
+#
+# But : réduire le poste de déchargement à une file M/G/1 pure, dont l'attente moyenne est
+# connue exactement par la formule de Pollaczek-Khinchine (`corridor.sim.analytic`). Si la
+# simulation s'écarte de cette valeur, le moteur de file est en cause — c'est le test de
+# référence de l'étape 4, dans `tests/test_analytic.py`.
+#
+# Pollaczek-Khinchine exige un service dont la durée ne dépend pas de l'état du système. Dans
+# le corridor, cette hypothèse tombe dès que le stockyard sature : le navire reste alors à quai
+# sans décharger. Les deux capacités de stockage sont donc portées à 10^9 t, soit ~300 ans de
+# consommation : aucun blocage du déchargement ni aucune rupture d'alimentation du DRI n'est
+# possible, et la durée d'occupation du poste vaut exactement tonnage / cadence.
+#
+# Les arrivées sont poissonniennes (dispersion_arrivees = 1), car c'est le « M » de M/G/1. Le
+# « G » est libre : la durée de service suit ici le rapport de deux gammas, et la formule
+# l'accepte.
+#
+# Trois écarts sont là pour le seul coût de calcul et n'ont **aucun** effet sur l'attente
+# mesurée : le pas de temps et le pas d'échantillonnage sont élargis, et le parc de rames est
+# mis à zéro. Avec un stockage infini, le rail et le four sont hors de la boucle qui détermine
+# l'attente en rade : le poste ne peut jamais être bloqué par l'aval, donc retirer les rames ne
+# change pas la file. Vérifié des deux côtés — à pas de temps 1 h, 24 h ou 168 h l'attente
+# simulée est identique à la troisième décimale (le déchargement par tranches totalise la même
+# durée exacte tant qu'aucune tranche ne bloque), et l'occupation du poste converge sur ρ dans
+# toutes ces variantes. Le gain est d'un facteur ~25 sur le temps de calcul, ce qui rend
+# l'horizon long abordable dans la suite de tests — et c'est l'horizon long qui compte ici
+# (voir l'en-tête de tests/test_analytic.py sur le biais d'horizon fini).
+nom: baseline_sans_blocage
+description: "Validation analytique : poste en file M/G/1, stockage infini, arrivées de Poisson"
+overrides:
+  stockage_port.capacite_stockyard_pellets:
+    value: 1000000000
+  usine.capacite_stock_pellets_usine:
+    value: 1000000000
+  simulation.dispersion_arrivees:
+    value: 1.0
+  simulation.pas_de_temps:
+    value: 168.0
+  simulation.pas_echantillonnage_stocks:
+    value: 168.0
+  rail.nombre_de_rames:
+    value: 0

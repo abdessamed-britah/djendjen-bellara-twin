@@ -85,7 +85,8 @@ def test_une_forme_d_ecart_inconnue_est_refusee():
 
 
 def test_les_scenarios_se_chargent():
-    for name in ("baseline", "phase2", "phase2_plus_stockage", "phase2_plus_poste"):
+    for name in ("baseline", "phase2", "phase2_plus_stockage", "phase2_plus_poste",
+                 "baseline_sans_blocage"):
         scenario = cfg.load_scenario(name)
         assert scenario.name == name
         assert scenario.description
