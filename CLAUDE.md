@@ -35,8 +35,11 @@ millions d'USD par an, sur une hypothèse de marge étrangère au site (voir REA
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **382 tests**, ~15 à 30 s selon la machine (la limite
-visée est ~30 s : la suite la dépasse aujourd'hui, voir « Limites connues » 15). Les cinq
+`ruff check .` et `pytest -q` passent : **377 tests**, ~22 à 34 s selon la machine et sa charge (limite
+visée : ~30 s). S'y ajoutent **5 tests marqués `slow`**, exclus de `pytest -q` par `addopts`
+dans `pyproject.toml` et lancés par `pytest -m slow -q` (~6 s) : c'est la validation analytique
+du moteur de file, trop lourde pour la boucle courte mais obligatoire avant tout commit qui
+touche à `corridor.sim`. La CI lance les deux, dans deux étapes séparées. Les cinq
 validations obligatoires de la simulation sont des tests : reproductibilité, conservation de la
 masse, production de référence, attente nulle à arrivées régulières, une année simulée en moins
 de dix secondes (~65 ms mesuré). S'y ajoute une **sixième, analytique** : l'attente simulée doit
@@ -305,11 +308,13 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
     faible » est donc relatif. Enfin c_s² reste celui du service sans blocage, faute de mesure
     de la variabilité du service effectif. La seule validation qui ne doive rien à la simulation
     est celle de `tests/test_analytic.py`.
-15. **`pytest -q` dépasse la limite visée de ~30 s** : mesuré 31 à 41 s selon la machine, contre
-    ~22 s sans `tests/test_analytic.py`. La validation analytique coûte à elle seule 2,5 à 6 s
-    (200 réplications × 8 ans). Levier si besoin : ramener `VALIDATION_YEARS` à 4 ans fait
-    gagner ~2 s au prix d'un biais de −1,8 % au lieu de −1,4 % (le test passe toujours). Les
-    autres postes lourds sont les tests qui parsent de vrais PDF.
+15. **La validation analytique ne tourne pas dans `pytest -q`.** Elle est marquée `slow` et
+    exclue par défaut, parce que 200 réplications × 8 ans coûtent 6 s et faisaient sortir la
+    suite de son budget. Conséquence à connaître : une régression du moteur de file **ne sera
+    pas vue** par la boucle courte. Lancer `pytest -m slow -q` avant tout commit touchant à
+    `corridor.sim` ; la CI le fait dans une étape dédiée. Ne pas baisser `VALIDATION_YEARS`
+    pour gagner du temps : à 4 ans le biais d'horizon fini passe de −1,4 % à −1,8 % et le test
+    se rapproche de son seuil d'échec pour rien.
 
 ## Reprise après une longue pause
 
@@ -320,7 +325,8 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
 3. Si la collecte s'est arrêtée : regarder l'onglet Actions de GitHub (GitHub peut désactiver
    les workflows planifiés d'un dépôt inactif depuis 60 jours : les réactiver si besoin),
    puis `python -m corridor.ingest.port_status` en local pour tester la source.
-4. `pip install -e ".[dev]"` puis `ruff check . && pytest -q` avant de toucher quoi que ce soit.
+4. `pip install -e ".[dev]"` puis `ruff check . && pytest -q && pytest -m slow -q` avant de
+   toucher quoi que ce soit.
 
 ## Commandes
 
@@ -331,6 +337,7 @@ Git Bash.
 ```bash
 pip install -e ".[dev]"
 ruff check . && pytest -q                     # doivent passer avant tout commit
+pytest -m slow -q                             # validation analytique (~6 s), exclue de pytest -q
 
 python scripts/health_check.py                # bilan de la collecte et des escales
 python scripts/ore_calls_report.py            # escales minerai : cadences, attentes, intervalles
@@ -375,7 +382,8 @@ tests/                   pytest, fixtures PDF réelles
 
 - Python 3.12, code et docstrings en **français**. Noms de variables en anglais quand c'est
   l'usage du domaine.
-- `ruff check .` et `pytest -q` doivent passer avant tout commit.
+- `ruff check .` et `pytest -q` doivent passer avant tout commit, et `pytest -m slow -q` en
+  plus dès que le commit touche à `corridor.sim`.
 - Tests hors ligne : aucun appel réseau, on utilise les PDF réels de `tests/fixtures/`.
 - Fichiers bruts **jamais modifiés** : tout est recalculable depuis `data/raw/`.
 - **Aucune valeur numérique du domaine dans le code** : tout vient de `assumptions.yaml`, et les

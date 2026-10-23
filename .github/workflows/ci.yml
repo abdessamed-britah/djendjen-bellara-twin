@@ -18,3 +18,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: pytest -q
+      # validations lourdes, exclues de `pytest -q` par addopts : la validation
+      # analytique du moteur de file (200 réplications x 8 ans) tient ici
+      - name: tests lents
+        run: pytest -m slow -q

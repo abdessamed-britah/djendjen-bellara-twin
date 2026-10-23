@@ -235,6 +235,15 @@ def test_service_effectif_refuse_un_denominateur_nul_ou_un_blocage_negatif():
 
 
 # --- VALIDATION DU MOTEUR DE FILE -------------------------------------------
+#
+# Ces tests sont marqués `slow` : 200 réplications de 8 ans coûtent quelques secondes, ce
+# qui ferait sortir `pytest -q` de son budget d'une trentaine de secondes. Ils ne sont pas
+# optionnels pour autant — la CI les lance dans une étape dédiée, et il faut les lancer
+# avant tout commit qui touche à `corridor.sim` :
+#
+#     pytest -m slow -q
+#
+# L'exclusion est portée par `addopts` dans pyproject.toml.
 
 
 @pytest.fixture(scope="module")
@@ -264,6 +273,7 @@ def validation():
     }
 
 
+@pytest.mark.slow
 def test_le_scenario_de_validation_exclut_tout_blocage(validation):
     """Sans cette condition, Pollaczek-Khinchine ne s'applique pas : à vérifier d'abord.
 
@@ -280,10 +290,12 @@ def test_le_scenario_de_validation_exclut_tout_blocage(validation):
         assert resultat.dri_stop_hours == 0.0
 
 
+@pytest.mark.slow
 def test_la_file_est_stable(validation):
     assert 0.0 < validation["rho"] < 1.0
 
 
+@pytest.mark.slow
 def test_l_occupation_du_poste_simulee_vaut_rho(validation):
     """Première vérification, indépendante de l'attente : le poste doit être occupé ρ du temps.
 
@@ -294,6 +306,7 @@ def test_l_occupation_du_poste_simulee_vaut_rho(validation):
     assert validation["occupation"].contains(validation["rho"])
 
 
+@pytest.mark.slow
 def test_l_attente_simulee_contient_pollaczek_khinchine(validation):
     """LE test de validation du moteur de file : simulation contre formule exacte.
 
@@ -310,6 +323,7 @@ def test_l_attente_simulee_contient_pollaczek_khinchine(validation):
     )
 
 
+@pytest.mark.slow
 def test_l_ecart_relatif_a_la_theorie_reste_petit(validation):
     """Garde-fou indépendant de l'effectif : l'écart relatif doit rester sous 10 %.
 
