@@ -18,13 +18,16 @@ peut-il absorber un doublement de la production ? Si non, quel est le premier go
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows : .venv\Scripts\activate
 pip install -e ".[dev]"
-pytest -q                                   # 382 tests, hors ligne
+pytest -q                                   # 415 tests, hors ligne
+pytest -m slow -q                           # + 5 tests lents : validation analytique
 python -m corridor.ingest.port_status       # une collecte
 python scripts/inspect_latest.py            # voir le contenu du dernier PDF
 
 python -m corridor.sim.run --scenario baseline --years 1 --reps 50
 python -m corridor.sim.sensitivity          # la figure ci-dessous, ~3 min 30
 python scripts/h2_blocking.py --reps 30     # hypothèse H2 : blocage du poste, ~5 min
+python scripts/poste_stockage_factoriel.py  # plan 2x2 poste x stockage, ~3 min
+python scripts/frontiere_service.py --reps 60   # frontière de service, ~25 min
 ```
 
 ## Premiers résultats observés
@@ -428,6 +431,67 @@ statut *inconnu* et « stockage haut » est le haut de leurs fourchettes, `poste
 repose sur une seule observation, et tout ceci décrit le modèle, pas le port.
 
 Reproductible par `python scripts/poste_stockage_factoriel.py --reps 200` (~3 min).
+
+### La frontière de service : deux nombres suffisent à décider du corridor
+
+Tout ce qui précède tient dans une seule carte, à deux axes **sans dimension** — ce qui permet
+de la transposer à un autre port.
+
+- **c_a²** : le carré du coefficient de variation des intervalles entre arrivées. 0 = navires
+  parfaitement réguliers, 1 = processus de Poisson, au-delà = arrivées groupées. C'est la
+  régularité de l'affrètement, indépendamment de sa cadence.
+- **τ = (K_P + K_U) / D** : la capacité de stockage totale (port + usine) divisée par la
+  consommation journalière de pellets de l'aciérie, soit un **nombre de jours de couverture**.
+  « 450 kt » ne veut rien dire hors contexte ; « 27 jours de couverture » si.
+
+La grandeur lue est le **taux de service β = production ÷ cible**. β = 0,95 signifie « 5 % de la
+production annuelle perdue faute d'approvisionnement ».
+
+![Frontière de service : couverture de stock requise selon l'irrégularité des arrivées](docs/frontiere_service.png)
+
+Couverture τ requise pour tenir un niveau de service (scénario phase 2, 60 réplications d'un an
+par point, 7 × 9 points par courbe) :
+
+| c_a² | 0,00 | 0,25 | 0,50 | 0,75 | 1,00 (Poisson) | 1,25 | 1,50 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **β = 0,95**, 1 poste | ≤ 5 j | 22,8 j | 27,8 j | 45,8 j | 59,2 j | hors d'atteinte | hors d'atteinte |
+| **β = 0,95**, 2 postes | ≤ 5 j | 22,0 j | 29,8 j | 46,5 j | hors d'atteinte | hors d'atteinte | hors d'atteinte |
+| **β = 0,99**, 1 ou 2 postes | 20,5 j | hors d'atteinte | hors d'atteinte | hors d'atteinte | hors d'atteinte | hors d'atteinte | hors d'atteinte |
+
+« Hors d'atteinte » = le niveau n'est pas atteint dans le domaine exploré, soit jusqu'à 60 jours
+de couverture. Quatre lectures :
+
+- **La frontière est très raide.** Passer d'arrivées parfaitement régulières à un processus de
+  Poisson multiplie par plus de dix la couverture nécessaire pour tenir 95 % : de moins de
+  5 jours à une soixantaine. L'irrégularité de l'affrètement n'est pas un facteur parmi
+  d'autres, c'est **le** facteur dimensionnant.
+- **Les courbes à 1 et 2 postes sont superposées.** Le nombre de postes de déchargement ne
+  déplace pas la frontière de service, à aucun niveau d'irrégularité. C'est le même résultat que
+  le plan factoriel ci-dessus, obtenu par un chemin indépendant et sur tout le domaine plutôt
+  que sur deux points.
+- **β = 0,99 est hors d'atteinte dès que les arrivées cessent d'être régulières**, même avec
+  60 jours de stock. Viser un taux de service de 99 % sur ce corridor est un problème
+  d'affrètement, pas un problème de stockage : aucune quantité de silo ne l'achète.
+- **Le site se situe vers 27 jours de couverture** (12 à 53 selon la fourchette publiée, d'où la
+  bande grise — les deux capacités sont de statut *inconnu*). Cela tient 95 % jusqu'à c_a² ≈ 0,5,
+  c'est-à-dire des arrivées modérément irrégulières. À régime de Poisson, il en faudrait plus du
+  double.
+
+**C'est ici que l'étude bute sur ce qu'elle ne sait pas.** L'axe vertical est incertain d'un
+facteur quatre (12 à 53 jours) et **la position du site sur l'axe horizontal est inconnue** :
+`dispersion_arrivees` n'est toujours pas mesurée, faute d'assez d'arrivées de minéraliers dans la
+série (4 à ce jour, soit 2 intervalles). La carte ne donne donc pas un verdict sur Djen Djen —
+elle dit exactement **quelle mesure trancherait**, et c'est la raison d'être de la collecte qui
+continue de tourner.
+
+Trois réserves de lecture. β est une moyenne sur 60 réplications, de demi-largeur d'IC ±0,01 à
+±0,03 selon les cases : les contours sont tracés sur les moyennes, donc la position exacte d'une
+courbe vaut à quelques jours près. La grille fait 7 × 9 points, interpolés linéairement. Enfin
+la carte vaut pour le scénario phase 2 ; ce qui ne se transpose pas d'un site à l'autre est la
+charge du poste ρ = λ·E[S]/c, qui est précisément ce que distinguent les deux couleurs.
+
+Reproductible par `python scripts/frontiere_service.py --reps 60` (~25 min), ou
+`--from-parquet data/sim/frontiere_service.parquet` pour retracer la figure sans resimuler.
 
 ### Ce que cela coûte : ordres de grandeur seulement
 

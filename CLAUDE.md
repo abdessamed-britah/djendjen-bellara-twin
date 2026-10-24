@@ -35,7 +35,7 @@ millions d'USD par an, sur une hypothèse de marge étrangère au site (voir REA
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **394 tests**, ~22 à 34 s selon la machine et sa charge (limite
+`ruff check .` et `pytest -q` passent : **415 tests**, ~22 à 34 s selon la machine et sa charge (limite
 visée : ~30 s). S'y ajoutent **5 tests marqués `slow`**, exclus de `pytest -q` par `addopts`
 dans `pyproject.toml` et lancés par `pytest -m slow -q` (~6 s) : c'est la validation analytique
 du moteur de file, trop lourde pour la boucle courte mais obligatoire avant tout commit qui
@@ -136,6 +136,10 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   +0,90 ± 1,33 point à stockage de base, −0,84 ± 1,32 à stockage haut, aucune interaction
   (−1,75 ± 1,88). Tout le gain vient du stockage (+4,98 ± 1,50). Le poste déplace en revanche
   la file de la rade vers le quai, de façon significative (voir décisions) ;
+- **frontière de service** (`scripts/frontiere_service.py`, phase 2, 60 réplications) : la
+  couverture τ requise pour tenir β = 0,95 passe de ≤ 5 jours à arrivées régulières à ~59 jours
+  à régime de Poisson, et devient hors d'atteinte (> 60 j) au-delà. β = 0,99 n'est atteignable
+  qu'à c_a² = 0 (20,5 j). Les courbes à 1 et 2 postes sont **superposées** ;
 - coût de la perte, politique `pull`, Poisson (`scripts/economic_summary.py`) : baseline ~4 M
   USD/an (1 à 10), phase 2 ~11 M USD/an (2 à 27), phase 2 + stockage ~5 M (1 à 13), phase 2 +
   second poste ~8 M (2 à 20). À arrivées régulières : moins de 1 M USD/an.
@@ -253,6 +257,11 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   pendant toute la durée du déchargement, pauses incluses). Chaque escale donne une fourchette
   et non un point, parce que le départ n'est jamais observé : borne haute sur `departure_min`,
   borne basse sur `departure_max`.
+- **La synthèse se lit sur deux axes sans dimension**, pour être transposable : c_a² (carré du
+  coefficient de variation des intervalles entre arrivées, que `dispersion_arrivees` **est**
+  directement) et τ = (K_P + K_U)/D, la couverture de stock en jours de consommation. Un stock
+  en kilotonnes ne se compare pas d'un site à l'autre, une couverture en jours si. Ce qui ne se
+  transpose pas est la charge du poste ρ = λ·E[S]/c, d'où une courbe par nombre de postes.
 - Un scénario n'exprime que ses **écarts**, sous forme `{value: x}` ou `{multiply_by: autre.clé}`.
   Aucun chiffre n'y est recopié : corriger `phase_2.facteur_dri` corrige `phase2`.
 
@@ -333,6 +342,13 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
     pour gagner du temps : à 4 ans le biais d'horizon fini passe de −1,4 % à −1,8 % et le test
     se rapproche de son seuil d'échec pour rien.
 
+16. **La frontière de service est tracée sur des moyennes.** β a une demi-largeur d'IC de
+    ±0,01 à ±0,03 selon les cases, la grille fait 7 × 9 points interpolés linéairement, et les
+    contours sont tirés des moyennes sans lissage : la position exacte d'une courbe vaut à
+    quelques jours de couverture près. Ne pas lire « 27,8 jours » comme une spécification. Et
+    surtout, **la position du site sur l'axe horizontal est inconnue** (limite 5) : la carte dit
+    quelle mesure trancherait, elle ne tranche pas pour Djen Djen.
+
 ## Reprise après une longue pause
 
 1. `git pull --rebase` : le workflow a commité des données pendant l'absence.
@@ -368,13 +384,16 @@ python -m corridor.sim.run --scenario phase2 --years 1 --reps 50 --dispersion 1.
 python -m corridor.sim.sensitivity            # grille 5×5×2, 30 réplications : ~4 min
 python scripts/h2_blocking.py --reps 30       # hypothèse H2 : blocage du poste (~5 min)
 python scripts/poste_stockage_factoriel.py    # plan 2x2 poste x stockage, 200 rép. (~3 min)
+python scripts/frontiere_service.py --reps 60 # frontière de service (c_a² x τ) : ~25 min
+python scripts/frontiere_service.py --from-parquet data/sim/frontiere_service.parquet
+                                              # retrace la figure sans resimuler
 python -m corridor.sim.sensitivity --reps 5   # version rapide
 python scripts/compare_scenarios.py --reps 50 # pull/push, régulier/Poisson, 1 contre 2 postes
 python scripts/economic_summary.py --reps 30  # coût annuel de la perte, avec fourchette
 ```
 
-Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et `docs/sensibilite_dri.png`
-(versionné, c'est la figure du README).
+Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de
+`docs/` : `sensibilite_dri.png`, `h2_blocage.png` et `frontiere_service.png`.
 
 ## Structure du dépôt
 
@@ -389,7 +408,7 @@ config/scenarios/        baseline, phase2, phase2_plus_stockage, phase2_plus_pos
                          baseline_sans_blocage (validation analytique, pas un cas physique)
 scripts/                 health_check, ore_calls_report, economic_summary,
                          compare_scenarios, h2_blocking, poste_stockage_factoriel,
-                         inspect_latest, fetch_raw
+                         frontiere_service, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
 releases raw-AAAA-MM     les PDF bruts eux-mêmes, un asset par collecte
 data/clean/              observations.csv : une ligne par navire et par collecte (versionné)
