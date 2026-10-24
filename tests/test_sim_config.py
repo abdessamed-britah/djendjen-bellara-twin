@@ -86,7 +86,8 @@ def test_une_forme_d_ecart_inconnue_est_refusee():
 
 def test_les_scenarios_se_chargent():
     for name in ("baseline", "phase2", "phase2_plus_stockage", "phase2_plus_poste",
-                 "phase2_plus_poste_plus_stockage", "baseline_sans_blocage"):
+                 "phase2_plus_poste_plus_stockage", "phase2_mesure",
+                 "baseline_sans_blocage"):
         scenario = cfg.load_scenario(name)
         assert scenario.name == name
         assert scenario.description
@@ -227,3 +228,65 @@ def test_capacite_ferroviaire_et_besoin_sont_coherents(baseline):
 def test_config_immuable(baseline):
     with pytest.raises((AttributeError, TypeError)):
         baseline.nombre_de_rames = 99
+
+
+# --- écart de scénario par copie d'une autre hypothèse -----------------------
+
+
+def test_copy_from_prend_la_valeur_d_une_autre_hypothese():
+    """Permet qu'une hypothèse mesurée alimente un paramètre sans recopier son chiffre."""
+    valeurs = {"a.mesure": 0.91, "b.parametre": 0.0}
+    obtenu = cfg.apply_overrides(valeurs, {"b.parametre": {"copy_from": "a.mesure"}})
+    assert obtenu["b.parametre"] == 0.91
+    assert obtenu["a.mesure"] == 0.91  # la source n'est pas modifiée
+
+
+def test_copy_from_suit_la_source_si_elle_change():
+    """Tout l'intérêt : réviser l'estimation suffit, le scénario n'a pas à être touché."""
+    for mesure in (0.5, 0.91, 1.4):
+        obtenu = cfg.apply_overrides(
+            {"a.mesure": mesure, "b.parametre": 0.0},
+            {"b.parametre": {"copy_from": "a.mesure"}},
+        )
+        assert obtenu["b.parametre"] == mesure
+
+
+def test_copy_from_sur_une_source_inconnue_leve():
+    with pytest.raises(KeyError):
+        cfg.apply_overrides({"b.parametre": 0.0},
+                            {"b.parametre": {"copy_from": "a.absente"}})
+
+
+def test_un_ecart_sans_forme_connue_leve():
+    with pytest.raises(ValueError, match="copy_from"):
+        cfg.apply_overrides({"a": 1.0}, {"a": {"plus": 1}})
+
+
+def test_phase2_mesure_pointe_l_estimation_et_ne_la_recopie_pas():
+    """Garde-fou : si quelqu'un remplace `copy_from` par un littéral, ce test le voit.
+
+    Lu dans le fichier du scénario, pas dans l'objet chargé : c'est la forme de l'écart
+    qu'on veut figer, pas sa valeur résolue.
+    """
+    spec = cfg.load_yaml(cfg.SCENARIOS_DIR / "phase2_mesure.yaml")
+    ecart = spec["overrides"]["simulation.dispersion_arrivees"]
+    assert ecart == {"copy_from": "simulation.dispersion_arrivees_observee"}
+
+
+def test_phase2_mesure_a_bien_la_dispersion_estimee():
+    mesure = cfg.SimConfig.from_scenario(cfg.load_scenario("phase2_mesure"))
+    brut = cfg.load_yaml(cfg.ASSUMPTIONS_PATH)
+    attendu = brut["simulation"]["dispersion_arrivees_observee"]["value"]
+    assert mesure.dispersion_arrivees == pytest.approx(attendu)
+    assert mesure.dispersion_arrivees > 0.0  # contrairement à baseline et phase2
+
+
+def test_phase2_mesure_ne_differe_de_phase2_que_par_la_dispersion():
+    """Même cible, même stockage, même poste : seul l'affrètement change."""
+    mesure = cfg.SimConfig.from_scenario(cfg.load_scenario("phase2_mesure"))
+    phase2 = cfg.SimConfig.from_scenario(cfg.load_scenario("phase2"))
+    assert mesure.capacite_dri_t_par_an == phase2.capacite_dri_t_par_an
+    assert mesure.capacite_stockyard_t == phase2.capacite_stockyard_t
+    assert mesure.capacite_stock_usine_t == phase2.capacite_stock_usine_t
+    assert mesure.postes_minerai == phase2.postes_minerai
+    assert mesure.dispersion_arrivees != phase2.dispersion_arrivees

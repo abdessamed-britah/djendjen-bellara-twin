@@ -694,6 +694,60 @@ s'en servir.
 Reproductible par `python scripts/cout_regularite.py` (instantané : il relit la carte de
 frontière déjà calculée).
 
+### Le chiffre appliqué : le taux de service du corridor, avec son incertitude
+
+*Sert l'**importance** : c'est la réponse chiffrée à la question posée. Et l'**originalité**
+de la méthode : l'incertitude est propagée depuis des données publiques, pas déclarée.*
+
+Toutes les sections précédentes explorent des cas : arrivées régulières, arrivées de Poisson,
+stockage haut ou bas. Aucun n'est le site. Celui-ci l'est — scénario
+[`phase2_mesure`](config/scenarios/phase2_mesure.yaml), où l'irrégularité des arrivées pointe
+sur sa valeur **estimée sur les bilans de trafic** (c_a² = 0,83) au lieu d'être postulée.
+
+Mais un β ponctuel cacherait l'incertitude derrière une décimale. Le script propage donc les
+deux inconnues — 500 tirages, une année simulée par tirage :
+
+- **c_a²** est tiré **directement dans l'échantillon bootstrap** de l'indice de dispersion,
+  recalculé depuis les 16 trimestres. Aucune loi paramétrique n'est imposée : la forme de
+  l'incertitude est celle que les données donnent ;
+- **chaque capacité de stockage** est tirée uniformément dans sa propre fourchette, port et
+  usine **indépendamment**. Tirer le total ferait descendre la part du port sous son propre
+  minimum publié.
+
+| Taux de service β | tous les trimestres (c_a² = 0,83) | sans 2022 T3 (c_a² = 0,45) |
+| --- | ---: | ---: |
+| **d'une année** — ce qu'un exploitant affronte | **94,9 %** [77,2 ; 100,0] | **96,8 %** [84,8 ; 100,0] |
+| **de long terme** — le chiffre de dimensionnement | **93,2 %** [86,8 ; 98,3] | **95,4 %** [90,4 ; 98,2] |
+
+(Médiane et intervalle à 90 %. Le long terme moyenne 6 années par tirage, ce qui atténue
+l'aléa annuel et ne laisse que l'incertitude des paramètres.)
+
+**Les deux lignes répondent à des questions différentes et ne se substituent pas.** C'est le
+point le plus important de cette section, et il n'était pas prévu : la décomposition de la
+variance montre que **86 % de la dispersion d'une année vient de l'aléa annuel**, pas de ce
+que le projet ignore. Autrement dit, l'intervalle [77 ; 100] de la première ligne n'est
+presque pas une mesure de notre ignorance — c'est la variabilité intrinsèque d'un corridor à
+arrivées erratiques. Un industriel qui dimensionne doit lire la seconde ligne ; un exploitant
+qui budgète son année doit lire la première.
+
+**Le corridor en phase 2 se situerait donc autour de 93 à 95 % de sa cible**, avec un plancher
+plausible vers 87 % et un plafond vers 98 %. À comparer à la frontière : tenir 95 % demanderait
+une couverture d'environ 50 jours là où l'hypothèse centrale du site en donne 27.
+
+**Trois réserves.**
+
+- **Un seul trimestre de la source déplace la médiane de 1,9 point.** 2022 T3 ne porte que
+  606 t de pellets. Les deux variantes sont publiées plutôt qu'une seule : l'écart entre
+  elles *est* la mesure la plus directe de la fragilité du chiffre.
+- **Les deux capacités de stockage restent de statut *inconnu*.** La fourchette tirée est
+  celle des hypothèses, pas celle d'une mesure. Resserrer ces deux bornes reste ce qui ferait
+  le plus pour ce projet.
+- **La médiane d'une année (94,9 %) dépasse celle du long terme (93,2 %)**, ce qui n'est pas
+  une incohérence : la distribution annuelle est bornée à 100 % et donc asymétrique à gauche,
+  si bien que sa médiane se place au-dessus de sa moyenne.
+
+Reproductible par `python scripts/beta_site.py --tirages 500` (~8 min).
+
 ### Ce que cela coûte : ordres de grandeur seulement
 
 `couts.cout_journee_arret_dri` vaut 130 000 USD/jour, fourchette [40 000 ; 230 000], statut

@@ -1,0 +1,27 @@
+# Phase 2 avec l'irrégularité des arrivées **mesurée**, et non postulée.
+#
+# Tous les autres scénarios explorent l'irrégularité par convention : `baseline` et `phase2`
+# la prennent nulle (cas de référence régulier), les tableaux « Poisson » du README la prennent
+# à 1 (cas d'école défavorable). Aucun des deux n'est le site.
+#
+# Celui-ci l'est : `simulation.dispersion_arrivees` y pointe sur
+# `simulation.dispersion_arrivees_observee`, estimée à 0,91 sur 16 trimestres de bilans de
+# trafic publics du port (2022-2025, voir scripts/arrival_dispersion.py et la section
+# correspondante du README). C'est le scénario du **chiffre appliqué** de l'étude.
+#
+# `copy_from` plutôt que `value: 0.91` : le chiffre n'est pas recopié ici, il est pointé. Si
+# l'estimation est révisée — et elle le sera, la série s'allonge — ce scénario suit tout seul.
+#
+# **Ce scénario seul ne suffit pas à publier un chiffre.** L'estimation de c_a² a un intervalle
+# de confiance large ([0,21 ; 1,73] en indice de dispersion) et les deux capacités de stockage
+# sont de statut `inconnu`. Un point calculé ici serait une fausse précision : le chiffre
+# publiable est la **distribution** que produit `scripts/beta_site.py`, qui tire c_a² dans son
+# intervalle bootstrap et le stockage dans sa fourchette. Ce scénario en est le centre, pas la
+# réponse.
+nom: phase2_mesure
+description: "Phase 2 avec l'irrégularité des arrivées estimée sur les bilans de trafic"
+overrides:
+  usine.capacite_dri:
+    multiply_by: phase_2.facteur_dri
+  simulation.dispersion_arrivees:
+    copy_from: simulation.dispersion_arrivees_observee

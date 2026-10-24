@@ -64,7 +64,7 @@ sur 16 trimestres de bilans publics), les deux capacités de stockage restent `i
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **518 tests**, ~22 à 34 s selon la machine et sa charge (limite
+`ruff check .` et `pytest -q` passent : **551 tests**, ~22 à 34 s selon la machine et sa charge (limite
 visée : ~30 s). S'y ajoutent **5 tests marqués `slow`**, exclus de `pytest -q` par `addopts`
 dans `pyproject.toml` et lancés par `pytest -m slow -q` (~6 s) : c'est la validation analytique
 du moteur de file, trop lourde pour la boucle courte mais obligatoire avant tout commit qui
@@ -168,6 +168,12 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
 - **irrégularité des arrivées, première estimation** : c_a² = 0,83, IC bootstrap
   [0,21 ; 1,73], sur 16 trimestres de bilans de trafic du port (2022-2025). Soit des arrivées
   proches du régime de Poisson. Voir limite 5 pour ce que ce chiffre ne vaut pas ;
+- **chiffre appliqué du site** (`scripts/beta_site.py`, scénario `phase2_mesure`, 500
+  tirages) : taux de service β de long terme **93,2 % [86,8 ; 98,3]** en gardant tous les
+  trimestres, **95,4 % [90,4 ; 98,2]** sans 2022 T3. Sur une seule année, 94,9 %
+  [77,2 ; 100,0] et 96,8 % [84,8 ; 100,0]. **86 % de la dispersion annuelle vient de l'aléa
+  d'une année, pas de l'incertitude des paramètres** : les deux lignes répondent à des
+  questions différentes, dimensionner contre budgéter ;
 - **frontière de service** (`scripts/frontiere_service.py`, phase 2, 60 réplications) : la
   couverture τ requise pour tenir β = 0,95 passe de ≤ 5 jours à arrivées régulières à ~59 jours
   à régime de Poisson, et devient hors d'atteinte (> 60 j) au-delà. β = 0,99 n'est atteignable
@@ -310,8 +316,21 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   ne prend que quatre positions sur cinq ordres de grandeur. Au-delà d'un rapport de ~0,07, le
   moins cher est de lisser ; les hypothèses centrales donnent 0,080, donc tout juste au-delà.
   **Ne jamais citer un montant de cette section.**
-- Un scénario n'exprime que ses **écarts**, sous forme `{value: x}` ou `{multiply_by: autre.clé}`.
-  Aucun chiffre n'y est recopié : corriger `phase_2.facteur_dri` corrige `phase2`.
+- Un scénario n'exprime que ses **écarts**, sous trois formes : `{value: x}`,
+  `{multiply_by: autre.clé}` et `{copy_from: autre.clé}`. Aucun chiffre n'y est recopié :
+  corriger `phase_2.facteur_dri` corrige `phase2`, et réviser
+  `dispersion_arrivees_observee` corrige `phase2_mesure`. `copy_from` a été ajouté pour ce
+  dernier cas : écrire `value: 0.91` aurait figé une estimation qui va bouger.
+- **Le chiffre appliqué est une distribution, jamais un point.** `beta_site.py` tire c_a²
+  dans son échantillon bootstrap et chaque capacité de stockage dans sa propre fourchette
+  (indépendamment : tirer le total ferait descendre la part du port sous son minimum
+  publié). Deux variantes toujours publiées côte à côte, avec et sans le trimestre anormal
+  2022 T3 — leur écart *est* la mesure de fragilité du résultat.
+- **Une année et le long terme ne sont pas le même chiffre.** À une réplication par tirage,
+  86 % de la dispersion de β vient de l'aléa annuel et non des paramètres. L'intervalle
+  d'une année mesure donc surtout la variabilité intrinsèque du corridor ; celui de long
+  terme (plusieurs années moyennées par tirage) mesure ce que le projet ignore. Ne jamais
+  présenter l'un pour l'autre.
 
 **Coûts (`scripts/economic_summary.py`)**
 
@@ -445,6 +464,7 @@ python scripts/h2_blocking.py --reps 30       # hypothèse H2 : blocage du poste
 python scripts/poste_stockage_factoriel.py    # plan 2x2 poste x stockage, 200 rép. (~3 min)
 python scripts/frontiere_service.py --reps 60 # frontière de service (c_a² x τ) : ~25 min
 python scripts/cout_regularite.py             # H4 : lisser l'affrètement ou stocker ?
+python scripts/beta_site.py --tirages 500     # chiffre appliqué : distribution de β (~8 min)
 python scripts/frontiere_service.py --from-parquet data/sim/frontiere_service.parquet
                                               # retrace la figure sans resimuler
 python -m corridor.sim.sensitivity --reps 5   # version rapide
@@ -468,12 +488,13 @@ src/corridor/sim/        config.py, samplers.py, model.py, run.py, sensitivity.p
 config/assumptions.yaml  toutes les valeurs numériques du domaine
 config/scenarios/        baseline, phase2, phase2_plus_stockage, phase2_plus_poste,
                          phase2_plus_poste_plus_stockage (plan factoriel 2x2),
+                         phase2_mesure (irrégularité estimée : le chiffre appliqué),
                          baseline_sans_blocage (validation analytique, pas un cas physique)
 scripts/hooks/pre-commit lance `pytest -m slow -q` si src/corridor/sim/ est touché
 scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          economic_summary, compare_scenarios, h2_blocking,
                          poste_stockage_factoriel, frontiere_service, cout_regularite,
-                         inspect_latest, fetch_raw
+                         beta_site, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
 data/raw/port_stats/     bilans de trafic 2022-2025 : pages HTML versionnées (ce sont elles
                          qui portent les tableaux lus), PDF joints git-ignorés (~10 Mo),

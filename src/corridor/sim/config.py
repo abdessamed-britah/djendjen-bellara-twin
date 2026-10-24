@@ -110,8 +110,19 @@ def apply_overrides(
     """Applique les écarts d'un scénario et renvoie un nouveau dictionnaire.
 
     Un écart porte sur une clé qui existe déjà : un scénario amende les hypothèses,
-    il n'en invente pas. Deux formes admises, `{value: x}` et
-    `{multiply_by: autre.cle}`. Une valeur non numérique est reprise telle quelle.
+    il n'en invente pas. Trois formes admises :
+
+    - `{value: x}` — une valeur littérale. À n'employer que pour un chiffre qui n'existe
+      nulle part ailleurs dans les hypothèses ;
+    - `{multiply_by: autre.cle}` — la valeur courante multipliée par une autre hypothèse.
+      C'est ainsi que la capacité DRI de la phase 2 suit `phase_2.facteur_dri` ;
+    - `{copy_from: autre.cle}` — la valeur d'une autre hypothèse, telle quelle. Sert
+      quand une hypothèse mesurée doit alimenter un paramètre de simulation sans que le
+      chiffre soit recopié : `phase2_mesure` pointe ainsi
+      `simulation.dispersion_arrivees` sur `simulation.dispersion_arrivees_observee`, et
+      suivra toute révision de l'estimation.
+
+    Une valeur non numérique est reprise telle quelle.
     """
     merged = dict(values)
     for key, spec in (overrides or {}).items():
@@ -127,8 +138,12 @@ def apply_overrides(
         elif "multiply_by" in spec:
             facteur = value_of(merged, str(spec["multiply_by"]))
             merged[key] = value_of(merged, key) * facteur
+        elif "copy_from" in spec:
+            merged[key] = value_of(merged, str(spec["copy_from"]))
         else:
-            raise ValueError(f"écart {key} : il faut 'value' ou 'multiply_by', reçu {spec!r}")
+            raise ValueError(
+                f"écart {key} : il faut 'value', 'multiply_by' ou 'copy_from', reçu {spec!r}"
+            )
     return merged
 
 
