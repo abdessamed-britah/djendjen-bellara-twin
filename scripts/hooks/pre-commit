@@ -1,0 +1,79 @@
+#!/bin/sh
+# Garde-fou : lance la validation analytique quand le moteur de simulation est touché.
+#
+# `pytest -q` exclut les tests marqués `slow` (voir addopts dans pyproject.toml), et la
+# validation du moteur de file en fait partie : 200 réplications sur 8 ans coûtent quelques
+# secondes, trop pour la boucle courte. Conséquence, écrite en limite 15 de CLAUDE.md : une
+# régression du moteur ne serait pas vue en local. Ce hook referme ce trou, et seulement
+# pour les commits qui touchent à `src/corridor/sim/` — les autres passent sans attendre.
+#
+# Installation (depuis la racine du dépôt) :
+#
+#     git config core.hooksPath scripts/hooks
+#
+# Un hook se contourne avec `git commit --no-verify` : c'est un garde-fou, pas une serrure.
+#
+# L'interpréteur se choisit dans cet ordre : $CORRIDOR_PYTHON, puis l'environnement conda
+# `corridor` de ce projet, puis python/python3 du PATH. Sous Git Bash sur Windows, `python`
+# seul n'est en général pas dans le PATH, d'où le deuxième essai.
+
+set -e
+
+modifies=$(git diff --cached --name-only --diff-filter=ACMR)
+case "$modifies" in
+    *src/corridor/sim/*) ;;
+    *)
+        exit 0
+        ;;
+esac
+
+trouver_python() {
+    if [ -n "$CORRIDOR_PYTHON" ] && [ -x "$CORRIDOR_PYTHON" ]; then
+        printf '%s' "$CORRIDOR_PYTHON"
+        return 0
+    fi
+    for candidat in \
+        "$USERPROFILE/miniconda3/envs/corridor/python.exe" \
+        "$HOME/miniconda3/envs/corridor/bin/python" \
+        "$HOME/miniconda3/envs/corridor/python.exe"
+    do
+        if [ -x "$candidat" ]; then
+            printf '%s' "$candidat"
+            return 0
+        fi
+    done
+    for candidat in python3 python; do
+        if command -v "$candidat" >/dev/null 2>&1; then
+            printf '%s' "$candidat"
+            return 0
+        fi
+    done
+    return 1
+}
+
+python_bin=$(trouver_python) || {
+    echo "pre-commit : aucun interpréteur Python trouvé." >&2
+    echo "  Indiquez-le avec CORRIDOR_PYTHON=/chemin/vers/python, ou relancez avec" >&2
+    echo "  --no-verify si vous savez ce que vous faites." >&2
+    exit 1
+}
+
+echo "pre-commit : src/corridor/sim/ est touché, lancement de la validation analytique…"
+if "$python_bin" -m pytest -m slow -q; then
+    echo "pre-commit : validation analytique au vert."
+    exit 0
+fi
+
+cat >&2 <<'FIN'
+
+pre-commit : la validation analytique a ÉCHOUÉ, le commit est refusé.
+
+Ces tests comparent l'attente simulée à la valeur exacte de Pollaczek-Khinchine sur le
+scénario `baseline_sans_blocage`. S'ils tombent, ne touchez pas à leur tolérance : cherchez
+la cause dans la gestion du poste, l'horloge, ou la loi effective des aléas. L'en-tête de
+tests/test_analytic.py explique aussi le biais d'horizon fini, qui n'est pas un défaut du
+modèle mais dicte l'horizon de 8 ans.
+
+Pour committer malgré tout : git commit --no-verify
+FIN
+exit 1

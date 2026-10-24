@@ -5,6 +5,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from corridor.transform.build_escales import Escale
 
 _SPEC = importlib.util.spec_from_file_location(
@@ -146,3 +148,127 @@ def test_affichage_ne_leve_pas_sur_une_escale_vide_de_mesures(capsys):
 def test_main_sans_observations(tmp_path, capsys):
     assert ocr.main(["--observations", str(tmp_path / "absent.csv")]) == 1
     assert "observations absentes" in capsys.readouterr().out
+
+
+# --- signal observé de H2 : attente à poste libre ---------------------------
+
+
+def _amarre(vessel, arrivee_jour, depart_jour, depart_max_jour=None, dock="QW/7"):
+    """Escale à quai, du jour d'accostage au jour de départ (bornes en jours de septembre)."""
+    return _escale(
+        vessel=vessel, dock=dock, anchorage_time=None, berth_time=_t(arrivee_jour),
+        departure_min=_t(depart_jour),
+        departure_max=_t(depart_max_jour if depart_max_jour is not None else depart_jour),
+    )
+
+
+def _attend(vessel, rade_jour, accostage_jour, dock="QW/7"):
+    """Escale qui attend en rade puis accoste."""
+    return _escale(
+        vessel=vessel, dock=dock, anchorage_time=_t(rade_jour),
+        berth_time=_t(accostage_jour), departure_min=_t(accostage_jour + 2),
+        departure_max=_t(accostage_jour + 2),
+    )
+
+
+def test_sans_attente_mesurable_il_n_y_a_pas_de_signal():
+    """Il faut une entrée en rade ET un accostage : sinon rien n'est décomposable."""
+    assert ocr.free_berth_wait(_escale(), [_escale()]) is None
+
+
+def test_une_attente_a_poste_occupe_ne_donne_aucun_signal():
+    """Le poste est pris tout le temps de l'attente : rien à expliquer, H2 ne joue pas."""
+    occupant = _amarre("OCCUPANT", 8, 12)
+    attend = _attend("ATTEND", 8, 12)
+    mesure = ocr.free_berth_wait(attend, [occupant, attend])
+    assert mesure["berth_busy_h"] == pytest.approx(96.0)
+    assert mesure["berth_free_h"] == pytest.approx(0.0)
+
+
+def test_une_attente_a_poste_vide_est_le_signal_cherche():
+    """Personne au quai pendant l'attente : chaque heure est une heure que H2 explique."""
+    attend = _attend("ATTEND", 8, 12)
+    mesure = ocr.free_berth_wait(attend, [attend], debut_serie=_t(1))
+    assert mesure["berth_busy_h"] == 0.0
+    assert mesure["free_certain_h"] == pytest.approx(96.0)
+
+
+def test_un_navire_d_une_autre_cargaison_occupe_aussi_le_poste():
+    """QW/7 reçoit aussi du non-minerai : l'ignorer gonflerait le signal."""
+    divers = replace(_amarre("DIVERS", 8, 10), cargo_category="general")
+    attend = _attend("ATTEND", 8, 12)
+    mesure = ocr.free_berth_wait(attend, [divers, attend], debut_serie=_t(1))
+    assert mesure["berth_busy_h"] == pytest.approx(48.0)
+    assert mesure["free_certain_h"] == pytest.approx(48.0)
+
+
+def test_un_navire_a_un_autre_poste_n_occupe_rien():
+    ailleurs = _amarre("AILLEURS", 8, 12, dock="QW/3")
+    attend = _attend("ATTEND", 8, 12)
+    mesure = ocr.free_berth_wait(attend, [ailleurs, attend], debut_serie=_t(1))
+    assert mesure["berth_busy_h"] == 0.0
+
+
+def test_deux_occupants_qui_se_chevauchent_ne_comptent_qu_une_fois():
+    """Sinon le temps occupé dépasserait l'attente et le signal deviendrait négatif."""
+    a = _amarre("A", 8, 11)
+    b = _amarre("B", 10, 12)
+    attend = _attend("ATTEND", 8, 12)
+    mesure = ocr.free_berth_wait(attend, [a, b, attend], debut_serie=_t(1))
+    assert mesure["berth_busy_h"] == pytest.approx(96.0)
+    assert mesure["berth_free_h"] == pytest.approx(0.0)
+
+
+def test_l_attente_avant_le_premier_instantane_est_inconnue_pas_libre():
+    """Le piège principal : un navire a pu occuper le quai sans qu'on le voie jamais."""
+    attend = _attend("ATTEND", 8, 12)
+    mesure = ocr.free_berth_wait(attend, [attend], debut_serie=_t(10))
+    assert mesure["free_unobserved_h"] == pytest.approx(48.0)
+    assert mesure["free_observed_h"] == pytest.approx(48.0)
+
+
+def test_sans_debut_de_serie_rien_n_est_declare_inconnu():
+    attend = _attend("ATTEND", 8, 12)
+    mesure = ocr.free_berth_wait(attend, [attend])
+    assert mesure["free_unobserved_h"] == 0.0
+
+
+def test_le_libre_qui_tombe_dans_une_fenetre_de_depart_est_douteux():
+    """Le cas réel de la série : le navire précédent y était peut-être encore."""
+    occupant = _amarre("OCCUPANT", 8, 10, depart_max_jour=12)
+    attend = _attend("ATTEND", 8, 12)
+    mesure = ocr.free_berth_wait(attend, [occupant, attend], debut_serie=_t(1))
+    assert mesure["free_observed_h"] == pytest.approx(48.0)
+    assert mesure["free_in_departure_window_h"] == pytest.approx(48.0)
+    assert mesure["free_certain_h"] == pytest.approx(0.0)
+
+
+def test_les_quatre_parts_somment_a_l_attente_totale():
+    occupant = _amarre("OCCUPANT", 8, 10, depart_max_jour=11)
+    attend = _attend("ATTEND", 6, 12)
+    m = ocr.free_berth_wait(attend, [occupant, attend], debut_serie=_t(7))
+    somme = (m["berth_busy_h"] + m["free_unobserved_h"]
+             + m["free_in_departure_window_h"] + m["free_certain_h"])
+    assert somme == pytest.approx(m["wait_total_h"])
+
+
+def test_l_union_des_heures_fusionne_les_chevauchements():
+    assert ocr._union_heures([(_t(1), _t(3)), (_t(2), _t(4))]) == pytest.approx(72.0)
+    assert ocr._union_heures([(_t(1), _t(2)), (_t(3), _t(4))]) == pytest.approx(48.0)
+    assert ocr._union_heures([]) == 0.0
+
+
+def test_le_signal_s_affiche_sans_lever(capsys):
+    occupant = _amarre("OCCUPANT", 8, 10, depart_max_jour=11)
+    attend = _attend("ATTEND", 6, 12)
+    lignes = ocr.report_rows([attend], toutes=[occupant, attend], debut_serie=_t(7))
+    ocr.afficher_signal_h2(lignes, _t(7))
+    sortie = capsys.readouterr().out
+    assert "Signal observé de H2" in sortie
+    assert "poste LIBRE" in sortie
+
+
+def test_le_signal_signale_son_absence(capsys):
+    """Sans attente mesurable, dire qu'il n'y a rien plutôt que d'afficher des zéros."""
+    ocr.afficher_signal_h2(ocr.report_rows([_escale()]))
+    assert "aucune attente en rade mesurable" in capsys.readouterr().out

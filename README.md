@@ -18,17 +18,35 @@ peut-il absorber un doublement de la production ? Si non, quel est le premier go
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows : .venv\Scripts\activate
 pip install -e ".[dev]"
-pytest -q                                   # 415 tests, hors ligne
+pytest -q                                   # 518 tests, hors ligne
 pytest -m slow -q                           # + 5 tests lents : validation analytique
 python -m corridor.ingest.port_status       # une collecte
 python scripts/inspect_latest.py            # voir le contenu du dernier PDF
+python scripts/ore_calls_report.py          # escales minerai, cadences, signal H2
 
 python -m corridor.sim.run --scenario baseline --years 1 --reps 50
 python -m corridor.sim.sensitivity          # la figure ci-dessous, ~3 min 30
 python scripts/h2_blocking.py --reps 30     # hypothèse H2 : blocage du poste, ~5 min
 python scripts/poste_stockage_factoriel.py  # plan 2x2 poste x stockage, ~3 min
 python scripts/frontiere_service.py --reps 60   # frontière de service, ~25 min
+python scripts/cout_regularite.py           # H4 : lisser l'affrètement ou stocker ?
 ```
+
+### Installer le hook de pré-commit (recommandé)
+
+`pytest -q` **n'exécute pas** la validation analytique du moteur de file : elle est marquée
+`slow` pour tenir le budget d'une trentaine de secondes. Une régression du moteur passerait
+donc inaperçue en local. Le hook fourni referme ce trou — il lance `pytest -m slow -q`
+uniquement quand un fichier de `src/corridor/sim/` est mis à l'index, et ne coûte rien aux
+autres commits :
+
+```bash
+git config core.hooksPath scripts/hooks
+```
+
+Il se contourne par `git commit --no-verify` : c'est un garde-fou, pas une serrure. Si votre
+interpréteur n'est pas celui que le hook trouve tout seul, indiquez-le par
+`CORRIDOR_PYTHON=/chemin/vers/python`.
 
 ## Premiers résultats observés
 
@@ -71,6 +89,27 @@ NIMBA avait alors passé **183 h (7,6 jours) en rade**, avec 140 571 t de minera
 accostage tombe dans la fenêtre même du départ du navire précédent. Le poste de déchargement
 minerai se comporte donc comme une ressource à exclusion mutuelle : l'attente observée n'est pas
 un aléa de navigation, c'est une file devant un quai occupé.
+
+**Le contre-test de H2, et il ne trouve rien.** H2 dit que le quai est saturé par l'aval, pas
+par sa propre cadence. Son signal observable serait un minéralier qui attend **alors que son
+poste est vide** : chaque heure de ce genre est une heure que l'explication « le poste est le
+goulot » ne couvre pas. `ore_calls_report.py` décompose donc chaque attente mesurable, en
+comptant comme occupant **tout** navire au même poste — QW/7 reçoit aussi du non-minerai.
+Sur la seule attente mesurable de la série :
+
+| BERGE NIMBA, 183,2 h d'attente | heures | lecture |
+| --- | ---: | --- |
+| poste démontré occupé (GH NIGHTINGALE) | 139,2 h | la file s'explique |
+| poste démontré libre | **0,0 h** | aucun signal H2 |
+| dans la fenêtre de départ du navire précédent | 5,2 h | il y était peut-être encore |
+| avant le premier instantané | 38,8 h | occupation inconnue, pas libre |
+
+**La série ne montre donc aucune attente à poste libre.** Ce qui en avait l'air tombe
+entièrement soit dans la fenêtre de départ de NIGHTINGALE — dont le départ est encadré, pas
+observé — soit avant le 24/09, où l'occupation de QW/7 n'est pas connue. C'est un résultat,
+pas une absence de résultat : sur cette série, rien ne contredit l'idée que le poste est pris
+dès qu'un navire attend, et H2 n'y gagne ni n'y perd. Avec une seule attente mesurable, c'est
+tout ce qu'on peut en dire.
 
 Trois réserves de lecture, parce que cette observation sert d'appui à l'un des résultats du
 modèle :

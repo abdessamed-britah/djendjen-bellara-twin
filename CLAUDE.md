@@ -35,7 +35,7 @@ millions d'USD par an, sur une hypothèse de marge étrangère au site (voir REA
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **505 tests**, ~22 à 34 s selon la machine et sa charge (limite
+`ruff check .` et `pytest -q` passent : **518 tests**, ~22 à 34 s selon la machine et sa charge (limite
 visée : ~30 s). S'y ajoutent **5 tests marqués `slow`**, exclus de `pytest -q` par `addopts`
 dans `pyproject.toml` et lancés par `pytest -m slow -q` (~6 s) : c'est la validation analytique
 du moteur de file, trop lourde pour la boucle courte mais obligatoire avant tout commit qui
@@ -244,6 +244,14 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
 - **`berth_blocked_h` sépare le service du blocage.** Les heures où un navire tient le quai sans
   décharger (stockyard plein) sont comprises dans `berth_occupancy` mais ne sont pas du service.
   Intégrées comme les autres temps d'occupation, donc un navire encore bloqué à l'horizon compte.
+- **Le contre-test observé de H2 ne trouve rien, et c'est un résultat.** Le signal
+  observable de H2 serait un minéralier attendant à poste vide. Sur la seule attente
+  mesurable de la série (BERGE NIMBA, 183,2 h), `ore_calls_report.py` compte **0,0 h** de
+  poste démontré libre : 139,2 h de poste occupé, 5,2 h dans la fenêtre de départ du navire
+  précédent et 38,8 h avant le premier instantané, où l'occupation est inconnue. Rien ne
+  contredit donc l'idée que le poste est pris dès qu'un navire attend. Le calcul compte
+  **tout** navire au même poste, pas seulement les minéraliers : QW/7 reçoit aussi du
+  non-minerai, et l'ignorer gonflerait le signal.
 - **H2 est soutenue : ce qui sature le poste, c'est le stockage plein, pas le déchargement.**
   Avec E[S_eff] = E[S] + B/N, l'écart médian de Kingman à la simulation passe d'un facteur 2,8×
   à 1,4× sur 39 cases de la grille, et la correction est d'autant plus forte que le blocage est
@@ -355,9 +363,11 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
     exclue par défaut, parce que 200 réplications × 8 ans coûtent 6 s et faisaient sortir la
     suite de son budget. Conséquence à connaître : une régression du moteur de file **ne sera
     pas vue** par la boucle courte. Lancer `pytest -m slow -q` avant tout commit touchant à
-    `corridor.sim` ; la CI le fait dans une étape dédiée. Ne pas baisser `VALIDATION_YEARS`
-    pour gagner du temps : à 4 ans le biais d'horizon fini passe de −1,4 % à −1,8 % et le test
-    se rapproche de son seuil d'échec pour rien.
+    `corridor.sim` ; la CI le fait dans une étape dédiée, et `scripts/hooks/pre-commit` le
+    fait en local dès que `src/corridor/sim/` est à l'index — à installer une fois par
+    `git config core.hooksPath scripts/hooks`. Ne pas baisser `VALIDATION_YEARS` pour gagner
+    du temps : à 4 ans le biais d'horizon fini passe de −1,4 % à −1,8 % et le test se
+    rapproche de son seuil d'échec pour rien.
 
 16. **La frontière de service est tracée sur des moyennes.** β a une demi-largeur d'IC de
     ±0,01 à ±0,03 selon les cases, la grille fait 7 × 9 points interpolés linéairement, et les
@@ -392,7 +402,8 @@ pytest -m slow -q                             # validation analytique (~6 s), ex
 python scripts/health_check.py                # bilan de la collecte et des escales
 python -m corridor.ingest.port_stats          # archive les bilans de trafic 2022-2025 (ponctuel)
 python scripts/arrival_dispersion.py          # c_a² estimé sur 16 trimestres
-python scripts/ore_calls_report.py            # escales minerai : cadences, attentes, intervalles
+python scripts/ore_calls_report.py            # escales minerai : cadences, attentes, signal H2
+git config core.hooksPath scripts/hooks       # hook pre-commit : pytest -m slow si sim/ touché
 python -m corridor.ingest.port_status         # une collecte (PDF local + ligne de manifeste)
 python scripts/inspect_latest.py              # voir le contenu du dernier PDF
 python scripts/fetch_raw.py                   # retélécharger les PDF depuis les releases
@@ -429,6 +440,7 @@ config/assumptions.yaml  toutes les valeurs numériques du domaine
 config/scenarios/        baseline, phase2, phase2_plus_stockage, phase2_plus_poste,
                          phase2_plus_poste_plus_stockage (plan factoriel 2x2),
                          baseline_sans_blocage (validation analytique, pas un cas physique)
+scripts/hooks/pre-commit lance `pytest -m slow -q` si src/corridor/sim/ est touché
 scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          economic_summary, compare_scenarios, h2_blocking,
                          poste_stockage_factoriel, frontiere_service, cout_regularite,
