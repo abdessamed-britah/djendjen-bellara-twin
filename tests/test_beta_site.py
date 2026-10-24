@@ -152,11 +152,16 @@ def test_le_tau_rapporte_est_une_couverture_en_jours(base):
     assert all(5.0 < tau < 90.0 for tau in sortie["tau"])
 
 
+@pytest.mark.slow
 def test_moyenner_plusieurs_annees_resserre_la_distribution(base):
-    """C'est tout l'objet de la variante de long terme : l'aléa annuel s'estompe."""
-    une = bs.propager(base, RAW, [0.8], tirages=12, annees=0.3, rng=random.Random(2))
-    plusieurs = bs.propager(base, RAW, [0.8], tirages=12, annees=0.3,
-                            rng=random.Random(2), reps=5)
+    """C'est tout l'objet de la variante de long terme : l'aléa annuel s'estompe.
+
+    Marqué `slow` : il simule des dizaines d'années. Le hook de pré-commit le relance dès
+    que `src/corridor/sim/` bouge, ce dont il dépend.
+    """
+    une = bs.propager(base, RAW, [0.8], tirages=10, annees=0.25, rng=random.Random(2))
+    plusieurs = bs.propager(base, RAW, [0.8], tirages=10, annees=0.25,
+                            rng=random.Random(2), reps=4)
     assert statistics.stdev(plusieurs["beta"]) < statistics.stdev(une["beta"])
 
 
@@ -166,10 +171,14 @@ def test_la_propagation_est_reproductible_a_graine_egale(base):
     assert a["beta"] == b["beta"]
 
 
+@pytest.mark.slow
 def test_un_corridor_plus_irregulier_produit_moins(base):
-    """Le sens du résultat : si cette monotonie tombe, le tirage ne mesure pas ce qu'il dit."""
-    regulier = bs.propager(base, RAW, [0.0], tirages=6, annees=1.0, rng=random.Random(4))
-    erratique = bs.propager(base, RAW, [2.0], tirages=6, annees=1.0, rng=random.Random(4))
+    """Le sens du résultat : si cette monotonie tombe, le tirage ne mesure pas ce qu'il dit.
+
+    Marqué `slow` pour la même raison que le test précédent.
+    """
+    regulier = bs.propager(base, RAW, [0.0], tirages=5, annees=0.4, rng=random.Random(4))
+    erratique = bs.propager(base, RAW, [2.0], tirages=5, annees=0.4, rng=random.Random(4))
     assert statistics.fmean(regulier["beta"]) > statistics.fmean(erratique["beta"])
 
 

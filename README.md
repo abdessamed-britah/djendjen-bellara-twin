@@ -748,6 +748,58 @@ une couverture d'environ 50 jours là où l'hypothèse centrale du site en donne
 
 Reproductible par `python scripts/beta_site.py --tirages 500` (~8 min).
 
+### Peut-on remplacer la carte par une formule ? Pas encore, et on sait pourquoi
+
+*Sert la **généralité** : une formule se transpose sans rejouer 25 minutes de simulation.
+Le résultat est négatif, mais sa cause est identifiée — et c'est elle qui est transposable.*
+
+La frontière répond à « quelle couverture pour tenir β ? » en lisant une carte simulée. Pour
+qu'un autre site s'en serve sans rejouer le modèle, il faudrait une **formule**. La théorie
+des files en suggère la forme : l'attente d'un G/G/1 est un produit d'un facteur
+d'utilisation, d'un facteur de variabilité et d'un temps, d'où
+
+> τ*(c_a², β) ≈ a + b · c_a² / (1 − β)^c
+
+où `a` est le stock d'un corridor parfaitement régulier, `b·c_a²` la part due à
+l'irrégularité, et `(1−β)^-c` l'explosion près du service parfait. **La forme est guidée par
+la file, elle n'en découle pas** : τ* est un stock, pas une attente, et le corridor contient
+un rail et un four que Kingman ignore.
+
+Ajustée sur les 46 points exploitables de la carte (les points au plancher de la grille sont
+censurés et écartés), elle donne τ* = 3,7 + 0,35 · c_a² / (1 − β)^1,65. Comparée à une
+régression souple à six termes, et validée de deux façons :
+
+| Validation | Structurel | Souple | Référence |
+| --- | ---: | ---: | --- |
+| partage aléatoire 70/30 (interpolation) | 9,1 j | 5,6 j | écart-type des τ* : 16,0 j |
+| une colonne de c_a² retirée (transposition) | **10,3 j** | **9,3 j** | — |
+
+![Métamodèle : prédit contre observé, et résidus](docs/metamodele_frontiere.png)
+
+**Le verdict n'est pas « la formule est fausse », c'est « la carte ne permet pas d'en
+juger ».** Le diagnostic est mesurable sans rien supposer : à nombre de postes et niveau de
+service fixés, τ* **doit** croître avec c_a² — des arrivées plus erratiques ne peuvent pas
+demander moins de stock. Or sur les 32 paires consécutives de la carte, **9 reculent (28 %),
+d'un recul moyen de 6,8 jours** et jusqu'à 15,4. Ces reculs sont physiquement impossibles :
+c'est le bruit de la carte, mesuré par ses propres contradictions.
+
+L'erreur du métamodèle (10,3 j) est donc **du même ordre que l'incohérence interne des
+données sur lesquelles il est jugé** (6,8 j). Le modèle souple ne fait pas mieux (9,3 j), ce
+qui confirme que la limite est dans les données et non dans la forme choisie. **La formule
+n'est ni validée ni réfutée.** Pour trancher il faudrait une carte plus fine : davantage de
+réplications par point, et surtout une grille plus serrée en τ, puisque τ* est obtenu par
+interpolation entre deux niveaux de stockage distants de 5 à 10 jours.
+
+**Un résultat annexe, lui, est net.** Ajouter au métamodèle un terme en nombre de postes ne
+gagne que **0,003 jour** de RMSE. Le métamodèle n'a pas besoin de savoir si le terminal a un
+ou deux quais — confirmation indépendante du plan factoriel, obtenue par un chemin entièrement
+différent.
+
+En l'état, **la carte simulée reste le seul moyen fiable de lire la frontière**. C'est une
+limite honnête du papier, pas un détail à taire : une revue d'ingénierie la trouverait seule.
+
+Reproductible par `python scripts/metamodele_frontiere.py` (instantané : il relit la carte).
+
 ### Ce que cela coûte : ordres de grandeur seulement
 
 `couts.cout_journee_arret_dri` vaut 130 000 USD/jour, fourchette [40 000 ; 230 000], statut

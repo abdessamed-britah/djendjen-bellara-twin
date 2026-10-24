@@ -64,11 +64,17 @@ sur 16 trimestres de bilans publics), les deux capacités de stockage restent `i
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **551 tests**, ~22 à 34 s selon la machine et sa charge (limite
-visée : ~30 s). S'y ajoutent **5 tests marqués `slow`**, exclus de `pytest -q` par `addopts`
-dans `pyproject.toml` et lancés par `pytest -m slow -q` (~6 s) : c'est la validation analytique
-du moteur de file, trop lourde pour la boucle courte mais obligatoire avant tout commit qui
-touche à `corridor.sim`. La CI lance les deux, dans deux étapes séparées. Les cinq
+`ruff check .` et `pytest -q` passent : **582 tests, ~48 s mesurés**. S'y ajoutent **7 tests
+marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
+`pytest -m slow -q` (~18 s) : la validation analytique du moteur de file et deux validations
+de comportement de `beta_site.py`, trop lourdes pour la boucle courte mais obligatoires avant
+tout commit qui touche à `corridor.sim`. La CI lance les deux, dans deux étapes séparées.
+
+**La limite de ~30 s fixée au début du projet n'est plus tenue** : elle datait d'une suite de
+310 tests, il y en a 582. Rien n'est anormalement lent — aucun test ne dépasse 3 s dans la
+boucle courte, c'est le nombre qui a doublé. Trois leviers si cela gêne : marquer `slow`
+d'autres validations lourdes, ne plus rendre de vraies figures dans les tests (une dizaine de
+secondes à elles seules), ou relever la limite. **Décision à prendre, pas encore prise.** Les cinq
 validations obligatoires de la simulation sont des tests : reproductibilité, conservation de la
 masse, production de référence, attente nulle à arrivées régulières, une année simulée en moins
 de dix secondes (~65 ms mesuré). S'y ajoute une **sixième, analytique** : l'attente simulée doit
@@ -174,6 +180,12 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   [77,2 ; 100,0] et 96,8 % [84,8 ; 100,0]. **86 % de la dispersion annuelle vient de l'aléa
   d'une année, pas de l'incertitude des paramètres** : les deux lignes répondent à des
   questions différentes, dimensionner contre budgéter ;
+- **métamodèle de la frontière** (`scripts/metamodele_frontiere.py`) : la forme guidée par
+  la file τ* ≈ a + b·c_a²/(1−β)^c donne 3,7 + 0,35·c_a²/(1−β)^1,65, avec une erreur de
+  transposition de 10,3 j (colonne de c_a² retirée) contre 9,3 j pour une régression souple à
+  six termes. **Ni validée ni réfutée** : l'erreur est du même ordre que l'incohérence interne
+  de la carte (28 % des paires consécutives reculent là où τ* devrait croître, de 6,8 j en
+  moyenne). Résultat annexe net : ajouter un terme en nombre de postes ne gagne que 0,003 j ;
 - **frontière de service** (`scripts/frontiere_service.py`, phase 2, 60 réplications) : la
   couverture τ requise pour tenir β = 0,95 passe de ≤ 5 jours à arrivées régulières à ~59 jours
   à régime de Poisson, et devient hors d'atteinte (> 60 j) au-delà. β = 0,99 n'est atteignable
@@ -321,6 +333,13 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   corriger `phase_2.facteur_dri` corrige `phase2`, et réviser
   `dispersion_arrivees_observee` corrige `phase2_mesure`. `copy_from` a été ajouté pour ce
   dernier cas : écrire `value: 0.91` aurait figé une estimation qui va bouger.
+- **Avant de conclure qu'un modèle échoue, mesurer le bruit des données qui le jugent.**
+  Le métamodèle de la frontière semblait réfuté (erreur de 10,3 j sur 16 j de dispersion)
+  jusqu'à ce qu'on mesure l'incohérence interne de la carte : τ* doit croître avec c_a², et
+  28 % des paires consécutives reculent, de 6,8 j en moyenne. L'erreur du modèle est donc du
+  même ordre que l'imprécision de sa cible, et la bonne conclusion est « on ne peut pas
+  trancher », pas « la formule est fausse ». Ce diagnostic ne coûte rien et ne suppose rien :
+  il n'utilise qu'une monotonie physiquement obligatoire.
 - **Le chiffre appliqué est une distribution, jamais un point.** `beta_site.py` tire c_a²
   dans son échantillon bootstrap et chaque capacité de stockage dans sa propre fourchette
   (indépendamment : tirer le total ferait descendre la part du port sous son minimum
@@ -417,7 +436,13 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
     du temps : à 4 ans le biais d'horizon fini passe de −1,4 % à −1,8 % et le test se
     rapproche de son seuil d'échec pour rien.
 
-16. **La frontière de service est tracée sur des moyennes.** β a une demi-largeur d'IC de
+16. **Aucune formule ne remplace encore la carte de frontière.** Le métamodèle n'est ni
+    validé ni réfuté : son erreur de transposition (10,3 j) est du même ordre que le bruit de
+    la carte qui le juge (6,8 j de recul moyen là où τ* devrait croître, sur 28 % des paires).
+    Pour trancher il faudrait une grille plus serrée en τ — τ* est obtenu par interpolation
+    entre deux niveaux distants de 5 à 10 jours — et davantage de réplications par point.
+    En attendant, lire la frontière demande de rejouer `frontiere_service.py`.
+17. **La frontière de service est tracée sur des moyennes.** β a une demi-largeur d'IC de
     ±0,01 à ±0,03 selon les cases, la grille fait 7 × 9 points interpolés linéairement, et les
     contours sont tirés des moyennes sans lissage : la position exacte d'une courbe vaut à
     quelques jours de couverture près. Ne pas lire « 27,8 jours » comme une spécification. Et
@@ -434,7 +459,7 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
    les workflows planifiés d'un dépôt inactif depuis 60 jours : les réactiver si besoin),
    puis `python -m corridor.ingest.port_status` en local pour tester la source.
 4. `pip install -e ".[dev]"` puis `ruff check . && pytest -q && pytest -m slow -q` avant de
-   toucher quoi que ce soit.
+   toucher quoi que ce soit (~48 s et ~18 s).
 
 ## Commandes
 
@@ -465,6 +490,7 @@ python scripts/poste_stockage_factoriel.py    # plan 2x2 poste x stockage, 200 r
 python scripts/frontiere_service.py --reps 60 # frontière de service (c_a² x τ) : ~25 min
 python scripts/cout_regularite.py             # H4 : lisser l'affrètement ou stocker ?
 python scripts/beta_site.py --tirages 500     # chiffre appliqué : distribution de β (~8 min)
+python scripts/metamodele_frontiere.py        # formule contre carte : verdict et erreurs
 python scripts/frontiere_service.py --from-parquet data/sim/frontiere_service.parquet
                                               # retrace la figure sans resimuler
 python -m corridor.sim.sensitivity --reps 5   # version rapide
@@ -473,8 +499,8 @@ python scripts/economic_summary.py --reps 30  # coût annuel de la perte, avec f
 ```
 
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de
-`docs/` : `sensibilite_dri.png`, `h2_blocage.png`, `frontiere_service.png` et
-`cout_regularite.png`.
+`docs/` : `sensibilite_dri.png`, `h2_blocage.png`, `frontiere_service.png`,
+`cout_regularite.png` et `metamodele_frontiere.png`.
 
 ## Structure du dépôt
 
@@ -494,7 +520,7 @@ scripts/hooks/pre-commit lance `pytest -m slow -q` si src/corridor/sim/ est touc
 scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          economic_summary, compare_scenarios, h2_blocking,
                          poste_stockage_factoriel, frontiere_service, cout_regularite,
-                         beta_site, inspect_latest, fetch_raw
+                         beta_site, metamodele_frontiere, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
 data/raw/port_stats/     bilans de trafic 2022-2025 : pages HTML versionnées (ce sont elles
                          qui portent les tableaux lus), PDF joints git-ignorés (~10 Mo),
