@@ -27,10 +27,12 @@ line-length = 100
 src = ["src", "tests"]
 
 [tool.pytest.ini_options]
-# `pytest -q` reste la commande de tous les jours et doit tenir sous ~30 s : les tests
-# marqués `slow` en sont donc exclus par défaut. Ils ne sont pas optionnels pour autant —
-# la CI les lance dans une étape dédiée (`pytest -m slow`), et il faut les lancer en local
-# avant tout commit qui touche à `corridor.sim`.
+# `pytest -q` reste la commande de tous les jours et doit tenir sous **45 s** (limite fixée
+# dans CLAUDE.md, qui porte aussi sa règle de révision). Les tests marqués `slow` en sont
+# exclus par défaut : validations lourdes et rendus de figures. Ils ne sont pas optionnels —
+# la CI les lance dans une étape dédiée (`pytest -m slow`), le hook de pré-commit les lance
+# dès que `src/corridor/sim/` est touché, et il faut les lancer en local avant tout commit
+# qui touche à `corridor.sim`.
 addopts = '-m "not slow"'
 markers = [
   "slow: validation lourde ou rendu de figure, exclu de `pytest -q` ; lancer avec `pytest -m slow`",
