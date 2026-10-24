@@ -159,6 +159,7 @@ def test_les_tableaux_s_affichent_sans_lever(capsys):
     assert "cohérence interne" in sortie
 
 
+@pytest.mark.slow
 def test_la_figure_est_un_png_non_vide(tmp_path):
     lignes = h2.h2_rows(
         [_case(d, kt, 100.0 * d, 500.0, 20.0)
@@ -171,6 +172,7 @@ def test_la_figure_est_un_png_non_vide(tmp_path):
     assert chemin.stat().st_size > 10_000
 
 
+@pytest.mark.slow
 def test_la_figure_tolere_une_case_sans_prediction(tmp_path):
     """Une case saturée n'a pas de rapport : elle doit être sautée, pas faire tomber le tracé."""
     lignes = h2.h2_rows(
@@ -188,3 +190,57 @@ def test_service_d_un_scenario_est_coherent():
     assert 0.0 < service["rho"] < 1.0
     assert service["cs2"] > 0.0
     assert service["rho"] == pytest.approx(service["lam"] * service["es"])
+
+
+# --- données de la figure (la boucle courte ne rend aucune image) -----------
+
+
+def _lignes_figure():
+    return h2.h2_rows(
+        [_case(d, kt, 120.0 * d, 500.0, 20.0)
+         for d in (0.0, 0.5, 1.0) for kt in (200, 550, 900)],
+        {"s": _service()},
+    )
+
+
+def test_les_series_de_la_figure_sont_triees_par_stockage():
+    """La figure relie les points : un tri absent dessinerait des zigzags inexistants."""
+    series = h2.donnees_figure(_lignes_figure())
+    assert series
+    for points in series.values():
+        assert [kt for kt, _ in points] == sorted(kt for kt, _ in points)
+
+
+def test_la_dispersion_nulle_est_absente_des_series():
+    """À dispersion nulle l'attente est nulle : le rapport n'a pas de sens, la figure le dit."""
+    series = h2.donnees_figure(_lignes_figure())
+    assert all(dispersion > 0 for _, _, dispersion in series)
+
+
+def test_les_deux_variantes_ont_chacune_leurs_series():
+    series = h2.donnees_figure(_lignes_figure())
+    cles = {cle for cle, _, _ in series}
+    assert cles == {"ratio_rho", "ratio_eff"}
+
+
+def test_une_case_sans_rapport_exploitable_est_ecartee_des_series():
+    """Case saturée : ρ_eff ≥ 1, pas de prédiction, donc pas de point à tracer."""
+    lignes = h2.h2_rows(
+        [_case(1.0, 200, 900.0, 8000.0, 10.0), _case(1.0, 900, 60.0, 100.0, 20.0)],
+        {"s": _service(lam=0.002, es=140.0)},
+    )
+    assert any(x["ratio_eff"] is None for x in lignes)
+    series = h2.donnees_figure(lignes)
+    points_eff = series.get(("ratio_eff", "s", 1.0), [])
+    assert len(points_eff) == 1  # la case saturée n'y est pas
+
+
+def test_les_series_ne_contiennent_que_des_rapports_tracables():
+    """Le tracé est logarithmique : un rapport nul, négatif ou infini le ferait échouer."""
+    for points in h2.donnees_figure(_lignes_figure()).values():
+        assert all(ratio > 0 and math.isfinite(ratio) for _, ratio in points)
+
+
+def test_une_serie_vide_ne_cree_pas_de_cle():
+    """Mieux vaut une clé absente qu'une courbe vide, qui polluerait la légende."""
+    assert h2.donnees_figure([]) == {}

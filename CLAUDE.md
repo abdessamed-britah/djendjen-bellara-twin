@@ -64,17 +64,22 @@ sur 16 trimestres de bilans publics), les deux capacités de stockage restent `i
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **582 tests, ~48 s mesurés**. S'y ajoutent **7 tests
+`ruff check .` et `pytest -q` passent : **597 tests, ~33 s mesurés**. S'y ajoutent **15 tests
 marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
-`pytest -m slow -q` (~18 s) : la validation analytique du moteur de file et deux validations
-de comportement de `beta_site.py`, trop lourdes pour la boucle courte mais obligatoires avant
-tout commit qui touche à `corridor.sim`. La CI lance les deux, dans deux étapes séparées.
+`pytest -m slow -q` (~25 s) : la validation analytique du moteur de file, deux validations de
+comportement de `beta_site.py`, et **tous les rendus de figures**. Obligatoires avant tout
+commit qui touche à `corridor.sim` ; la CI lance les deux suites, dans deux étapes séparées.
 
-**La limite de ~30 s fixée au début du projet n'est plus tenue** : elle datait d'une suite de
-310 tests, il y en a 582. Rien n'est anormalement lent — aucun test ne dépasse 3 s dans la
-boucle courte, c'est le nombre qui a doublé. Trois leviers si cela gêne : marquer `slow`
-d'autres validations lourdes, ne plus rendre de vraies figures dans les tests (une dizaine de
-secondes à elles seules), ou relever la limite. **Décision à prendre, pas encore prise.** Les cinq
+**La limite de la boucle courte est de 45 s.** Elle remplace les ~30 s fixés quand la suite
+comptait 310 tests. **Règle de révision : elle se renégocie quand le nombre de tests double**
+(donc vers 1 200 tests), pas avant — autrement elle dérive à chaque ajout et ne contraint
+plus rien.
+
+**La boucle courte ne rend aucune vraie figure.** Un rendu matplotlib coûte une à deux
+secondes et ne vérifie qu'une chose : que la bibliothèque sait tracer. Ce qui mérite un test
+rapide, ce sont les **données** qui alimentent la figure — d'où une fonction `donnees_figure`
+séparée du tracé dans `frontiere_service`, `h2_blocking` et `metamodele_frontiere`. Le rendu
+lui-même est joué en `slow`, où il sert de test de non-régression du tracé. Les cinq
 validations obligatoires de la simulation sont des tests : reproductibilité, conservation de la
 masse, production de référence, attente nulle à arrivées régulières, une année simulée en moins
 de dix secondes (~65 ms mesuré). S'y ajoute une **sixième, analytique** : l'attente simulée doit
@@ -459,7 +464,7 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
    les workflows planifiés d'un dépôt inactif depuis 60 jours : les réactiver si besoin),
    puis `python -m corridor.ingest.port_status` en local pour tester la source.
 4. `pip install -e ".[dev]"` puis `ruff check . && pytest -q && pytest -m slow -q` avant de
-   toucher quoi que ce soit (~48 s et ~18 s).
+   toucher quoi que ce soit (~33 s et ~25 s).
 
 ## Commandes
 
@@ -540,6 +545,9 @@ tests/                   pytest, fixtures PDF réelles
   plus dès que le commit touche à `corridor.sim`.
 - **Tout résultat publié dans le README porte une étiquette** disant lequel des trois critères
   CIE il sert (originalité, généralité, importance). Voir « Objectif permanent » en tête.
+- **Un test qui rend une vraie figure est marqué `slow`.** La boucle courte teste les données
+  qui alimentent la figure (`donnees_figure`), jamais le tracé. Un test qui vérifie qu'une
+  fonction de tracé *lève* avant de tracer peut rester rapide : il ne rend rien.
 - Tests hors ligne : aucun appel réseau, on utilise les PDF réels de `tests/fixtures/`.
 - Fichiers bruts **jamais modifiés** : tout est recalculable depuis `data/raw/`.
 - **Aucune valeur numérique du domaine dans le code** : tout vient de `assumptions.yaml`, et les

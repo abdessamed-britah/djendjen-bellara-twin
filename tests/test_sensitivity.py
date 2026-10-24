@@ -7,6 +7,7 @@ mécanique — bornes de la fourchette, répartition du stockage, forme de la ma
 """
 
 import dataclasses
+import math
 
 import pyarrow.parquet as pq
 import pytest
@@ -232,6 +233,7 @@ def test_la_matrice_refuse_un_scenario_absent(points):
         sx.loss_matrix(points, "phase2")
 
 
+@pytest.mark.slow
 def test_la_figure_est_un_png_non_vide(points, tmp_path):
     chemin = sx.write_heatmaps(points, path=tmp_path / "figure.png")
     assert chemin.exists()
@@ -240,6 +242,7 @@ def test_la_figure_est_un_png_non_vide(points, tmp_path):
 
 
 def test_la_figure_exige_au_moins_un_point(tmp_path):
+    """Reste dans la boucle courte : la fonction lève avant de tracer quoi que ce soit."""
     with pytest.raises(ValueError, match="aucun point"):
         sx.write_heatmaps([], path=tmp_path / "vide.png")
 
@@ -247,6 +250,7 @@ def test_la_figure_exige_au_moins_un_point(tmp_path):
 # --- ligne de commande -----------------------------------------------------
 
 
+@pytest.mark.slow
 def test_main_ecrit_la_table_et_la_figure(tmp_path, capsys):
     figure = tmp_path / "sensibilite.png"
     code = sx.main(
@@ -308,3 +312,28 @@ def test_le_stock_flottant_est_dans_la_table(points):
     table = sx.to_table(points)
     assert "waiting_tonnage_mean_t_mean" in table.column_names
     assert "waiting_tonnage_mean_t_ci95_high" in table.column_names
+
+
+# --- données de la figure (la boucle courte ne rend aucune image) -----------
+
+
+def test_les_matrices_de_la_figure_ont_les_memes_dimensions_que_la_palete(points):
+    """La figure superpose la matrice des pertes et celle des cases pâles : même forme."""
+    dispersions, totals, pertes = sx.loss_matrix(points, "baseline")
+    nettes = sx.distinct_from_neighbours(points, "baseline")
+    assert len(pertes) == len(totals) == len(nettes)
+    assert all(len(ligne) == len(dispersions) for ligne in pertes)
+    assert all(len(ligne) == len(dispersions) for ligne in nettes)
+
+
+def test_les_axes_de_la_figure_sont_tries(points):
+    """Une case lue au mauvais endroit retournerait la carte sans rien casser."""
+    dispersions, totals, _ = sx.loss_matrix(points, "baseline")
+    assert dispersions == sorted(dispersions)
+    assert totals == sorted(totals)
+
+
+def test_la_matrice_des_pertes_est_finie(points):
+    """L'échelle de couleur se calcule sur ces valeurs : un nan la ferait disparaître."""
+    _, _, pertes = sx.loss_matrix(points, "baseline")
+    assert all(math.isfinite(v) for ligne in pertes for v in ligne)

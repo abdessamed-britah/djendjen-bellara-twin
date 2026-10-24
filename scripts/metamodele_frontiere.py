@@ -386,22 +386,44 @@ def verdict(dispersion, moy_s, moy_f, err_s_alea, err_f_alea, bruit) -> None:
     print("  L'écart entre les deux validations mesure ce que coûte l'extrapolation.")
 
 
+def donnees_figure(points, structurel, souple) -> dict:
+    """Les séries que la figure trace : observés, prédits et résidus, par modèle.
+
+    Le tracé n'a plus qu'à les poser sur deux axes. Séparer les deux permet de vérifier
+    dans la boucle courte que la figure dit la vérité — notamment que les résidus sont bien
+    « prédit − observé » et non l'inverse, une erreur de signe qu'une image ne trahit pas.
+    """
+    observes = [p["tau"] for p in points]
+    series = {}
+    for nom, predire, modele in (
+        ("structurel", predire_structurel, structurel),
+        ("souple", predire_souple, souple),
+    ):
+        predits = [predire(modele, p) for p in points]
+        series[nom] = {
+            "observes": observes,
+            "predits": predits,
+            "residus": [pr - ob for pr, ob in zip(predits, observes, strict=True)],
+            "c_a2": [p["c_a2"] for p in points],
+        }
+    return series
+
+
 def write_figure(points, structurel, souple, path=DEFAULT_FIGURE) -> Path:
     """Prédit contre observé, et résidus par c_a² : où la formule se trompe, et comment."""
     figure, (gauche, droite) = plt.subplots(1, 2, figsize=(13.0, 6.0),
                                             constrained_layout=True)
     observes = [p["tau"] for p in points]
-    for predire, modele, couleur, libelle in (
-        (predire_structurel, structurel, COULEUR_STRUCTUREL,
-         "structurel : a + b·c_a²/(1−β)^c"),
-        (predire_souple, souple, COULEUR_SOUPLE, "souple : 6 termes"),
+    series = donnees_figure(points, structurel, souple)
+    for nom, couleur, libelle in (
+        ("structurel", COULEUR_STRUCTUREL, "structurel : a + b·c_a²/(1−β)^c"),
+        ("souple", COULEUR_SOUPLE, "souple : 6 termes"),
     ):
-        predits = [predire(modele, p) for p in points]
-        gauche.scatter(observes, predits, s=28, color=couleur, alpha=0.75,
-                       label=libelle, zorder=3)
-        droite.scatter([p["c_a2"] for p in points],
-                       [pr - ob for pr, ob in zip(predits, observes, strict=True)],
-                       s=28, color=couleur, alpha=0.75, zorder=3)
+        serie = series[nom]
+        gauche.scatter(serie["observes"], serie["predits"], s=28, color=couleur,
+                       alpha=0.75, label=libelle, zorder=3)
+        droite.scatter(serie["c_a2"], serie["residus"], s=28, color=couleur,
+                       alpha=0.75, zorder=3)
     borne = max(observes) * 1.05
     gauche.plot([0, borne], [0, borne], color="0.35", linestyle="--", linewidth=1.2, zorder=2)
     gauche.set_xlabel("τ* lu sur la carte simulée (jours)")

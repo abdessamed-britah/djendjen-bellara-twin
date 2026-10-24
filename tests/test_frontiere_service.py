@@ -189,6 +189,7 @@ def test_le_tableau_s_affiche_sans_lever(base, capsys):
     assert "Couverture τ requise" in sortie
 
 
+@pytest.mark.slow
 def test_la_figure_est_un_png_non_vide(base, tmp_path):
     chemin = fs.write_figure(
         _grilles_factices(), base, RAW, "phase2", 30, tmp_path / "frontiere.png"
@@ -198,6 +199,7 @@ def test_la_figure_est_un_png_non_vide(base, tmp_path):
     assert chemin.stat().st_size > 10_000
 
 
+@pytest.mark.slow
 def test_la_figure_se_trace_meme_sans_contour_atteignable(base, tmp_path):
     """Si un niveau n'est atteint nulle part, la figure doit le dire, pas échouer."""
     plate = {
@@ -232,3 +234,46 @@ def test_une_teinte_par_poste_et_un_style_par_niveau():
     assert len(set(fs.COULEURS.values())) == len(fs.POSTES)
     assert set(fs.STYLES) == set(fs.LEVELS)
     assert len(set(fs.STYLES.values())) == len(fs.LEVELS)
+
+
+# --- données de la figure (la boucle courte ne rend aucune image) -----------
+
+
+def test_les_courbes_disponibles_se_deduisent_des_donnees():
+    """La note « courbe absente » doit se vérifier sans appeler matplotlib."""
+    seuils = {c_a2: 8.0 + 25.0 * c_a2 for c_a2 in fs.C_A2_VALUES}
+    atteignable = _carte_monotone(seuils)
+    assert fs.courbes_disponibles({1: atteignable}, levels=(0.95,)) == {(1, 0.95)}
+
+
+def test_un_niveau_jamais_atteint_n_est_pas_disponible():
+    plate = _cases({(c, t): 0.80 for c in fs.C_A2_VALUES for t in fs.TAU_DAYS})
+    assert fs.courbes_disponibles({1: plate}, levels=(0.95, 0.99)) == set()
+
+
+def test_les_donnees_de_figure_portent_les_matrices_et_les_deux_bandes(base):
+    donnees = fs.donnees_figure(_grilles_factices(), RAW, base)
+    assert set(donnees["matrices"]) == set(fs.POSTES)
+    for valeurs in donnees["matrices"].values():
+        assert len(valeurs) == len(fs.TAU_DAYS)
+        assert len(valeurs[0]) == len(fs.C_A2_VALUES)
+    bas, centre, haut = donnees["bande_tau"]
+    assert bas < centre < haut
+    assert donnees["bande_c_a2"] is not None
+
+
+def test_les_donnees_de_figure_listent_les_courbes_manquantes(base):
+    """Une carte plate n'atteint aucun niveau : les quatre courbes doivent manquer."""
+    plate = {
+        postes: _cases({(c, t): 0.80 for c in fs.C_A2_VALUES for t in fs.TAU_DAYS})
+        for postes in fs.POSTES
+    }
+    donnees = fs.donnees_figure(plate, RAW, base)
+    assert donnees["courbes_disponibles"] == set()
+    assert len(donnees["courbes_manquantes"]) == len(fs.POSTES) * len(fs.LEVELS)
+
+
+def test_disponibles_et_manquantes_sont_complementaires(base):
+    donnees = fs.donnees_figure(_grilles_factices(), RAW, base)
+    total = len(donnees["courbes_disponibles"]) + len(donnees["courbes_manquantes"])
+    assert total == len(fs.POSTES) * len(fs.LEVELS)

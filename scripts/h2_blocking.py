@@ -56,6 +56,11 @@ from corridor.sim.samplers import Samplers
 from corridor.sim.sensitivity import DISPERSIONS, SCENARIOS, run_grid
 
 DEFAULT_FIGURE = Path("docs/h2_blocage.png")
+#: Les deux variantes comparées : clé de la colonne de rapport, et titre de son panneau.
+VARIANTES = (
+    ("ratio_rho", "Kingman avec ρ = λ·E[S]\n(service = déchargement seul)"),
+    ("ratio_eff", "Kingman avec ρ_eff = λ·(E[S] + B/N)\n(service = occupation du quai)"),
+)
 MOMENT_DRAWS = 200_000
 MOMENT_SEED = 0
 
@@ -268,6 +273,31 @@ def print_verdict(v) -> None:
           "accord\nest une cohérence interne, pas une validation indépendante du mécanisme.")
 
 
+def donnees_figure(lignes) -> dict:
+    """Les séries que la figure trace, sans la tracer : une courbe par (scénario, variante,
+    dispersion), chacune triée par capacité de stockage.
+
+    Les cases sans rapport exploitable — niveau saturé, prédiction nulle ou infinie — sont
+    écartées ici plutôt que dans le tracé : c'est une décision sur les données, et elle doit
+    pouvoir se vérifier sans rendre d'image.
+    """
+    series = {}
+    for cle, _ in VARIANTES:
+        for scenario in sorted({x["scenario"] for x in lignes}):
+            for dispersion in sorted({x["dispersion"] for x in lignes if x["dispersion"] > 0}):
+                points = sorted(
+                    (x for x in lignes
+                     if x["scenario"] == scenario and x["dispersion"] == dispersion
+                     and x[cle] is not None and math.isfinite(x[cle]) and x[cle] > 0),
+                    key=lambda r: r["storage_kt"],
+                )
+                if points:
+                    series[(cle, scenario, dispersion)] = [
+                        (p["storage_kt"], p[cle]) for p in points
+                    ]
+    return series
+
+
 def write_figure(lignes, path=DEFAULT_FIGURE) -> Path:
     """Quatre panneaux : rapport simulé/prédit contre stockage, par scénario et par variante.
 
@@ -287,10 +317,8 @@ def write_figure(lignes, path=DEFAULT_FIGURE) -> Path:
         d: rampe(0.35 + 0.6 * i / max(len(dispersions) - 1, 1))
         for i, d in enumerate(dispersions)
     }
-    variantes = (
-        ("ratio_rho", "Kingman avec ρ = λ·E[S]\n(service = déchargement seul)"),
-        ("ratio_eff", "Kingman avec ρ_eff = λ·(E[S] + B/N)\n(service = occupation du quai)"),
-    )
+    variantes = VARIANTES
+    series = donnees_figure(lignes)
 
     figure, axes = plt.subplots(
         len(variantes), len(scenarios), figsize=(6.6 * len(scenarios), 9.0),
@@ -301,16 +329,11 @@ def write_figure(lignes, path=DEFAULT_FIGURE) -> Path:
             ax = axes[i][j]
             ax.axhline(1.0, color="0.35", linestyle="--", linewidth=1.2, zorder=1)
             for d in dispersions:
-                points = sorted(
-                    (x for x in lignes
-                     if x["scenario"] == scenario and x["dispersion"] == d
-                     and x[cle] is not None and math.isfinite(x[cle]) and x[cle] > 0),
-                    key=lambda r: r["storage_kt"],
-                )
+                points = series.get((cle, scenario, d))
                 if not points:
                     continue
                 ax.plot(
-                    [p["storage_kt"] for p in points], [p[cle] for p in points],
+                    [kt for kt, _ in points], [ratio for _, ratio in points],
                     marker="o", markersize=5.5, linewidth=2.0,
                     color=couleurs[d], label=f"dispersion {d:.2f}", zorder=3,
                 )

@@ -170,6 +170,41 @@ def from_table(table: pa.Table):
     return grilles
 
 
+def courbes_disponibles(grilles, levels=LEVELS) -> set[tuple[int, float]]:
+    """Les couples (postes, niveau) pour lesquels une frontière existe dans le domaine.
+
+    Déduit des données — un niveau est traçable dès qu'au moins un c_a² l'atteint — et non
+    du résultat de `contour`. Deux raisons : la note « courbe absente » de la figure doit
+    pouvoir se vérifier sans rendre d'image, et une information tirée des données vaut
+    mieux qu'une information tirée de la bibliothèque de tracé.
+    """
+    disponibles = set()
+    for postes, grille in grilles.items():
+        for level in levels:
+            if any(tau is not None for tau in couverture_requise(grille, level).values()):
+                disponibles.add((postes, level))
+    return disponibles
+
+
+def donnees_figure(grilles, raw, base: SimConfig, levels=LEVELS) -> dict:
+    """Tout ce que la figure trace, sans tracer : matrices, bandes, courbes manquantes.
+
+    Sépare le calcul du rendu. La boucle courte des tests vérifie ce dictionnaire ; le
+    rendu lui-même, lent et sans logique propre, est joué à part (`pytest -m slow`).
+    """
+    disponibles = courbes_disponibles(grilles, levels)
+    return {
+        "matrices": {postes: matrice(cases) for postes, cases in grilles.items()},
+        "bande_tau": bande_du_site(base, raw),
+        "bande_c_a2": bande_c_a2(raw),
+        "courbes_disponibles": disponibles,
+        "courbes_manquantes": sorted(
+            (postes, level) for postes in grilles for level in levels
+            if (postes, level) not in disponibles
+        ),
+    }
+
+
 def matrice(cases) -> list[list[float]]:
     """β en matrice [τ][c_a²], dans l'ordre des deux axes : ce qu'attend `contour`."""
     return [[cases[(c_a2, tau)].mean for c_a2 in C_A2_VALUES] for tau in TAU_DAYS]
@@ -306,17 +341,15 @@ def write_figure(grilles, base: SimConfig, raw, scenario: str, reps: int,
                 transform=ax.get_xaxis_transform(), va="top", ha="left",
                 fontsize=8.5, color="#8a4f10")
 
-    traces = []
+    donnees = donnees_figure(grilles, raw, base)
     for postes in POSTES:
-        valeurs = matrice(grilles[postes])
+        valeurs = donnees["matrices"][postes]
         for level in LEVELS:
-            contour = ax.contour(
+            ax.contour(
                 C_A2_VALUES, TAU_DAYS, valeurs, levels=[level],
                 colors=[COULEURS[postes]], linestyles=[STYLES[level]], linewidths=2.2,
                 zorder=3,
             )
-            if any(len(c) for c in contour.allsegs):
-                traces.append((postes, level))
 
     for postes in POSTES:
         ax.plot([], [], color=COULEURS[postes], linewidth=2.2,
@@ -353,7 +386,7 @@ def write_figure(grilles, base: SimConfig, raw, scenario: str, reps: int,
     ax.grid(True, color="0.90", linewidth=0.8, zorder=0)
     ax.set_axisbelow(True)
 
-    manquants = [(p, n) for p in POSTES for n in LEVELS if (p, n) not in traces]
+    manquants = donnees["courbes_manquantes"]
     lignes = [
         f"Frontière de service du corridor — scénario {scenario}",
         "Au-dessus d'une courbe, le taux de service est atteint : pour une irrégularité",

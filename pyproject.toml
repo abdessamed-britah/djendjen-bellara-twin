@@ -33,5 +33,5 @@ src = ["src", "tests"]
 # avant tout commit qui touche à `corridor.sim`.
 addopts = '-m "not slow"'
 markers = [
-  "slow: validation lourde, exclue de `pytest -q` ; lancer avec `pytest -m slow`",
+  "slow: validation lourde ou rendu de figure, exclu de `pytest -q` ; lancer avec `pytest -m slow`",
 ]

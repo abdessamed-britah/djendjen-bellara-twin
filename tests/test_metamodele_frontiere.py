@@ -274,6 +274,7 @@ def test_le_rapport_s_affiche_sans_lever(capsys):
     assert "Validation 2" in sortie
 
 
+@pytest.mark.slow
 def test_la_figure_est_un_png_non_vide(tmp_path):
     points = _serie_exacte()
     chemin = mm.write_figure(points, mm.fit_structurel(points), mm.fit_souple(points),
@@ -309,3 +310,43 @@ def test_random_est_bien_utilise_de_maniere_deterministe():
     random.seed(999)
     b = mm.partage_aleatoire(_serie_exacte(), seed=9)[1]
     assert [p["tau"] for p in a] == [p["tau"] for p in b]
+
+
+# --- données de la figure (la boucle courte ne rend aucune image) -----------
+
+
+def test_le_residu_est_bien_predit_moins_observe():
+    """Erreur de signe invisible sur une image : un modèle qui surestime doit donner > 0."""
+    points = [_point(0.5, 0.95, 10.0)]
+    surestime = {"a": 15.0, "b": 0.0, "c": 1.0}
+    souple = mm.fit_souple(_serie_exacte())
+    series = mm.donnees_figure(points, surestime, souple)
+    assert series["structurel"]["residus"][0] == pytest.approx(5.0)
+
+
+def test_les_series_de_la_figure_ont_la_meme_longueur_que_les_points():
+    points = _serie_exacte()
+    series = mm.donnees_figure(points, mm.fit_structurel(points), mm.fit_souple(points))
+    for serie in series.values():
+        for colonne in ("observes", "predits", "residus", "c_a2"):
+            assert len(serie[colonne]) == len(points)
+
+
+def test_les_deux_modeles_apparaissent_dans_les_series():
+    points = _serie_exacte()
+    series = mm.donnees_figure(points, mm.fit_structurel(points), mm.fit_souple(points))
+    assert set(series) == {"structurel", "souple"}
+
+
+def test_les_observes_sont_identiques_entre_les_deux_modeles():
+    """Ils partagent l'axe des abscisses du panneau de gauche : une divergence serait un bug."""
+    points = _serie_exacte()
+    series = mm.donnees_figure(points, mm.fit_structurel(points), mm.fit_souple(points))
+    assert series["structurel"]["observes"] == series["souple"]["observes"]
+
+
+def test_les_residus_sont_quasi_nuls_sur_la_forme_exacte():
+    """Sur des points engendrés par la formule, le modèle structurel ne doit pas dévier."""
+    points = _serie_exacte()
+    series = mm.donnees_figure(points, mm.fit_structurel(points), mm.fit_souple(points))
+    assert max(abs(r) for r in series["structurel"]["residus"]) < 0.01

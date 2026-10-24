@@ -174,6 +174,7 @@ def test_les_tableaux_s_affichent_sans_lever(capsys):
     assert "minimum" in sortie
 
 
+@pytest.mark.slow
 def test_la_figure_est_un_png_non_vide(tmp_path):
     lignes = cr.couts_sur_frontiere(FRONTIERE, 1.0, 40.0, 10_000.0, 1000.0, 4000.0)
     resultats = cr.optimum_selon_ratio(FRONTIERE, 1.0, 40.0, 10_000.0, cr.RATIOS)
@@ -181,3 +182,36 @@ def test_la_figure_est_un_png_non_vide(tmp_path):
                              0.95, 1, tmp_path / "cout.png")
     assert chemin.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
     assert chemin.stat().st_size > 10_000
+
+
+# --- données de la figure (la boucle courte ne rend aucune image) -----------
+
+
+def test_le_panneau_de_gauche_a_une_abscisse_triee_et_trois_series():
+    """La figure relie les points : non triés, elle dessinerait des zigzags inexistants."""
+    lignes = cr.couts_sur_frontiere(FRONTIERE, 1.0, 40.0, 10_000.0, 1000.0, 4000.0)
+    assert [x["c_a2"] for x in lignes] == sorted(x["c_a2"] for x in lignes)
+    for serie in ("lissage", "stockage", "total"):
+        assert all(x[serie] >= 0 for x in lignes)
+
+
+def test_le_minimum_annote_appartient_bien_a_la_courbe():
+    """L'annotation pointe une coordonnée : elle doit exister dans les données tracées."""
+    lignes = cr.couts_sur_frontiere(FRONTIERE, 1.0, 40.0, 10_000.0, 1000.0, 4000.0)
+    minimal = cr.minimum(lignes)
+    assert minimal in lignes
+    assert minimal["c_a2"] in [x["c_a2"] for x in lignes]
+
+
+def test_le_panneau_de_droite_est_une_fonction_en_escalier_decroissante():
+    """L'optimum ne peut que se déplacer vers la régularité quand le stockage renchérit."""
+    resultats = cr.optimum_selon_ratio(FRONTIERE, 1.0, 40.0, 10_000.0, cr.RATIOS)
+    ratios = [r for r, _ in resultats]
+    optima = [c for _, c in resultats]
+    assert ratios == sorted(ratios)
+    assert optima == sorted(optima, reverse=True)
+
+
+def test_l_axe_logarithmique_du_panneau_de_droite_est_tracable():
+    """Un rapport nul ou négatif ferait échouer l'échelle logarithmique."""
+    assert all(r > 0 for r in cr.RATIOS)
