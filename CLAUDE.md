@@ -35,7 +35,7 @@ millions d'USD par an, sur une hypothèse de marge étrangère au site (voir REA
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **484 tests**, ~22 à 34 s selon la machine et sa charge (limite
+`ruff check .` et `pytest -q` passent : **505 tests**, ~22 à 34 s selon la machine et sa charge (limite
 visée : ~30 s). S'y ajoutent **5 tests marqués `slow`**, exclus de `pytest -q` par `addopts`
 dans `pyproject.toml` et lancés par `pytest -m slow -q` (~6 s) : c'est la validation analytique
 du moteur de file, trop lourde pour la boucle courte mais obligatoire avant tout commit qui
@@ -265,6 +265,14 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   directement) et τ = (K_P + K_U)/D, la couverture de stock en jours de consommation. Un stock
   en kilotonnes ne se compare pas d'un site à l'autre, une couverture en jours si. Ce qui ne se
   transpose pas est la charge du poste ρ = λ·E[S]/c, d'où une courbe par nombre de postes.
+- **H4 ne publie pas un montant, elle publie un seuil de rapport.** Sur la frontière
+  β = 0,95, lisser l'affrètement et construire du stockage s'échangent. Les deux coûts
+  (`prime_lissage_affretement`, `cout_stockage_annualise`) sont des valeurs de travail sans
+  source, donc le montant du minimum ne veut rien dire. Ce qui en a : seul le **rapport** des
+  deux coûts déplace l'optimum (multiplier les deux par une constante ne change rien), et il
+  ne prend que quatre positions sur cinq ordres de grandeur. Au-delà d'un rapport de ~0,07, le
+  moins cher est de lisser ; les hypothèses centrales donnent 0,080, donc tout juste au-delà.
+  **Ne jamais citer un montant de cette section.**
 - Un scénario n'exprime que ses **écarts**, sous forme `{value: x}` ou `{multiply_by: autre.clé}`.
   Aucun chiffre n'y est recopié : corriger `phase_2.facteur_dri` corrige `phase2`.
 
@@ -396,6 +404,7 @@ python -m corridor.sim.sensitivity            # grille 5×5×2, 30 réplications
 python scripts/h2_blocking.py --reps 30       # hypothèse H2 : blocage du poste (~5 min)
 python scripts/poste_stockage_factoriel.py    # plan 2x2 poste x stockage, 200 rép. (~3 min)
 python scripts/frontiere_service.py --reps 60 # frontière de service (c_a² x τ) : ~25 min
+python scripts/cout_regularite.py             # H4 : lisser l'affrètement ou stocker ?
 python scripts/frontiere_service.py --from-parquet data/sim/frontiere_service.parquet
                                               # retrace la figure sans resimuler
 python -m corridor.sim.sensitivity --reps 5   # version rapide
@@ -404,7 +413,8 @@ python scripts/economic_summary.py --reps 30  # coût annuel de la perte, avec f
 ```
 
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de
-`docs/` : `sensibilite_dri.png`, `h2_blocage.png` et `frontiere_service.png`.
+`docs/` : `sensibilite_dri.png`, `h2_blocage.png`, `frontiere_service.png` et
+`cout_regularite.png`.
 
 ## Structure du dépôt
 
@@ -421,7 +431,7 @@ config/scenarios/        baseline, phase2, phase2_plus_stockage, phase2_plus_pos
                          baseline_sans_blocage (validation analytique, pas un cas physique)
 scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          economic_summary, compare_scenarios, h2_blocking,
-                         poste_stockage_factoriel, frontiere_service,
+                         poste_stockage_factoriel, frontiere_service, cout_regularite,
                          inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
 data/raw/port_stats/     bilans de trafic 2022-2025 : pages HTML versionnées (ce sont elles

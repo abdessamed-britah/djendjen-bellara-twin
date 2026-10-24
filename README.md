@@ -563,6 +563,70 @@ charge du poste ρ = λ·E[S]/c, qui est précisément ce que distinguent les de
 Reproductible par `python scripts/frontiere_service.py --reps 60` (~25 min), ou
 `--from-parquet data/sim/frontiere_service.parquet` pour retracer la figure sans resimuler.
 
+### H4 — lisser l'affrètement ou construire du stockage ? (structure, pas montants)
+
+La frontière β = 0,95 est une courbe d'**indifférence technique** : tous ses points tiennent le
+même taux de service. Ils ne coûtent pas la même chose. Deux leviers s'y échangent — **lisser
+l'affrètement** (obtenir des fenêtres d'arrivée contractuelles, donc baisser c_a²) ou
+**construire du stockage** (tenir la même production avec des arrivées plus erratiques). Il
+existe donc un couple de coût minimal, et c'est ce que cette section cherche.
+
+> **Avertissement, à lire avant les chiffres.** Les deux coûts introduits ici
+> (`couts.prime_lissage_affretement`, `couts.cout_stockage_annualise`) sont des **valeurs de
+> travail sans aucune source**, de statut *estimé*, avec des fourchettes couvrant plus d'un
+> ordre de grandeur. **Aucun montant de cette section ne doit être cité.** Ce qui a du sens,
+> c'est la *structure* de l'arbitrage, et surtout la façon dont la réponse dépend du **rapport**
+> des deux coûts.
+
+![Arbitrage entre lissage de l'affrètement et construction de stockage le long de la frontière](docs/cout_regularite.png)
+
+Coût annuel de chaque point de la frontière (phase 2, 1 poste, β = 0,95), en partant du c_a²
+estimé du site (0,83) :
+
+| c_a² visé | τ requis | Lisser | Stocker | Total |
+| ---: | ---: | ---: | ---: | ---: |
+| 0,00 | 5 j | 1,69 | 0,34 | **2,03** ← minimum |
+| 0,25 | 22,8 j | 1,18 | 1,54 | 2,72 |
+| 0,50 | 27,8 j | 0,67 | 1,88 | 2,55 |
+| 0,75 | 45,8 j | 0,16 | 3,09 | 3,25 |
+| 1,00 | 59,2 j | 0,00 | 4,00 | 4,00 |
+
+(M USD/an, avec les valeurs centrales des deux hypothèses de coût.)
+
+**Le résultat utile est le panneau de droite**, pas ce tableau. Seul compte le rapport
+*(coût d'un kt de capacité pendant un an) ÷ (prime de lissage d'un navire pour un point de
+c_a²)* : multiplier les deux coûts par une même constante ne déplace pas le minimum. En
+balayant ce rapport sur cinq ordres de grandeur, l'optimum ne prend que quatre positions, et
+bascule à des seuils nets :
+
+| Rapport des coûts | ≤ 0,014 | 0,015 – 0,045 | 0,046 – 0,068 | ≥ 0,068 |
+| --- | ---: | ---: | ---: | ---: |
+| c_a² le moins cher | 1,00 | 0,75 | 0,50 | 0,00 |
+
+Autrement dit : **dès que le stockage coûte plus de ~7 % d'une prime de lissage par point et
+par navire, il vaut mieux lisser l'affrètement que construire du silo** — et c'est un seuil
+bas, que les hypothèses centrales dépassent (rapport 0,080). Avec ces valeurs de travail, H4
+conclut donc en faveur du lissage. Un industriel qui connaîtrait ses propres coûts lirait sa
+réponse dans le tableau ci-dessus plutôt que la nôtre, et c'est la seule façon correcte de
+s'en servir.
+
+**Trois choses à ne pas lire de travers.**
+
+- **L'optimum tombe sur le bord gauche du domaine** (c_a² = 0). La carte ne descend pas plus
+  bas et la couverture requise y est bornée par le plancher de la grille (5 jours) : à lire
+  « aussi régulier que possible », pas « exactement zéro ».
+- **La courbe de coût total n'est pas monotone** entre c_a² = 0,25 et 0,50. C'est du bruit de
+  la carte de frontière, pas un creux réel : τ y est lu sur des moyennes de 60 réplications.
+- **Deux hypothèses de forme pèsent autant que les chiffres.** Le coût du lissage est pris
+  *linéaire* en c_a², alors que les derniers points de régularité coûtent sans doute bien plus
+  cher que les premiers — ce qui déplacerait l'optimum vers la droite. Et le coût du stockage
+  est pris *proportionnel* à la capacité, ce qui ignore les économies d'échelle et le fait
+  qu'une extension de stockyard bute souvent sur l'emprise foncière avant de buter sur son
+  coût.
+
+Reproductible par `python scripts/cout_regularite.py` (instantané : il relit la carte de
+frontière déjà calculée).
+
 ### Ce que cela coûte : ordres de grandeur seulement
 
 `couts.cout_journee_arret_dri` vaut 130 000 USD/jour, fourchette [40 000 ; 230 000], statut

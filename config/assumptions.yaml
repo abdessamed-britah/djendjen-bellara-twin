@@ -172,6 +172,39 @@ rail:
     status: estimé
 
 couts:
+  prime_lissage_affretement:
+    value: 50000
+    range: [5000, 300000]
+    unit: USD par navire et par point de c_a² réduit
+    status: estimé
+    note: >
+      **Valeur de travail, sans aucune source.** Ce que coûterait d'obtenir de
+      l'affréteur des fenêtres d'arrivée contractuelles plus serrées : primes de laycan,
+      surcoût d'un contrat d'affrètement à période plutôt qu'au coup par coup, pénalités
+      de réservation de créneau. Exprimée par navire et par **point de c_a²** gagné :
+      ramener c_a² de 0,83 à 0,33 sur 28 navires par an coûterait 0,5 × 28 × la valeur.
+      L'ordre de grandeur est raisonné depuis `taux_surestaries` (30 000 USD/jour pour un
+      Capesize) : 50 000 USD revient à environ 1,7 jour d'affrètement par navire et par
+      point, pour un armateur qui perd de la souplesse de routage. La fourchette couvre
+      deux ordres de grandeur **à dessein** : la seule chose que ce paramètre sert à
+      montrer, c'est **la structure** de l'arbitrage entre lissage et stockage, et surtout
+      comment la position de l'optimum dépend du rapport des deux coûts — pas un montant.
+      La linéarité en c_a² est elle-même une hypothèse de forme : en pratique les derniers
+      points de régularité coûtent sans doute beaucoup plus cher que les premiers.
+  cout_stockage_annualise:
+    value: 4000
+    range: [1000, 20000]
+    unit: USD par kt de capacité et par an
+    status: estimé
+    note: >
+      **Valeur de travail, sans aucune source.** Coût annualisé d'une capacité de stockage
+      de pellets : amortissement du génie civil et des engins de reprise, entretien,
+      surface, assurance. Pour un stockyard à ciel ouvert en vrac, l'ordre de grandeur
+      raisonné est de quelques USD par tonne de capacité et par an, d'où 4 USD/t/an, soit
+      4 000 USD/kt/an. La borne haute couvre le cas d'un stockage couvert ou de silos, qui
+      coûte un ordre de grandeur de plus. Ce coût est supposé **proportionnel à la
+      capacité**, ce qui ignore les économies d'échelle et le fait qu'une extension de
+      stockyard peut buter sur l'emprise foncière disponible bien avant son coût.
   prix_pellets:
     value: 140
     range: [100, 180]
