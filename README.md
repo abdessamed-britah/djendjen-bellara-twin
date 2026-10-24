@@ -50,12 +50,20 @@ interpréteur n'est pas celui que le hook trouve tout seul, indiquez-le par
 
 ## Premiers résultats observés
 
+> **Lecture de ce README.** Ce projet vise un *application paper* dans *Computers & Industrial
+> Engineering*, jugé sur trois critères : **originalité**, **généralité**, **importance**.
+> Chaque section de résultat indique lequel des trois elle sert — et une section qui n'en sert
+> aucun est du travail honnête, mais hors sujet pour l'article.
+
+
 Ce qui suit n'est pas de la simulation : c'est ce que la série de situations portuaires
 collectée du **2026-09-24 au 2026-10-22** (82 collectes, 1 138 observations de navires,
 49 escales reconstruites) dit des minéraliers. Reproductible par
 `python scripts/ore_calls_report.py`.
 
 ### Les quatre escales minerai de la série
+
+*Sert l'**originalité** : une calibration tirée d'une collecte publique, sans accès au site.*
 
 | Navire | Tonnage publié | Arrivée | Accostage | Départ encadré | Séjour à quai | Attente en rade | Cadence apparente |
 | --- | ---: | --- | --- | --- | ---: | ---: | ---: |
@@ -76,6 +84,8 @@ centrales, **24 000 t/jour**, a fait passer
 fourchette [15 000 ; 40 000]) à **observé** (24 000, fourchette [22 900 ; 25 400]).
 
 ### Le poste unique crée bien une file : la relève NIGHTINGALE → NIMBA
+
+*Sert l'**originalité** : un mécanisme de file observé dans une source ouverte, pas postulé.*
 
 C'est la seule file d'attente que la série montre directement, et elle est nette :
 
@@ -143,6 +153,8 @@ modèle :
   les résultats. Aucune observation de la série ne les éclaire.
 
 ### L'irrégularité des arrivées, première estimation sur 16 trimestres
+
+*Sert l'**originalité** : le paramètre dimensionnant est estimé sur des bilans publics, là où la littérature le suppose ou l'obtient par accès interne.*
 
 `simulation.dispersion_arrivees` est le dernier des deux paramètres dimensionnants à n'avoir
 aucune source. La série de situations portuaires n'en donnera pas avant 2027 ; les **bilans de
@@ -224,6 +236,8 @@ Reproductible par `python -m corridor.ingest.port_stats` puis
 
 ### Le corridor absorbe le doublement — si les navires arrivent régulièrement
 
+*Sert l'**importance** : c'est la réponse à la question d'investissement posée.*
+
 50 réplications d'une année, politique d'expédition ferroviaire `pull`.
 
 | Scénario | Arrivées | Production DRI (Mt) | Cible | Perte | Arrêts DRI (h) | Attente en rade (h) | Poste (%) | Rames (%) |
@@ -296,6 +310,8 @@ ni que le poste unique soit le goulot, ni le contraire. **Il a depuis été tran
 
 ### Ce qui limite vraiment : régularité des arrivées × stockage
 
+*Sert l'**importance** et la **généralité** : désigne le levier, et le fait sur deux axes qui ne sont pas propres au site.*
+
 ![Perte de production de DRI selon la régularité des arrivées et la capacité de stockage](docs/sensibilite_dri.png)
 
 Grille de 5 dispersions × 5 capacités totales de stockage × 2 scénarios, 30 réplications par
@@ -325,6 +341,8 @@ Quatre lectures :
   intervalles se recouvrant, cet écart-là demanderait plus de réplications pour être affirmé.
 
 ### Le « stock flottant » en rade n'est pas un tampon : hypothèse réfutée
+
+*Sert la **généralité** : une intuition fausse partout, pas seulement ici — un tampon en amont du goulot n'en est pas un.*
 
 Un minéralier qui attend en rade porte ~140 000 t de minerai déjà achetées, à quelques heures
 du quai. L'hypothèse testée était la suivante : **ce tonnage servirait de tampon flottant que le
@@ -372,6 +390,8 @@ spécifique à l'Algérie.
 
 ### Le moteur de file est juste : validation contre Pollaczek-Khinchine
 
+*Sert l'**originalité** méthodologique : une validation analytique exacte, rarement fournie dans les articles de simulation portuaire.*
+
 Tous les résultats ci-dessus reposent sur une simulation à événements discrets. Avant de leur
 faire confiance, il faut savoir si elle calcule juste. La théorie des files donne un point de
 comparaison **exact** : pour une file M/G/1 — arrivées de Poisson, un serveur, service
@@ -413,6 +433,8 @@ condition d'indépendance du service est précisément violée. Reproductible pa
 `pytest -q tests/test_analytic.py`.
 
 ### Ce qui sature le poste, c'est le stockage plein, pas le déchargement (hypothèse H2)
+
+*Sert la **généralité** : une relecture de l'occupation d'un quai valable pour tout terminal à contre-pression aval.*
 
 La validation ci-dessus ne s'applique qu'avec un stockage infini. Dans les scénarios réalistes,
 l'attente simulée dépasse largement ce que prédit la théorie appliquée naïvement. **H2** propose
@@ -483,6 +505,8 @@ Reproductible par `python scripts/h2_blocking.py --reps 30` (~5 min).
 
 ### Le second poste déplace la file, il ne la supprime pas : un plan factoriel 2 × 2
 
+*Sert l'**importance** : l'investissement intuitif ne paie pas, et c'est démontré, pas supposé.*
+
 H2 prédit que le second poste de déchargement ne devrait payer **que** si le stockage est
 desserré en même temps. C'est une prédiction testable, et il fallait pour cela la case
 manquante : [`phase2_plus_poste_plus_stockage`](config/scenarios/phase2_plus_poste_plus_stockage.yaml),
@@ -536,6 +560,8 @@ repose sur une seule observation, et tout ceci décrit le modèle, pas le port.
 Reproductible par `python scripts/poste_stockage_factoriel.py --reps 200` (~3 min).
 
 ### La frontière de service : deux nombres suffisent à décider du corridor
+
+*Sert la **généralité** : c'est le résultat transposable du papier — un autre site se place sur la même carte.*
 
 Tout ce qui précède tient dans une seule carte, à deux axes **sans dimension** — ce qui permet
 de la transposer à un autre port.
@@ -603,6 +629,8 @@ Reproductible par `python scripts/frontiere_service.py --reps 60` (~25 min), ou
 `--from-parquet data/sim/frontiere_service.parquet` pour retracer la figure sans resimuler.
 
 ### H4 — lisser l'affrètement ou construire du stockage ? (structure, pas montants)
+
+*Sert l'**importance** : un arbitrage d'investissement, réduit à un seuil de rapport de coûts qu'un industriel peut lire avec ses propres chiffres.*
 
 La frontière β = 0,95 est une courbe d'**indifférence technique** : tous ses points tiennent le
 même taux de service. Ils ne coûtent pas la même chose. Deux leviers s'y échangent — **lisser

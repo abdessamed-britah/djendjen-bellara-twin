@@ -1,9 +1,37 @@
 ﻿# CLAUDE.md
 
 Contexte permanent du projet, écrit pour une **reprise après plusieurs semaines sans aucun
-contexte**. Dernière mise à jour : 2026-10-24. Lis-le en entier avant toute tâche : état réel de
+contexte**. Dernière mise à jour : 2026-10-25. Lis-le en entier avant toute tâche : état réel de
 chaque étape, décisions prises et leurs raisons, limites connues, commandes, puis les trois
 prochaines tâches avec des critères de réussite vérifiables.
+
+## Objectif permanent : un article dans *Computers & Industrial Engineering*
+
+Ce projet vise une publication dans **CIE**, en **application paper**. Ce n'est pas un vernis
+ajouté à la fin : c'est le critère qui arbitre ce qu'on construit, ce qu'on garde et ce qu'on
+jette. Un *application paper* de CIE est jugé sur trois choses, et il doit les tenir **toutes
+les trois** :
+
+| Critère | Ce que la revue attend | Où le projet en est |
+| --- | --- | --- |
+| **Originalité** | Un apport qui n'existe pas déjà dans la littérature : donnée nouvelle, méthode nouvelle, ou combinaison nouvelle. Refaire une simulation de terminal portuaire n'est pas original. | Le jumeau est alimenté par une **collecte publique automatisée** (situation portuaire 3×/jour) et une **estimation de l'irrégularité des arrivées tirée de bilans de trafic publics**. C'est là qu'est l'apport : un modèle calibré sans accès interne au site. |
+| **Généralité** | Un résultat transposable, pas une étude de cas qui ne vaut que pour un site. | C'est la raison d'être des **axes sans dimension** (c_a², τ = couverture en jours) et de la **frontière de service**. Tout résultat doit pouvoir s'énoncer pour « un corridor » avant de s'énoncer pour Djen Djen. |
+| **Importance** | Une question qui compte pour quelqu'un : décision d'investissement, dimensionnement, politique publique. | L'arbitrage **lisser l'affrètement contre construire du stockage** (H4), et le fait que le poste de déchargement — l'investissement intuitif — ne soit pas le levier. |
+
+**La règle, à appliquer sans exception.** Chaque résultat publié dans le README doit dire
+**lequel des trois critères il sert**, explicitement. Un résultat qui n'en sert aucun est du
+travail honnête mais hors sujet pour l'article : il reste dans le dépôt, il ne monte pas dans
+le papier. Un résultat qui prétend servir les trois doit le justifier trois fois.
+
+Trois conséquences pratiques :
+
+- **l'honnêteté est un argument de publication, pas un handicap.** Un résultat non concluant
+  clairement établi (le second poste) vaut mieux qu'un résultat positif fragile. Les réserves
+  écrites partout dans ce dépôt sont ce qui rend l'article défendable en relecture ;
+- **un chiffre appliqué doit être une plage**, assortie de sa méthode de propagation
+  d'incertitude. Un point sans intervalle ne passe pas la relecture d'une revue d'ingénierie ;
+- **tout doit être reproductible par un tiers sans accès privilégié** : données publiques,
+  code versionné, figures régénérables par une commande.
 
 **Premier réflexe à la reprise** : `python scripts/health_check.py`. Il dit si la collecte a
 continué de tourner pendant la pause, son taux d'erreur, et combien d'escales exploitables la
@@ -21,9 +49,10 @@ Toute hypothèse doit être explicite et sourcée dans `config/assumptions.yaml`
 **Réponse provisoire** : à arrivées régulières, le corridor absorbe le doublement (production
 DRI à 99,9 % de la cible, 4,011 Mt). Ce qui le limite n'est ni le rail, ni (de façon démontrée)
 le poste de déchargement, mais l'**irrégularité des arrivées combinée à la capacité de
-stockage** — les deux paramètres les moins sourcés du modèle. À arrivées de Poisson, la phase 2
-perd de l'ordre de 12 % de sa production ; en argent, quelques millions à quelques dizaines de
-millions d'USD par an, sur une hypothèse de marge étrangère au site (voir README).
+stockage**. À arrivées de Poisson, la phase 2 perd de l'ordre de 10 % de sa production ; en
+argent, quelques millions à quelques dizaines de millions d'USD par an, sur une hypothèse de
+marge étrangère au site (voir README). L'irrégularité est désormais **estimée** (c_a² = 0,83
+sur 16 trimestres de bilans publics), les deux capacités de stockage restent `inconnu`.
 
 ## État des étapes
 
@@ -462,6 +491,8 @@ tests/                   pytest, fixtures PDF réelles
   l'usage du domaine.
 - `ruff check .` et `pytest -q` doivent passer avant tout commit, et `pytest -m slow -q` en
   plus dès que le commit touche à `corridor.sim`.
+- **Tout résultat publié dans le README porte une étiquette** disant lequel des trois critères
+  CIE il sert (originalité, généralité, importance). Voir « Objectif permanent » en tête.
 - Tests hors ligne : aucun appel réseau, on utilise les PDF réels de `tests/fixtures/`.
 - Fichiers bruts **jamais modifiés** : tout est recalculable depuis `data/raw/`.
 - **Aucune valeur numérique du domaine dans le code** : tout vient de `assumptions.yaml`, et les
@@ -566,3 +597,6 @@ appariées, et l'écart est commenté dans le README ; les nouveaux tests passen
 - Annoncer un résultat chiffré, et *a fortiori* un montant en USD, sans rappeler que la
   dispersion des arrivées, les capacités de stockage et la marge unitaire ne sont pas sourcées.
 - Présenter un résultat non significatif comme une preuve, dans un sens ou dans l'autre.
+- Publier un résultat dans le README sans dire lequel des trois critères CIE il sert.
+- Donner un chiffre appliqué au site sous forme de point : c'est une plage, avec sa méthode
+  de propagation d'incertitude, ou rien.
