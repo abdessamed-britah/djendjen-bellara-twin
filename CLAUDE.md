@@ -1,7 +1,7 @@
 ﻿# CLAUDE.md
 
 Contexte permanent du projet, écrit pour une **reprise après plusieurs semaines sans aucun
-contexte**. Dernière mise à jour : 2026-10-23. Lis-le en entier avant toute tâche : état réel de
+contexte**. Dernière mise à jour : 2026-10-24. Lis-le en entier avant toute tâche : état réel de
 chaque étape, décisions prises et leurs raisons, limites connues, commandes, puis les trois
 prochaines tâches avec des critères de réussite vérifiables.
 
@@ -35,7 +35,7 @@ millions d'USD par an, sur une hypothèse de marge étrangère au site (voir REA
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **415 tests**, ~22 à 34 s selon la machine et sa charge (limite
+`ruff check .` et `pytest -q` passent : **484 tests**, ~22 à 34 s selon la machine et sa charge (limite
 visée : ~30 s). S'y ajoutent **5 tests marqués `slow`**, exclus de `pytest -q` par `addopts`
 dans `pyproject.toml` et lancés par `pytest -m slow -q` (~6 s) : c'est la validation analytique
 du moteur de file, trop lourde pour la boucle courte mais obligatoire avant tout commit qui
@@ -136,6 +136,9 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   +0,90 ± 1,33 point à stockage de base, −0,84 ± 1,32 à stockage haut, aucune interaction
   (−1,75 ± 1,88). Tout le gain vient du stockage (+4,98 ± 1,50). Le poste déplace en revanche
   la file de la rade vers le quai, de façon significative (voir décisions) ;
+- **irrégularité des arrivées, première estimation** : c_a² = 0,83, IC bootstrap
+  [0,21 ; 1,73], sur 16 trimestres de bilans de trafic du port (2022-2025). Soit des arrivées
+  proches du régime de Poisson. Voir limite 5 pour ce que ce chiffre ne vaut pas ;
 - **frontière de service** (`scripts/frontiere_service.py`, phase 2, 60 réplications) : la
   couverture τ requise pour tenir β = 0,95 passe de ≤ 5 jours à arrivées régulières à ~59 jours
   à régime de Poisson, et devient hors d'atteinte (> 60 j) au-delà. β = 0,99 n'est atteignable
@@ -299,11 +302,17 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
 4. **Les deux capacités de stockage sont de statut `inconnu`** et pilotent tout le résultat : de
    200 kt à 900 kt, la perte de production passe de 14,1 % à 5,8 % (baseline, Poisson). Aucune
    conclusion chiffrée sans cette fourchette.
-5. **`dispersion_arrivees` n'est toujours pas mesurée** (statut `estimé`) : second axe de la
-   figure, sans source. La série ne contient que 4 arrivées de minéraliers, donc 2 intervalles
-   (1,6 jour, puis 25,1 jours) : le schéma suggère des arrivées très irrégulières, mais on ne
-   tire pas un coefficient de variation de deux intervalles. Il faut l'estimer sur les escales
-   réelles (tâche 3), ce qui demande d'attendre une dizaine d'arrivées minerai.
+5. **`dispersion_arrivees` a une première estimation, pas une mesure.**
+   `dispersion_arrivees_observee` = 0,91 (c_a² = 0,83, IC bootstrap [0,21 ; 1,73]), obtenue sur
+   16 trimestres de bilans de trafic du port, 2022-2025 (`scripts/arrival_dispersion.py`).
+   Quatre réserves : les variations de consommation de l'aciérie s'y mêlent et poussent à la
+   **surestimation** ; 16 trimestres font une petite série ; la fenêtre trimestrielle lisse les
+   rafales de quelques jours et pousse à la **sous-estimation** ; le nombre de navires est un
+   tonnage divisé par une taille moyenne, pas un comptage. Un seul trimestre (2022 T3, 606 t)
+   fait passer I de 0,83 à 0,45 selon qu'on le garde ou non. La série de situations portuaires
+   ne contient toujours que 4 arrivées minerai : elle ne permettra pas de trancher avant 2027.
+   **`simulation.dispersion_arrivees` reste à 0** : c'est le cas de référence régulier du
+   scénario `baseline`, et le changer transformerait en silence tous les résultats publiés.
 6. **Le coût de la journée d'arrêt vient de marges chinoises** (statut `estimé`) et donne des
    ordres de grandeur seulement. Les chiffres en USD héritent en plus des limites 4 et 5.
 7. Dans la grille de sensibilité, la répartition port/usine suit les proportions des valeurs
@@ -373,6 +382,8 @@ ruff check . && pytest -q                     # doivent passer avant tout commit
 pytest -m slow -q                             # validation analytique (~6 s), exclue de pytest -q
 
 python scripts/health_check.py                # bilan de la collecte et des escales
+python -m corridor.ingest.port_stats          # archive les bilans de trafic 2022-2025 (ponctuel)
+python scripts/arrival_dispersion.py          # c_a² estimé sur 16 trimestres
 python scripts/ore_calls_report.py            # escales minerai : cadences, attentes, intervalles
 python -m corridor.ingest.port_status         # une collecte (PDF local + ligne de manifeste)
 python scripts/inspect_latest.py              # voir le contenu du dernier PDF
@@ -398,18 +409,24 @@ Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures ve
 ## Structure du dépôt
 
 ```
-src/corridor/ingest/     port_status.py (collecte), releases.py (archive GitHub)
-src/corridor/transform/  parse_status.py, observations_csv.py, build_escales.py
+src/corridor/ingest/     port_status.py (collecte 3x/jour), releases.py (archive GitHub),
+                         port_stats.py (bilans de trafic, collecte ponctuelle)
+src/corridor/transform/  parse_status.py, observations_csv.py, build_escales.py,
+                         parse_port_stats.py (tableaux « Marchandises Débarquées »)
 src/corridor/sim/        config.py, samplers.py, model.py, run.py, sensitivity.py, stats.py,
                          analytic.py (files d'attente : le repère hors simulation)
 config/assumptions.yaml  toutes les valeurs numériques du domaine
 config/scenarios/        baseline, phase2, phase2_plus_stockage, phase2_plus_poste,
                          phase2_plus_poste_plus_stockage (plan factoriel 2x2),
                          baseline_sans_blocage (validation analytique, pas un cas physique)
-scripts/                 health_check, ore_calls_report, economic_summary,
-                         compare_scenarios, h2_blocking, poste_stockage_factoriel,
-                         frontiere_service, inspect_latest, fetch_raw
+scripts/                 health_check, ore_calls_report, arrival_dispersion,
+                         economic_summary, compare_scenarios, h2_blocking,
+                         poste_stockage_factoriel, frontiere_service,
+                         inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
+data/raw/port_stats/     bilans de trafic 2022-2025 : pages HTML versionnées (ce sont elles
+                         qui portent les tableaux lus), PDF joints git-ignorés (~10 Mo),
+                         empreintes des deux dans _manifest.csv
 releases raw-AAAA-MM     les PDF bruts eux-mêmes, un asset par collecte
 data/clean/              observations.csv : une ligne par navire et par collecte (versionné)
 data/sim/                sorties Parquet (git-ignoré, recalculable)

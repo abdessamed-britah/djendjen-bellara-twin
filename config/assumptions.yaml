@@ -226,13 +226,47 @@ simulation:
       (cas de référence), 1 = processus de Poisson, au-delà = arrivées groupées.
       Le baseline est volontairement régulier : c'est le cas de référence qui isole
       la capacité du corridor de l'irrégularité de l'affrètement.
-      Reste `estimé` au 2026-10-22 : la série ne contient que 4 arrivées de minéraliers,
-      donc 2 intervalles seulement, ce qui ne permet aucune estimation de dispersion.
-      Le schéma observé va néanmoins dans le sens d'arrivées très irrégulières : deux
-      arrivées à 1,6 jour d'écart (BERGE NIMBA en rade le 17/09, GH NIGHTINGALE à quai
-      le 18/09), puis 25,1 jours sans aucune arrivée minerai (SOMNIUM AUSTRALIS le
-      13/10). À prendre comme une indication, pas comme une mesure : il faut au moins
-      une dizaine d'intervalles (voir tâche 3 du CLAUDE.md).
+      **Cette valeur de 0 est un choix de cas de référence, pas une mesure.** Pour la
+      valeur estimée sur des données réelles, voir `dispersion_arrivees_observee`
+      ci-dessous : 0,91, soit presque le régime de Poisson. Elle n'est pas recopiée ici
+      pour ne pas transformer en silence le scénario `baseline` — qui n'aurait alors plus
+      de cas de référence régulier — et parce que toute la grille de sensibilité ainsi
+      que la frontière de service balaient déjà cet axe.
+      La série de situations portuaires, elle, ne contient que 4 arrivées de minéraliers,
+      donc 2 intervalles (1,6 jour, puis 25,1 jours) : trop peu pour estimer quoi que ce
+      soit, mais le schéma va dans le même sens.
+  dispersion_arrivees_observee:
+    value: 0.91
+    range: [0.45, 1.31]
+    unit: coefficient de variation
+    status: estimé
+    source: >
+      Bilans « Trafic Marchandises Débarquées par catégorie de produit » publiés par
+      l'Entreprise portuaire de Djen Djen, exercices 2022 à 2025, 13 pages archivées dans
+      data/raw/port_stats/ (https://djendjen-port.dz). Calcul :
+      scripts/arrival_dispersion.py.
+    note: >
+      Première estimation chiffrée de l'irrégularité des arrivées de minéraliers, au
+      2026-10-24. **Méthode** : les bilans publient le tonnage de la ligne « Pellets »
+      (« Pellets / DRI » à partir de 2024) en cumul depuis le 1er janvier, par trimestre,
+      semestre, fin septembre et année. Différencier les cumuls donne 16 trimestres isolés
+      de 2022 à 2025 ; chaque cumul étant publié sur deux pages, la lecture est recoupée
+      et aucune contradiction n'a été trouvée. Le nombre de navires d'un trimestre est
+      estimé par tonnage ÷ `navires_minerai.taille_moyenne`. L'indice de dispersion des
+      comptages I = Var(N)/E[N] vaut 0,83, IC 95 % par bootstrap [0,21 ; 1,73] ; pour un
+      processus de renouvellement il tend vers c_a², d'où la valeur ci-dessus par racine
+      carrée (0,91, fourchette [0,45 ; 1,31]).
+      **Quatre réserves, toutes dans la sortie du script.** (1) La consommation de
+      l'aciérie varie aussi : I attribue aux arrivées toute la variance, donc il
+      surestime probablement c_a². (2) 16 trimestres font une petite série, d'où un
+      intervalle large. (3) Une fenêtre trimestrielle lisse les rafales de quelques jours
+      que la simulation voit : de ce côté I sous-estime. (4) Le nombre de navires est un
+      tonnage divisé par une taille moyenne, pas un comptage.
+      **Un trimestre pèse lourd** : 2022 T3 ne porte que 606 t de pellets, soit un
+      quasi-arrêt. En l'écartant, I tombe à 0,45 [0,15 ; 0,77], soit c_a² deux fois plus
+      faible. Il n'est pas écarté du résultat publié — rien ne dit que ce soit une erreur
+      de la source plutôt qu'un arrêt réel de l'aciérie, et l'écart entre les deux
+      valeurs mesure à lui seul la fragilité de l'estimation.
   cv_taille_navire:
     value: 0.02
     range: [0.0, 0.10]

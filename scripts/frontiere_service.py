@@ -246,6 +246,23 @@ def bande_du_site(base: SimConfig, raw) -> tuple[float, float, float]:
     return bas, centre, haut
 
 
+def bande_c_a2(raw) -> tuple[float, float, float] | None:
+    """Position du site sur l'axe horizontal : (bas, centre, haut) en c_a².
+
+    L'hypothèse stocke un **coefficient de variation** ; l'axe de la carte est son carré.
+    L'élévation au carré est donc le point à ne pas rater, et c'est pourquoi elle est
+    faite ici et nulle part ailleurs. Renvoie None tant que l'estimation n'existe pas,
+    pour que la figure reste traçable sur un dépôt où elle n'aurait pas été calculée.
+    """
+    entree = raw.get("simulation", {}).get("dispersion_arrivees_observee")
+    if not entree:
+        return None
+    centre = float(entree["value"]) ** 2
+    bas = float(entree["range"][0]) ** 2
+    haut = float(entree["range"][1]) ** 2
+    return bas, centre, haut
+
+
 def write_figure(grilles, base: SimConfig, raw, scenario: str, reps: int,
                  path=DEFAULT_FIGURE) -> Path:
     """Trace les frontières β = 0,95 et β = 0,99 dans le plan (c_a², τ).
@@ -268,6 +285,26 @@ def write_figure(grilles, base: SimConfig, raw, scenario: str, reps: int,
     ax.text(0.985, haut, f"fourchette publiée du site : {bas:.0f} à {haut:.0f} j ",
             transform=ax.get_yaxis_transform(), va="top", ha="right",
             fontsize=8.5, color="0.35")
+
+    # position horizontale du site, estimée sur les bilans de trafic 2022-2025
+    horizontal = bande_c_a2(raw)
+    if horizontal is not None:
+        ca_bas, ca_centre, ca_haut = horizontal
+        # la fourchette déborde le domaine tracé : on la borne pour ne pas écrire hors cadre,
+        # et le libellé dit la valeur réelle, pas la valeur bornée
+        visible_haut = min(ca_haut, max(C_A2_VALUES))
+        ax.axvspan(ca_bas, visible_haut, color="#e8710a", alpha=0.07, zorder=0)
+        for borne in (ca_bas, visible_haut):
+            ax.axvline(borne, color="#b06a1a", linewidth=0.9, linestyle=":", zorder=2)
+        ax.axvline(ca_centre, color="#b06a1a", linewidth=1.6, linestyle="-.", zorder=2)
+        ax.text(ca_centre, 0.988, f" c_a² estimé du site : {ca_centre:.2f} ".replace(".", ","),
+                transform=ax.get_xaxis_transform(), va="top", ha="left",
+                fontsize=9.5, color="#8a4f10", fontweight="bold")
+        depasse = " (bornée au cadre)" if ca_haut > max(C_A2_VALUES) else ""
+        ax.text(ca_centre, 0.945,
+                f" fourchette {ca_bas:.2f} à {ca_haut:.2f}{depasse} ".replace(".", ","),
+                transform=ax.get_xaxis_transform(), va="top", ha="left",
+                fontsize=8.5, color="#8a4f10")
 
     traces = []
     for postes in POSTES:
@@ -325,6 +362,9 @@ def write_figure(grilles, base: SimConfig, raw, scenario: str, reps: int,
          f"{len(C_A2_VALUES)} × {len(TAU_DAYS)} points par courbe."),
         "Axes sans dimension : un autre site se place sur la même carte. Ce qui ne s'y",
         "transpose pas est la charge du poste, que distinguent les deux couleurs.",
+        ("Bande grise : couverture du site d'après ses hypothèses (statut inconnu). "
+         "Bande orange : c_a² estimé"),
+        "sur les bilans de trafic 2022-2025 — une estimation large, pas une mesure.",
     ]
     if manquants:
         absents = ", ".join(

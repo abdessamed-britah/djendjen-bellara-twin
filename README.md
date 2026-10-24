@@ -88,12 +88,12 @@ modèle :
 
 ### Ce que ces observations ne permettent pas encore
 
-- **La dispersion des arrivées reste non mesurée.** Quatre arrivées de minéraliers, donc deux
-  intervalles seulement : 1,6 jour entre NIMBA et NIGHTINGALE, puis 25,1 jours avant SOMNIUM
-  AUSTRALIS. Le schéma — deux arrivées presque simultanées puis près d'un mois de vide — va dans
-  le sens d'arrivées très irrégulières, mais `simulation.dispersion_arrivees` **reste de statut
-  *estimé*** : on ne tire pas un coefficient de variation de deux intervalles. C'est pourtant
-  l'un des deux paramètres qui pilotent tous les résultats ci-dessous.
+- **La dispersion des arrivées n'est pas mesurable sur cette série.** Quatre arrivées de
+  minéraliers, donc deux intervalles seulement : 1,6 jour entre NIMBA et NIGHTINGALE, puis
+  25,1 jours avant SOMNIUM AUSTRALIS. Le schéma — deux arrivées presque simultanées puis près
+  d'un mois de vide — va dans le sens d'arrivées très irrégulières, mais on ne tire pas un
+  coefficient de variation de deux intervalles. Une estimation existe désormais, obtenue sur
+  une **autre** source et sur quatre ans : voir la section suivante.
 - **La cadence repose sur 3 navires de même gabarit au même poste.** Rien ne dit ce qu'elle
   vaudrait sur un autre poste ou un autre tonnage. Rien ne prouve non plus que le tonnage publié
   ait été déchargé en entier à Djen Djen : s'il reste du fret à bord, la cadence est surestimée.
@@ -102,6 +102,70 @@ modèle :
   observations ne suffisent pas à resserrer ce coefficient.
 - **Les deux capacités de stockage restent de statut *inconnu*** et ce sont elles qui dominent
   les résultats. Aucune observation de la série ne les éclaire.
+
+### L'irrégularité des arrivées, première estimation sur 16 trimestres
+
+`simulation.dispersion_arrivees` est le dernier des deux paramètres dimensionnants à n'avoir
+aucune source. La série de situations portuaires n'en donnera pas avant 2027 ; les **bilans de
+trafic** que le port publie depuis 2022, eux, contiennent de quoi l'estimer — à condition
+d'accepter une chaîne d'hypothèses qu'il faut regarder en face.
+
+**La source.** Les pages « Trafic Marchandises Débarquées par catégorie de produit » détaillent
+le tonnage par produit, et comportent une ligne **« Pellets »** (renommée « Pellets / DRI » à
+partir de 2024) — le seul poste de la nomenclature qui corresponde à la matière première de
+Bellara. 13 bilans, exercices 2022 à 2025, archivés dans `data/raw/port_stats/` avec leurs PDF
+joints et un manifeste d'empreintes.
+
+**La méthode, en trois pas, chacun avec son coût.**
+
+1. Les bilans publient des **cumuls depuis le 1er janvier** (1er trimestre, 1er semestre, fin
+   septembre, année). Un trimestre isolé s'obtient par différence. Chaque cumul étant publié
+   deux fois — colonne de droite d'un bilan, colonne de gauche de celui de l'année suivante —
+   la lecture est recoupée : **les 13 bilans sont cohérents sans une seule contradiction**.
+2. Le nombre de navires d'un trimestre est estimé par tonnage ÷ taille moyenne d'un minéralier
+   (142 700 t). **Ce n'est pas un comptage, c'est une division.**
+3. L'**indice de dispersion** I = Var(N)/E[N] vaut 0 pour des arrivées régulières et 1 pour un
+   processus de Poisson. Pour un processus de renouvellement, il tend vers c_a², ce qui autorise
+   à le lire comme une estimation de c_a² — **asymptotiquement**.
+
+| Trimestre | T1 | T2 | T3 | T4 |
+| --- | ---: | ---: | ---: | ---: |
+| **2022** | 437 400 t | 745 409 t | **606 t** | 1 355 756 t |
+| **2023** | 582 664 t | 933 506 t | 596 171 t | 757 197 t |
+| **2024** | 750 067 t | 920 046 t | 1 014 606 t | 792 978 t |
+| **2025** | 567 848 t | 858 347 t | 1 049 760 t | 833 963 t |
+
+Soit 5,34 navires par trimestre en moyenne, écart-type 2,10, et
+
+> **I = 0,83**, intervalle de confiance à 95 % par bootstrap **[0,21 ; 1,73]**
+
+`simulation.dispersion_arrivees_observee` passe donc à **0,91** (racine de I, puisque
+l'hypothèse stocke un coefficient de variation et non son carré), fourchette [0,45 ; 1,31],
+statut *estimé*. **Les arrivées de minéraliers à Djen Djen seraient donc proches d'un régime de
+Poisson** — c'est-à-dire du cas le plus défavorable que le modèle explorait jusqu'ici en
+hypothèse d'école.
+
+**Un trimestre pèse très lourd.** Le troisième trimestre 2022 ne porte que **606 tonnes** de
+pellets, soit un quasi-arrêt de l'approvisionnement sur trois mois. En l'écartant, I tombe à
+0,45 [0,15 ; 0,77] — la moitié. Il n'est **pas** écarté du résultat publié : rien ne dit que ce
+soit une erreur de la source plutôt qu'un arrêt réel de l'aciérie, et le retirer reviendrait à
+choisir la réponse. L'écart entre 0,83 et 0,45 mesure à lui seul la fragilité de l'estimation.
+
+**Quatre raisons de ne pas appeler cela une mesure.**
+
+- **Les variations de consommation s'y mêlent.** Un trimestre creux peut venir d'arrivées
+  irrégulières *ou* d'un four à l'arrêt. Rien ici ne les sépare, et I met toute la variance sur
+  les arrivées : il **surestime** probablement c_a².
+- **16 trimestres font une petite série**, et l'intervalle de confiance le dit : il couvre
+  1,5 point, de « presque régulier » à « nettement groupé ».
+- **La fenêtre trimestrielle lisse les rafales de quelques jours**, que la simulation voit. De
+  ce côté-là, I **sous-estime** l'irrégularité. Les deux biais jouent en sens contraire et rien
+  ne dit lequel domine.
+- **Le nombre de navires est un tonnage divisé par une taille moyenne.** Un navire partiellement
+  déchargé ou d'un autre gabarit se traduit en fraction de navire.
+
+Reproductible par `python -m corridor.ingest.port_stats` puis
+`python scripts/arrival_dispersion.py`.
 
 ## Résultats préliminaires
 
@@ -474,15 +538,21 @@ de couverture. Quatre lectures :
   d'affrètement, pas un problème de stockage : aucune quantité de silo ne l'achète.
 - **Le site se situe vers 27 jours de couverture** (12 à 53 selon la fourchette publiée, d'où la
   bande grise — les deux capacités sont de statut *inconnu*). Cela tient 95 % jusqu'à c_a² ≈ 0,5,
-  c'est-à-dire des arrivées modérément irrégulières. À régime de Poisson, il en faudrait plus du
-  double.
+  c'est-à-dire des arrivées modérément irrégulières.
 
-**C'est ici que l'étude bute sur ce qu'elle ne sait pas.** L'axe vertical est incertain d'un
-facteur quatre (12 à 53 jours) et **la position du site sur l'axe horizontal est inconnue** :
-`dispersion_arrivees` n'est toujours pas mesurée, faute d'assez d'arrivées de minéraliers dans la
-série (4 à ce jour, soit 2 intervalles). La carte ne donne donc pas un verdict sur Djen Djen —
-elle dit exactement **quelle mesure trancherait**, et c'est la raison d'être de la collecte qui
-continue de tourner.
+**Et le site, où tombe-t-il ?** Les deux bandes de la figure le situent désormais sur les deux
+axes : **c_a² ≈ 0,83** (bande orange, estimé sur les bilans de trafic 2022-2025, voir plus haut)
+et **τ ≈ 27 jours** (bande grise, hypothèse centrale). À cette intersection, la carte donne un
+taux de service de l'ordre de **β ≈ 0,92**, soit environ 8 % de la production perdue — et il
+faudrait de l'ordre de **50 jours de couverture**, près du double de l'hypothèse centrale, pour
+ramener le corridor sur la ligne des 95 %.
+
+Ce point est à prendre pour ce qu'il est : l'intersection de deux estimations larges, l'une de
+statut *inconnu* sur l'axe vertical (facteur quatre entre les bornes), l'autre de statut *estimé*
+sur l'axe horizontal (0,20 à 1,72 en c_a²). Il indique une direction — le corridor en phase 2
+serait en deçà d'un taux de service de 95 % — **il ne la démontre pas**. Resserrer les deux
+bandes reste le travail qui ferait le plus pour ce projet, et c'est la raison d'être de la
+collecte qui continue de tourner.
 
 Trois réserves de lecture. β est une moyenne sur 60 réplications, de demi-largeur d'IC ±0,01 à
 ±0,03 selon les cases : les contours sont tracés sur les moyennes, donc la position exacte d'une

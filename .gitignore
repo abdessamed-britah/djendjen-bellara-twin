@@ -6,4 +6,8 @@ __pycache__/
 data/sim/
 # PDF bruts : archivés dans les releases GitHub raw-AAAA-MM, pas dans git.
 # « data/raw/*.pdf » ne suffirait pas : les PDF sont rangés dans AAAA/MM/JJ/.
+# S'applique aussi aux bilans de trafic de data/raw/port_stats/ (~10 Mo) : ce sont les
+# pages HTML archivées à côté qui portent les tableaux lus, et elles sont versionnées.
+# Le manifeste garde l'URL et l'empreinte de chaque PDF, et
+# `python -m corridor.ingest.port_stats` les retélécharge.
 data/raw/**/*.pdf
