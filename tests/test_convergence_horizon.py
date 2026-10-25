@@ -112,7 +112,7 @@ def _lignes_croissantes():
 
 @pytest.mark.parametrize(("p", "issue"), [
     (0.5, "marche sans dérive"),
-    (1.0, "déficit structurel"),
+    (1.0, "régime stationnaire avec pertes"),
     (0.0, "déficit borné"),
 ])
 def test_chaque_issue_est_reconnue(p, issue):
@@ -124,7 +124,7 @@ def test_un_intervalle_qui_couvre_deux_issues_est_indecidable():
     """Le script ne choisit pas après coup entre deux issues compatibles."""
     resultat = ch.verdict({"p_bas": 0.3, "p_haut": 1.1}, _lignes_croissantes())
     assert resultat["issue"] == "indécidable"
-    assert set(resultat["issues_compatibles"]) == {"marche sans dérive", "déficit structurel"}
+    assert set(resultat["issues_compatibles"]) == {"marche sans dérive", "régime stationnaire avec pertes"}
 
 
 def test_un_intervalle_qui_ne_couvre_aucune_issue_est_indecidable():
@@ -192,4 +192,165 @@ def test_la_figure_est_un_png_non_vide(tmp_path):
     lignes = _lignes_figure()
     ajustement = {"p": 0.5, "p_bas": 0.4, "p_haut": 0.6, "a": 1.0}
     chemin = ch.write_figure(lignes, ajustement, "baseline", 3, tmp_path / "c.png")
+    assert chemin.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+# --- étape 1 : convergence de β en régime endogène --------------------------
+
+
+def test_le_regime_stationnaire_est_lu_sur_p_egal_un():
+    """Correction de la première version : p ≈ 1 n'est pas un « déficit structurel ».
+
+    Un régime stationnaire avec ruptures perd une fraction constante de sa production : le
+    déficit croît comme T. C'est l'issue attendue d'un modèle sain, pas un échec.
+    """
+    assert ch.ISSUES["régime stationnaire avec pertes"] == 1.0
+    assert "déficit structurel" not in ch.ISSUES
+
+
+def test_la_dispersion_n_est_forcee_qu_en_exogene():
+    """En endogène, elle est sans effet : la forcer afficherait une configuration fausse."""
+    assert ch.configuration("baseline").dispersion_arrivees == ch.DISPERSION
+    endogene = ch.configuration("baseline_endogene")
+    reference = SimConfig.from_scenario(load_scenario("baseline_endogene"))
+    assert endogene.dispersion_arrivees == reference.dispersion_arrivees
+
+
+def _deficits_vers_une_limite(beta_limite: float, bruit: float = 0.0, reps: int = 12):
+    """Déficits d'un régime qui converge : β(T) = β∞ exactement, à un bruit près."""
+    config = ch.configuration("baseline_endogene")
+    rng = random.Random(5)
+    return config, {
+        h: [ch.cible_t(config, h) * (1 - beta_limite) * (1 + bruit * rng.uniform(-1, 1))
+            for _ in range(reps)]
+        for h in HORIZONS
+    }
+
+
+def test_un_beta_deja_a_sa_limite_ne_bouge_plus_au_dela_du_seuil():
+    config, deficits = _deficits_vers_une_limite(0.98, bruit=0.2)
+    differences = ch.convergence_beta(config, deficits)
+    assert differences, "aucune paire au-delà du seuil : le critère ne mesurerait rien"
+    assert all(d["de"] >= ch.SEUIL_CONVERGENCE_ANS for d in differences)
+    assert not any(d["significative"] for d in differences)
+
+
+def test_un_beta_qui_monte_encore_est_detecte():
+    """La marche sans dérive : β(T) = 1 − c/√T, chaque horizon gagne quelque chose."""
+    config = ch.configuration("baseline")
+    rng = random.Random(2)
+    deficits = {
+        h: [ch.cible_t(config, h) * 0.15 / math.sqrt(h) * (1 + 0.02 * rng.uniform(-1, 1))
+            for _ in range(12)]
+        for h in HORIZONS
+    }
+    differences = ch.convergence_beta(config, deficits)
+    assert any(d["significative"] for d in differences)
+    assert all(d["difference"].mean > 0 for d in differences)
+
+
+def test_les_paires_avant_le_seuil_sont_ignorees():
+    config, deficits = _deficits_vers_une_limite(0.98)
+    assert all(d["de"] >= 8 for d in ch.convergence_beta(config, deficits, seuil=8))
+    assert len(ch.convergence_beta(config, deficits, seuil=1)) == len(HORIZONS) - 1
+
+
+def test_l_autocorrelation_d_une_serie_alternee_est_negative():
+    assert ch.autocorrelation([1.0, -1.0] * 10) < -0.9
+
+
+def test_l_autocorrelation_d_une_tendance_est_positive():
+    assert ch.autocorrelation([float(i) for i in range(20)]) > 0.8
+
+
+def test_l_autocorrelation_d_une_serie_trop_courte_ou_constante_est_indefinie():
+    assert math.isnan(ch.autocorrelation([1.0, 2.0]))
+    assert math.isnan(ch.autocorrelation([3.0] * 10))
+
+
+def test_deux_estimateurs_proches_s_accordent():
+    a = ch.estimate([0.980, 0.982, 0.978, 0.981])
+    b = ch.estimate([0.979, 0.983, 0.981, 0.980])
+    assert ch.accord_des_estimateurs(a, b)["accord"]
+
+
+def test_deux_estimateurs_eloignes_se_contredisent():
+    a = ch.estimate([0.950, 0.951, 0.949, 0.950])
+    b = ch.estimate([0.990, 0.991, 0.989, 0.990])
+    resultat = ch.accord_des_estimateurs(a, b)
+    assert not resultat["accord"]
+    assert resultat["ecart"] == pytest.approx(0.040, abs=1e-6)
+
+
+def test_l_ic_de_l_ecart_combine_les_deux_demi_largeurs_en_quadrature():
+    """Les deux estimateurs ne partagent aucune réplication : pas d'appariement possible."""
+    a = ch.estimate([0.97, 0.99, 0.98, 0.98])
+    b = ch.estimate([0.96, 1.00, 0.98, 0.98])
+    attendu = math.sqrt(a.half_width ** 2 + b.half_width ** 2)
+    assert ch.accord_des_estimateurs(a, b)["demi_largeur"] == pytest.approx(attendu)
+
+
+def test_la_convergence_exige_la_stabilite_et_l_accord():
+    stable = [{"significative": False}]
+    instable = [{"significative": True}]
+    assert ch.verdict_convergence(stable, {"accord": True})["converge"]
+    assert not ch.verdict_convergence(stable, {"accord": False})["converge"]
+    assert not ch.verdict_convergence(instable, {"accord": True})["converge"]
+
+
+def test_sans_paire_au_dela_du_seuil_on_ne_conclut_pas_a_la_convergence():
+    """Une liste vide n'est pas une preuve de stabilité : elle ne prouve rien."""
+    assert not ch.verdict_convergence([], {"accord": True})["converge"]
+
+
+def test_la_part_des_ruptures_se_lit_en_heures_ouvrees():
+    config = ch.configuration("baseline_endogene")
+
+    class Faux:
+        def __init__(self, heures):
+            self.dri_stop_hours = heures
+
+    heures_an = config.heures_ouvrees_par_an
+    parts = ch.part_des_ruptures(config, {2: [Faux(0.01 * heures_an * 2)] * 3})
+    assert parts[2].mean == pytest.approx(0.01)
+
+
+def test_les_moyennes_par_lots_ecartent_l_echauffement_et_comptent_les_lots():
+    config = ch.configuration("baseline_endogene")
+    lots = ch.moyennes_par_lots(config, seed=1, annees=5, echauffement=1, taille=2)
+    assert lots["lots"] == 2  # (5 − 1) // 2
+    assert lots["annees"] == 5
+    assert 0.0 < lots["beta"].mean <= 1.0 + 1e-9
+    assert 0.0 <= lots["part_annees_avec_rupture"] <= 1.0
+
+
+def test_un_deficit_affine_fausse_l_exposant_global_mais_pas_l_exposant_tardif():
+    """Le cas de phase2_endogene : régime stationnaire, démarrage en rupture.
+
+    D = c·T + d avec d > 0 : la loi de puissance sur tous les horizons lit une pente
+    inférieure à 1, restreinte aux horizons longs elle retrouve 1. C'est ce qui justifie
+    l'exposant hors transitoire, ajouté après avoir vu le résultat de phase 2.
+    """
+    horizons = (1, 2, 4, 8, 16, 32, 50)
+    deficits = {h: [0.009 * h + 0.01] * 5 for h in horizons}
+    globale = ch.ajuste_loi_puissance(horizons, [d[0] for d in deficits.values()])["p"]
+    tardifs = [h for h in horizons if h >= ch.SEUIL_CONVERGENCE_ANS]
+    tardive = ch.ajuste_loi_puissance(tardifs, [deficits[h][0] for h in tardifs])["p"]
+    assert globale < 0.85
+    assert tardive == pytest.approx(1.0, abs=0.06)
+
+
+def test_l_issue_unique_est_isolee_de_la_liste_des_compatibles():
+    assert ch.issue_de({"p_bas": 0.9, "p_haut": 1.1}) == "régime stationnaire avec pertes"
+    assert ch.issue_de({"p_bas": 0.3, "p_haut": 1.1}) == "indécidable"
+    assert ch.issues_compatibles({"p_bas": 0.6, "p_haut": 0.8}) == []
+
+
+@pytest.mark.slow
+def test_la_figure_endogene_porte_la_limite_des_lots(tmp_path):
+    lignes = _lignes_figure()
+    ajustement = {"p": 1.0, "p_bas": 0.9, "p_haut": 1.1, "a": 1.0}
+    chemin = ch.write_figure(lignes, ajustement, "baseline_endogene", 3, tmp_path / "e.png",
+                             politique="point_de_commande",
+                             beta_limite=ch.estimate([0.98, 0.99, 0.985]))
     assert chemin.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"

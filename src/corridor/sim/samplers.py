@@ -41,7 +41,12 @@ from corridor.sim.config import SimConfig
 #:
 #: Les arrêts planifiés n'y figurent pas : ils sont déterministes (`arrets_planifies_fenetres`
 #: les place à intervalles réguliers), donc déjà synchronisés sans rien consommer.
-SOURCES = ("intervalle", "taille_navire", "cadence_dechargement", "rail")
+#:
+#: `delai_approvisionnement` ne sert qu'en politique de point de commande : la n-ième
+#: commande y tire le n-ième délai, quel que soit le moment où elle part.
+SOURCES = (
+    "intervalle", "taille_navire", "cadence_dechargement", "rail", "delai_approvisionnement",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +134,9 @@ class Samplers:
     load_h: Sampler
     travel_h: Sampler
     unload_h: Sampler
+    #: Délai d'approvisionnement, de la commande à l'arrivée en rade. Inutilisé en
+    #: politique exogène ; facultatif pour que les jeux construits à la main restent valides.
+    lead_time_h: Sampler | None = None
 
     @classmethod
     def from_config(cls, config: SimConfig) -> Samplers:
@@ -144,4 +152,7 @@ class Samplers:
             load_h=from_mean_cv(config.duree_chargement_h, config.cv_durees_rail),
             travel_h=from_mean_cv(config.duree_trajet_h, config.cv_durees_rail),
             unload_h=from_mean_cv(config.duree_dechargement_h, config.cv_durees_rail),
+            lead_time_h=from_mean_cv(
+                config.delai_approvisionnement_h, config.cv_delai_approvisionnement
+            ),
         )

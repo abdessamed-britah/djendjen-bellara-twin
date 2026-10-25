@@ -244,6 +244,46 @@ traitement_donnees:
 # en pellets, navires par an, intervalle entre arrivées, débit horaire du DRI) ne
 # figurent pas ici : elles sont calculées dans corridor.sim.config à partir des
 # hypothèses ci-dessus.
+approvisionnement:
+  # Utilisé seulement quand simulation.politique_approvisionnement vaut
+  # « point_de_commande ». En politique exogène, les arrivées suivent
+  # simulation.dispersion_arrivees et ce bloc est ignoré.
+  delai_moyen_j:
+    value: 22
+    range: [15, 30]
+    unit: jours
+    status: estimé
+    note: >
+      Délai entre la décision d'affréter un minéralier et son arrivée en rade de Djen
+      Djen : chargement au port d'origine plus traversée. Ordre de grandeur pour des
+      pellets venus du Brésil (Tubarão, ~4 000 milles nautiques) ou du Canada (Sept-Îles,
+      ~3 800 milles) à 12-14 nœuds, soit ~12 à 14 jours de mer, plus l'attente d'un
+      créneau de chargement et la mise à disposition du navire. **Aucune source publique
+      sur les contrats d'AQS** : c'est une valeur de travail, d'où la fourchette large.
+  cv_delai:
+    value: 0.25
+    range: [0.10, 0.60]
+    unit: coefficient de variation
+    status: estimé
+    note: >
+      Variabilité du délai d'approvisionnement, en coefficient de variation d'une loi
+      gamma. Elle porte la météo en mer, l'attente au port de chargement et les aléas
+      d'affrètement. **Ne pas la régler pour retrouver l'irrégularité mesurée des
+      arrivées** : le c_a² des arrivées est désormais une sortie du modèle, et c'est la
+      comparer à la mesure qui sert de validation. La caler dessus viderait ce test.
+  point_de_commande_j:
+    value: 30
+    range: [15, 60]
+    unit: jours de consommation
+    status: estimé
+    note: >
+      Point de commande s de la politique (s, Q) : un navire est affrété dès que la
+      position de stock — stockyard, usine, rail en transit, navires en rade (à quai
+      compris, pour la cargaison encore à bord) et navires en mer — passe sous s jours
+      de consommation de l'aciérie. Exprimé en jours pour être sans dimension, comme la
+      couverture τ des autres résultats. Il doit couvrir le délai d'approvisionnement,
+      faute de quoi la rupture est programmée à chaque cycle.
+
 simulation:
   jours_par_an:
     value: 365
@@ -300,6 +340,19 @@ simulation:
       faible. Il n'est pas écarté du résultat publié — rien ne dit que ce soit une erreur
       de la source plutôt qu'un arrêt réel de l'aciérie, et l'écart entre les deux
       valeurs mesure à lui seul la fragilité de l'estimation.
+  politique_approvisionnement:
+    value: exogene
+    unit: exogene | point_de_commande
+    status: technique
+    note: >
+      Origine des arrivées de minéraliers. « exogene » : elles suivent un processus de
+      renouvellement dont le débit moyen égale exactement la demande et dont la
+      régularité est `dispersion_arrivees` — c'est le modèle historique du projet, gardé
+      parce que la validation contre Pollaczek-Khinchine exige des arrivées de Poisson
+      exogènes. **Il n'a pas de régime stationnaire** : l'écart offre − demande y est une
+      marche aléatoire sans dérive (scripts/convergence_horizon.py). « point_de_commande » :
+      un navire est affrété quand la position de stock passe sous le point de commande
+      (bloc `approvisionnement`). La rétroaction rend au système une dérive de rappel.
   cv_taille_navire:
     value: 0.02
     range: [0.0, 0.10]

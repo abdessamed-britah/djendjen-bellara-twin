@@ -12,6 +12,7 @@ Les valeurs attendues sont recalculées depuis la configuration, jamais recopié
 import dataclasses
 import math
 import time
+from itertools import pairwise
 from statistics import fmean
 
 import pytest
@@ -631,3 +632,172 @@ def test_la_capacite_de_stockage_ne_change_pas_la_production():
     double = production(1.0, initial=(base.stock_initial_stockyard_t * 2,
                                       base.stock_initial_usine_t * 2))
     assert fmean(double) > moyenne * 1.01
+
+
+# --- approvisionnement endogène ---------------------------------------------
+#
+# Un navire est affrété quand la position de stock passe sous le point de commande. Ce qui
+# est vérifié ici : les deux bilans de masse, la règle de commande elle-même, et le fait
+# que le modèle exogène — dont dépend la validation analytique — n'a pas bougé.
+
+
+@pytest.fixture(scope="module")
+def endogene() -> SimConfig:
+    return SimConfig.from_scenario(load_scenario("baseline_endogene"))
+
+
+def _verifie_l_amont(resultat: md.SimResult) -> None:
+    """Tout ce qui a été engagé est soit déchargé, soit encore à flot."""
+    assert resultat.pellets_ordered_t == pytest.approx(
+        resultat.pellets_delivered_t + resultat.pellets_afloat_t, rel=1e-9
+    )
+
+
+@pytest.mark.parametrize("scenario", ["baseline_endogene", "phase2_endogene"])
+def test_les_deux_bilans_de_masse_tiennent_en_endogene(scenario):
+    config = SimConfig.from_scenario(load_scenario(scenario))
+    resultat = md.simulate(config, seed=GRAINE, years=1.0)
+    _verifie_la_masse(resultat)
+    _verifie_l_amont(resultat)
+
+
+@pytest.mark.parametrize("dispersion", [0.0, 1.0])
+def test_le_bilan_amont_tient_aussi_en_exogene(baseline, dispersion):
+    """En exogène, un navire est « engagé » à son arrivée : le bilan doit valoir quand même."""
+    config = dataclasses.replace(baseline, dispersion_arrivees=dispersion)
+    _verifie_l_amont(md.simulate(config, seed=GRAINE, years=1.0))
+
+
+def test_les_bilans_tiennent_en_endogene_sous_contre_pression(endogene):
+    """Stockyard minuscule et aucune rame : tout sature, rien ne doit se perdre."""
+    config = dataclasses.replace(
+        endogene, capacite_stockyard_t=10_000.0, stock_initial_stockyard_t=0.0,
+        nombre_de_rames=0,
+    )
+    resultat = md.simulate(config, seed=GRAINE, years=0.3)
+    _verifie_la_masse(resultat)
+    _verifie_l_amont(resultat)
+
+
+def test_la_position_de_stock_ne_descend_pas_sous_le_point_de_commande(endogene):
+    """La revue est continue : au plus une consommation horaire sépare le franchissement
+    de la commande, d'où la tolérance d'un pas de consommation et pas davantage."""
+    resultat = md.simulate(endogene, seed=GRAINE, years=2.0)
+    pas = endogene.debit_pellets_t_par_h * endogene.pas_h
+    assert resultat.inventory_position_min_t >= endogene.point_de_commande_t - pas
+
+
+def test_la_position_moyenne_reste_entre_s_et_s_plus_un_navire(endogene):
+    """Politique (s, Q) à Q = un navire : la position oscille entre s et s + Q."""
+    resultat = md.simulate(endogene, seed=GRAINE, years=2.0)
+    assert endogene.point_de_commande_t < resultat.inventory_position_mean_t
+    assert resultat.inventory_position_mean_t < (
+        endogene.point_de_commande_t + 1.5 * endogene.taille_navire_moyenne_t
+    )
+
+
+def test_les_commandes_suivent_la_consommation(endogene):
+    """Sur un horizon long, on commande ce qu'on consomme : c'est la dérive de rappel."""
+    # sur 5 ans, l'écart tient à la position finale moins l'initiale, bornée par s + Q :
+    # ~1 % de la consommation, d'où la marge de 3 %
+    resultat = md.simulate(endogene, seed=GRAINE, years=5.0)
+    assert resultat.pellets_ordered_t / resultat.pellets_consumed_t == pytest.approx(1.0, abs=0.03)
+
+
+def test_le_delai_tire_suit_l_hypothese(endogene):
+    # ~100 commandes sur 5 ans : écart-type de la moyenne ~2,5 % pour cv = 0,25
+    resultat = md.simulate(endogene, seed=GRAINE, years=5.0)
+    assert resultat.lead_time_mean_h == pytest.approx(
+        endogene.delai_approvisionnement_h, rel=0.08
+    )
+    assert resultat.pellets_at_sea_mean_t > 0.0
+
+
+def test_la_dispersion_des_arrivees_est_sans_effet_en_endogene(endogene):
+    """L'irrégularité n'est plus une entrée : elle sort de la politique et du délai."""
+    regulier = md.simulate(dataclasses.replace(endogene, dispersion_arrivees=0.0),
+                           seed=GRAINE, years=1.0)
+    erratique = md.simulate(dataclasses.replace(endogene, dispersion_arrivees=1.5),
+                            seed=GRAINE, years=1.0)
+    assert dataclasses.asdict(regulier) | {"dispersion_arrivees": 0} == (
+        dataclasses.asdict(erratique) | {"dispersion_arrivees": 0}
+    )
+
+
+def test_le_modele_endogene_est_reproductible(endogene):
+    premier = md.simulate(endogene, seed=GRAINE, years=1.0)
+    second = md.simulate(endogene, seed=GRAINE, years=1.0)
+    assert dataclasses.asdict(premier) == dataclasses.asdict(second)
+
+
+def test_un_point_de_commande_sous_la_demande_du_delai_programme_la_rupture(endogene):
+    """s = 5 jours face à un délai de ~22 jours : chaque cycle finit à sec."""
+    juste = md.simulate(endogene, seed=GRAINE, years=2.0)
+    court = md.simulate(dataclasses.replace(
+        endogene, point_de_commande_t=5 * endogene.debit_pellets_t_par_h * 24),
+        seed=GRAINE, years=2.0)
+    assert court.dri_stop_hours > 5 * max(juste.dri_stop_hours, 1.0)
+
+
+def test_un_point_de_commande_genereux_supprime_presque_les_ruptures(endogene):
+    large = md.simulate(dataclasses.replace(
+        endogene, point_de_commande_t=60 * endogene.debit_pellets_t_par_h * 24),
+        seed=GRAINE, years=2.0)
+    assert large.dri_stop_hours < 0.002 * 2 * endogene.heures_ouvrees_par_an
+
+
+@pytest.mark.slow
+def test_un_delai_plus_variable_coute_des_ruptures(endogene):
+    """Même point de commande, délai plus incertain : la marge de sécurité ne suffit plus.
+
+    Marqué `slow` : une validation de comportement sur 36 années simulées.
+    """
+    def ruptures(cv):
+        config = dataclasses.replace(endogene, cv_delai_approvisionnement=cv)
+        return sum(md.simulate(config, seed=g, years=3.0).dri_stop_hours for g in range(6))
+    assert ruptures(0.6) > ruptures(0.1)
+
+
+def test_le_quai_n_est_plus_un_tampon_sans_plafond(endogene):
+    """Ce que l'exogène ne savait pas faire : la politique plafonne le minerai à flot.
+
+    En exogène à arrivées de Poisson, le quai se bloque des centaines d'heures par an, la
+    flotte stockant ce que les silos ne peuvent pas prendre. En endogène, on ne commande
+    pas ce qu'on n'a pas la place de recevoir.
+    """
+    resultat = md.simulate(endogene, seed=GRAINE, years=2.0)
+    assert resultat.berth_blocked_h < 50.0
+
+
+def test_en_exogene_une_commande_est_une_arrivee(baseline):
+    resultat = md.simulate(baseline, seed=GRAINE, years=1.0)
+    assert resultat.orders_placed == resultat.vessels_arrived
+    assert resultat.lead_time_mean_h == 0.0
+    assert resultat.pellets_at_sea_mean_t == 0.0
+
+
+# --- production par période : les lots des moyennes par lots ----------------
+
+
+@pytest.mark.parametrize("scenario", ["baseline", "baseline_endogene"])
+def test_les_periodes_somment_exactement_a_la_production_totale(scenario):
+    config = SimConfig.from_scenario(load_scenario(scenario))
+    periodes = md.production_par_periode(config, seed=GRAINE, years=2.0)
+    total = md.simulate(config, seed=GRAINE, years=2.0)
+    assert len(periodes) == 2
+    assert sum(p["production_t"] for p in periodes) == pytest.approx(total.dri_production_t)
+    assert sum(p["rupture_h"] for p in periodes) == pytest.approx(total.dri_stop_hours)
+
+
+def test_les_periodes_se_suivent_sans_trou_ni_chevauchement(endogene):
+    periodes = md.production_par_periode(endogene, seed=GRAINE, years=1.5)
+    assert periodes[0]["debut_h"] == 0.0
+    for avant, apres in pairwise(periodes):
+        assert apres["debut_h"] == avant["fin_h"]
+    assert periodes[-1]["fin_h"] == pytest.approx(1.5 * endogene.heures_par_an)
+
+
+def test_une_periode_ne_produit_pas_plus_que_sa_capacite(endogene):
+    periodes = md.production_par_periode(endogene, seed=GRAINE, years=2.0)
+    plafond = endogene.debit_dri_t_par_h * endogene.heures_par_an
+    assert all(p["production_t"] <= plafond * (1 + 1e-9) for p in periodes)

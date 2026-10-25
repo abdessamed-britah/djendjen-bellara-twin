@@ -5,6 +5,7 @@ recalculées ici depuis `config/assumptions.yaml`, de sorte qu'une modification 
 hypothèses fasse évoluer les tests avec le modèle et non contre lui.
 """
 
+import dataclasses
 from itertools import pairwise
 
 import pytest
@@ -290,3 +291,77 @@ def test_phase2_mesure_ne_differe_de_phase2_que_par_la_dispersion():
     assert mesure.capacite_stock_usine_t == phase2.capacite_stock_usine_t
     assert mesure.postes_minerai == phase2.postes_minerai
     assert mesure.dispersion_arrivees != phase2.dispersion_arrivees
+
+
+# --- approvisionnement endogène ---------------------------------------------
+
+
+def test_les_scenarios_historiques_restent_exogenes(baseline):
+    """La validation Pollaczek-Khinchine exige des arrivées de Poisson exogènes."""
+    assert baseline.politique_approvisionnement == "exogene"
+    for nom in ("phase2", "baseline_sans_blocage", "phase2_mesure"):
+        config = cfg.SimConfig.from_scenario(cfg.load_scenario(nom))
+        assert config.politique_approvisionnement == "exogene", nom
+
+
+@pytest.mark.parametrize("nom", ["baseline_endogene", "phase2_endogene"])
+def test_les_scenarios_endogenes_commandent_au_point_de_commande(nom):
+    config = cfg.SimConfig.from_scenario(cfg.load_scenario(nom))
+    assert config.politique_approvisionnement == "point_de_commande"
+
+
+def test_phase2_endogene_ne_differe_de_phase2_que_par_l_approvisionnement():
+    phase2 = cfg.SimConfig.from_scenario(cfg.load_scenario("phase2"))
+    endogene = cfg.SimConfig.from_scenario(cfg.load_scenario("phase2_endogene"))
+    assert dataclasses.replace(endogene, politique_approvisionnement="exogene") == phase2
+
+
+def test_le_point_de_commande_est_converti_en_jours_de_consommation(baseline):
+    """s est publié en jours, comme τ ; le modèle ne voit que des tonnes."""
+    attendu = _value("approvisionnement.point_de_commande_j") * baseline.debit_pellets_t_par_h * 24
+    assert baseline.point_de_commande_t == pytest.approx(attendu)
+
+
+def test_le_delai_d_approvisionnement_est_en_heures(baseline):
+    assert baseline.delai_approvisionnement_h == pytest.approx(
+        _value("approvisionnement.delai_moyen_j") * 24
+    )
+    assert baseline.cv_delai_approvisionnement == _value("approvisionnement.cv_delai")
+
+
+def test_les_trois_hypotheses_d_approvisionnement_sont_estimees_avec_fourchette():
+    for cle, entree in ASSUMPTIONS["approvisionnement"].items():
+        assert entree["status"] == "estimé", cle
+        bas, haut = entree["range"]
+        assert bas < entree["value"] < haut, cle
+
+
+def test_le_point_de_commande_central_couvre_le_delai_central():
+    """Sinon la rupture serait programmée à chaque cycle, par construction."""
+    appro = ASSUMPTIONS["approvisionnement"]
+    assert appro["point_de_commande_j"]["value"] > appro["delai_moyen_j"]["value"]
+
+
+def test_la_politique_d_approvisionnement_est_un_choix_ferme():
+    valeurs = cfg.assumption_values(ASSUMPTIONS)
+    valeurs["simulation.politique_approvisionnement"] = "juste_a_temps"
+    scenario = cfg.Scenario(name="x", description="", values=valeurs)
+    with pytest.raises(ValueError, match="politique_approvisionnement"):
+        cfg.SimConfig.from_scenario(scenario)
+
+
+def test_un_point_de_commande_nul_est_refuse_en_politique_endogene():
+    valeurs = cfg.assumption_values(ASSUMPTIONS)
+    valeurs["simulation.politique_approvisionnement"] = "point_de_commande"
+    valeurs["approvisionnement.point_de_commande_j"] = 0.0
+    scenario = cfg.Scenario(name="x", description="", values=valeurs)
+    with pytest.raises(ValueError, match="point de commande"):
+        cfg.SimConfig.from_scenario(scenario)
+
+
+def test_un_point_de_commande_nul_est_tolere_en_politique_exogene():
+    """En exogène il est ignoré : le refuser bloquerait un scénario qui ne s'en sert pas."""
+    valeurs = cfg.assumption_values(ASSUMPTIONS)
+    valeurs["approvisionnement.point_de_commande_j"] = 0.0
+    scenario = cfg.Scenario(name="x", description="", values=valeurs)
+    assert cfg.SimConfig.from_scenario(scenario).point_de_commande_t == 0.0

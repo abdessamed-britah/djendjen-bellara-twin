@@ -272,9 +272,11 @@ Tout β publié est la valeur d'un transitoire, lue à l'horizon choisi.
 
 Le script `scripts/convergence_horizon.py` a été écrit pour pouvoir **réfuter** ce diagnostic :
 il ajuste le déficit en loi de puissance D ≈ a·T^p et regarde trois issues fixées d'avance —
-p ≈ 1/2 (marche sans dérive), p ≈ 1 (déficit structurel : le corridor manque sa cible d'une
-fraction fixe), p ≈ 0 (déficit borné). Baseline, arrivées de Poisson, 20 réplications jouées
-chacune de 1 à 50 ans sur une même trajectoire :
+p ≈ 1/2 (marche sans dérive : aucun régime stationnaire), p ≈ 1 (régime stationnaire avec
+pertes : le corridor perd une fraction constante de sa production, et β converge vers une
+limite inférieure à 1), p ≈ 0 (déficit borné : les pertes s'éteignent, β tend vers 1 en 1/T).
+Baseline, arrivées de Poisson, 20 réplications jouées chacune de 1 à 50 ans sur une même
+trajectoire :
 
 | T (années) | 1 | 2 | 4 | 8 | 16 | 32 | 50 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -295,11 +297,90 @@ chacune de 1 à 50 ans sur une même trajectoire :
   en production à tout horizon, si bien que sa part de β décroît exactement en 1/T. À un an il
   vaut 7 points de β — plus que la plupart des effets que le projet cherchait à mesurer.
 
+**Correction de lecture.** La première version de ce script étiquetait p ≈ 1 « déficit
+structurel », c'est-à-dire un défaut de capacité. C'était confondre deux causes qui donnent la
+même pente : un corridor trop petit et un corridor stationnaire qui subit des ruptures
+aléatoires perdent tous deux une fraction constante de leur production. p ≈ 1 dit seulement
+qu'un régime stationnaire existe ; il ne dit rien de sa cause. Le diagnostic du modèle exogène
+n'en est pas affecté — p y tombe sur 1/2, pas sur 1.
+
 **Conséquence pour la suite.** Mesurer mieux ne sert à rien tant que le modèle n'a pas de
 rétroaction : il faut une politique d'approvisionnement qui commande en fonction du stock, ce
-qui rend au système une dérive de rappel et donc un régime stationnaire. C'est le chantier en
-cours, et le premier critère qu'il devra passer est ce même script : un exposant compatible
-avec 0.
+qui rend au système une dérive de rappel et donc un régime stationnaire. Le critère qu'elle
+doit passer porte sur **β**, pas sur l'exposant : β doit cesser de bouger au-delà de quelques
+années, et deux estimateurs construits différemment — réplications indépendantes et moyennes
+par lots sur une seule longue trajectoire — doivent donner la même limite. Si des ruptures
+subsistent, le déficit croît alors comme T et p tombe sur 1 : c'est le signe attendu d'un
+régime stationnaire, pas un échec.
+
+### L'approvisionnement endogène rend au corridor un régime stationnaire
+
+*Sert l'**originalité** : l'irrégularité des arrivées cesse d'être une hypothèse d'entrée et
+devient une sortie du modèle, produite par une politique de commande et la variabilité du
+délai. Sert aussi la **généralité** : la politique (s, Q) sur position de stock se transpose
+telle quelle à tout corridor d'importation.*
+
+Les scénarios `baseline_endogene` et `phase2_endogene` remplacent les arrivées exogènes par une
+**politique de commande** : un minéralier est affrété dès que la position de stock — stockyard,
+usine, rail en transit, navires en rade (cargaison encore à bord comprise) et navires en mer —
+passe sous le point de commande s. Trois paramètres, tous de statut *estimé* et sans source :
+délai d'approvisionnement 22 jours [15 ; 30], variabilité du délai cv = 0,25 [0,10 ; 0,60],
+point de commande 30 jours de consommation [15 ; 60]. Les scénarios `baseline` et `phase2`
+restent exogènes : la validation contre Pollaczek-Khinchine exige des arrivées de Poisson
+exogènes. Ils n'ont pas bougé d'un bit — vérifié sur 12 cas contre le commit précédent.
+
+**Le critère porte sur β, et il est passé dans les deux scénarios.** 20 réplications appariées
+de 1 à 50 ans, plus une réplication unique de 400 ans coupée en 99 lots de 4 ans :
+
+| | baseline_endogene | phase2_endogene |
+| --- | ---: | ---: |
+| **β∞, moyennes par lots** | **0,9867 ± 0,0012** | **0,9912 ± 0,0008** |
+| β à 50 ans, réplications indépendantes | 0,9870 ± 0,0008 | 0,9910 ± 0,0005 |
+| écart entre les deux estimateurs | −0,0003 ± 0,0014 → accord | +0,0002 ± 0,0010 → accord |
+| β à 1 / 4 / 8 ans | 0,991 / 0,987 / 0,988 | 0,981 / 0,990 / 0,990 |
+| différences appariées au-delà de 8 ans | toutes non significatives | toutes non significatives |
+| heures ouvrées en rupture | 1,33 % | 0,88 % |
+| années avec au moins une rupture | 83 % | 82 % |
+| exposant du déficit, tous horizons | 1,07 [0,97 ; 1,22] | 0,84 [0,79 ; 0,90] |
+| exposant du déficit, T ≥ 8 ans | 1,05 [0,95 ; 1,13] | 0,96 [0,88 ; 1,03] |
+
+![Convergence en approvisionnement endogène, phase 2](docs/convergence_horizon_phase2_endogene.png)
+
+**Ce qui change par rapport au modèle exogène :**
+
+- **β a une limite.** Il est à 0,1 point d'elle dès 4 ans, et plus aucune différence entre
+  horizons successifs n'est significative au-delà de 8 ans. En exogène, il montait encore de
+  0,5 point entre 32 et 50 ans. Un « taux de service » redevient une propriété du corridor
+  plutôt que de l'horizon de lecture.
+- **Le déficit croît comme T**, et c'est le signe attendu : le corridor perd une fraction
+  constante de sa production, 1,3 % en baseline et 0,9 % en phase 2. Les ruptures sont
+  rares mais régulières — plus de quatre années sur cinq en voient au moins une.
+- **Le quai ne se bloque presque plus.** On ne commande pas ce qu'on n'a pas la place de
+  recevoir : la politique plafonne d'elle-même le minerai à flot, ce que le modèle exogène ne
+  savait pas faire (limite 0). Reste à vérifier, à l'étape 4, si la capacité de stockage
+  redevient un levier.
+- **Le démarrage n'est plus un cadeau mais une dette, en phase 2.** Les 225 kt de stock
+  initial ne couvrent pas la consommation pendant le délai (~372 kt) : la première année
+  subit une rupture certaine (β = 0,981). C'est ce qui fait tomber l'exposant global à 0,84 —
+  un déficit affine D ≈ c·T + d, qu'une loi de puissance lit comme une pente plus faible.
+  Restreint aux horizons où le transitoire est amorti, il revient à 0,96 [0,88 ; 1,03], compatible avec 1. **Cet
+  exposant hors transitoire a été ajouté après avoir vu le résultat de phase 2** ; la raison
+  en est mécanique et prévisible, mais il faut le savoir.
+
+**Une hypothèse de modélisation pèse 1,7 point, et elle inverse le classement.** La phase 2
+perd *moins* que la baseline (0,9 % contre 1,3 %), alors qu'elle passe deux fois plus de
+commandes avec la même marge de sécurité en jours. La cause est mesurée, pas supposée : les
+délais sont tirés indépendamment pour chaque commande, donc un navire en retard peut être
+doublé par le suivant. Avec ~2,6 commandes en route à la fois, cela arrive à 12,7 % des
+arrivées en phase 2, contre 2,2 % en baseline. En interdisant les dépassements (12 graines,
+20 ans), la phase 2 tombe de **0,9917 à 0,9749** pendant que la baseline ne bouge presque pas
+(0,9893 → 0,9878) — et l'ordre s'inverse. L'hypothèse est réaliste pour des affrètements
+indépendants venus d'origines différentes, optimiste pour une navette sur une seule route.
+**Toute comparaison entre scénarios endogènes de cadences différentes devra être publiée sous
+les deux hypothèses.**
+
+Reproductible par `python scripts/convergence_horizon.py --scenario phase2_endogene
+--lots-annees 400` (~15 min par scénario).
 
 > **Ces chiffres ne sont pas des prévisions.** Les deux paramètres qui les pilotent ne sont
 > pas sourcés : la **régularité des arrivées** de minéraliers (statut *estimé*, jamais

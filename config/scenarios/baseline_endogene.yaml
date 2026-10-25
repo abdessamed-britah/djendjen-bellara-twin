@@ -1,0 +1,16 @@
+# Baseline avec approvisionnement endogène : un minéralier est affrété quand la position de
+# stock passe sous le point de commande, et non plus à intervalles tirés.
+#
+# Pourquoi un scénario à part plutôt que de modifier `baseline` : la validation analytique du
+# moteur de file (Pollaczek-Khinchine) suppose des arrivées de Poisson exogènes, et c'est la
+# seule validation du projet qui ne doive rien à la simulation. `baseline` reste donc exogène.
+#
+# Ici, `simulation.dispersion_arrivees` est **sans effet** : l'irrégularité des arrivées n'est
+# plus une entrée, elle résulte de la politique de commande et de la variabilité du délai
+# d'approvisionnement (bloc `approvisionnement` de assumptions.yaml). Comparer le c_a² qu'elle
+# produit au c_a² mesuré sur les bilans de trafic est une validation, pas un réglage.
+nom: baseline_endogene
+description: "Capacité actuelle, approvisionnement par point de commande sur la position de stock"
+overrides:
+  simulation.politique_approvisionnement:
+    value: point_de_commande

@@ -182,4 +182,5 @@ def test_les_arrets_planifies_ne_sont_pas_une_source_d_alea():
     assert not any("arret" in source for source in sp.SOURCES)
     assert set(sp.SOURCES) == {
         "intervalle", "taille_navire", "cadence_dechargement", "rail",
+        "delai_approvisionnement",
     }

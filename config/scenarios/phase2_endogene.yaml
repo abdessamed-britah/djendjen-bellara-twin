@@ -1,0 +1,14 @@
+# Phase 2 avec approvisionnement endogène : capacité DRI × facteur_dri, et un minéralier
+# affrété dès que la position de stock passe sous le point de commande.
+#
+# `phase2` reste exogène pour les mêmes raisons que `baseline` (voir baseline_endogene.yaml).
+# Le point de commande est exprimé en jours de consommation : comme la consommation double en
+# phase 2, le même nombre de jours représente deux fois plus de tonnes. Aucun chiffre n'est
+# recopié ici.
+nom: phase2_endogene
+description: "Capacité DRI × facteur_dri, approvisionnement par point de commande"
+overrides:
+  usine.capacite_dri:
+    multiply_by: phase_2.facteur_dri
+  simulation.politique_approvisionnement:
+    value: point_de_commande

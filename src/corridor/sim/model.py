@@ -2,23 +2,39 @@
 
 Cinq processus, une unité de temps (l'heure), une unité de masse (la tonne) :
 
-1. `arrivals`  — engendre les minéraliers selon l'intervalle tiré ;
+1. l'origine des navires, au choix (`simulation.politique_approvisionnement`) :
+   - `arrivals` — **exogène** : un minéralier arrive après chaque intervalle tiré ;
+   - `approvisionnement` — **point de commande** : un minéralier est affrété dès que la
+     position de stock passe sous le point de commande, puis `navire_en_mer` le fait
+     arriver en rade après un délai tiré ;
 2. `vessel`    — attente en rade, poste de déchargement, déchargement par tranches ;
 3. `rame`      — navette port → usine → port, une par rame, en boucle ;
 4. `dri`       — consommation horaire continue, arrêts planifiés, arrêts faute de stock ;
-5. `monitor`   — échantillonne les niveaux des deux stocks.
+5. `monitor`   — échantillonne les niveaux des deux stocks et la position de stock.
+
+**Pourquoi deux origines.** Le modèle exogène cale le débit moyen d'arrivée exactement sur
+la demande et n'a aucune rétroaction : l'écart offre − demande y est une marche aléatoire
+sans dérive, et le taux de service n'y a pas de régime stationnaire
+(`scripts/convergence_horizon.py`). Il est gardé parce que la validation contre
+Pollaczek-Khinchine exige des arrivées de Poisson exogènes. Le point de commande rend au
+système une dérive de rappel : on commande quand le stock baisse, pas à date fixe.
 
 Les deux stocks sont des `simpy.Container` à capacité finie, et c'est ce qui fait
 circuler la contre-pression dans tout le corridor : stockyard plein → le déchargement
 s'arrête, navire immobilisé à quai ; stock usine plein → la rame attend, chargée. À
 l'inverse, stock usine vide → le DRI s'arrête et chaque heure d'arrêt est comptée.
 
-**Conservation de la masse.** À tout instant :
+**Conservation de la masse, en deux bilans séparés.** À tout instant :
 
-    stock_initial + déchargé = stockyard + stock_usine + en_transit + consommé
+    aval  :  stock_initial + déchargé = stockyard + stock_usine + en_transit + consommé
+    amont :  engagé = déchargé + à_flot
 
 Le terme « en transit » n'est pas optionnel : une rame en route détient jusqu'à
 `charge_par_train` tonnes qui n'appartiennent plus au port et pas encore à l'usine.
+« À flot » est tout ce qui a été engagé sans être encore déchargé : en mer, en rade, et la
+cargaison encore à bord d'un navire à quai. Les deux bilans restent séparés pour qu'une
+fuite de masse dise *de quel côté du quai* elle se produit. En politique exogène, un navire
+est « engagé » à son arrivée en rade, et le bilan amont vaut quand même.
 
 **Mesure des temps d'occupation.** Un navire encore à quai ou une rame encore bloquée
 à la fin de l'horizon compte pour le temps déjà passé dans cet état. Les durées sont
@@ -53,6 +69,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from dataclasses import dataclass, field
+from itertools import pairwise
 from statistics import fmean
 
 import simpy
@@ -151,6 +168,14 @@ class SimResult:
     rame_blocked_h: float
     # stock flottant : tonnage en attente en rade, moyenné sur l'horizon
     waiting_tonnage_mean_t: float
+    # approvisionnement : bilan amont et politique de commande
+    pellets_ordered_t: float  # engagé (commandé, ou arrivé en politique exogène)
+    pellets_afloat_t: float  # à flot à la fin : en mer, en rade, encore à bord à quai
+    pellets_at_sea_mean_t: float  # en mer, moyenné sur l'horizon ; nul en exogène
+    orders_placed: int  # commandes passées ; égal aux arrivées en exogène
+    lead_time_mean_h: float  # délai moyen tiré ; nul en exogène
+    inventory_position_min_t: float
+    inventory_position_mean_t: float
 
 
 @dataclass(slots=True)
@@ -171,9 +196,15 @@ class _Metrics:
     rame_rolling: TimeIntegral = field(default_factory=TimeIntegral)
     rame_blocked: TimeIntegral = field(default_factory=TimeIntegral)
     anchorage_tonnage: TimeIntegral = field(default_factory=TimeIntegral)
+    at_sea_tonnage: TimeIntegral = field(default_factory=TimeIntegral)
+    pellets_ordered_t: float = 0.0
+    pellets_afloat_t: float = 0.0
+    orders_placed: int = 0
+    lead_times_h: list[float] = field(default_factory=list)
     waits_h: list[float] = field(default_factory=list)
     stockyard_samples: list[float] = field(default_factory=list)
     plant_samples: list[float] = field(default_factory=list)
+    inventory_samples: list[float] = field(default_factory=list)
 
 
 class _Corridor:
@@ -193,6 +224,11 @@ class _Corridor:
         self.streams = streams
         self.metrics = _Metrics()
         self.pull = config.politique_expedition == "pull"
+        # Réveil de la politique de commande. La position de stock ne baisse qu'aux
+        # consommations du four : décharger, expédier ou faire arriver un navire déplace du
+        # minerai sans en retirer. Le four réveille donc la politique, et elle seule ; une
+        # revue à pas fixe ajouterait un retard qui se confondrait avec le délai.
+        self.reveil: simpy.Event | None = None
         self.stops = config.arrets_planifies_fenetres(years)
         self.berths = simpy.Resource(env, capacity=config.postes_minerai)
         self.stockyard = simpy.Container(
@@ -229,7 +265,68 @@ class _Corridor:
             yield self.env.timeout(self.samplers.interval_h.sample(intervalles))
             size_t = self.samplers.vessel_size_t.sample(tailles)
             rate = self.samplers.discharge_rate_t_par_h.sample(cadences)
+            self._engager(size_t)
             self.env.process(self.vessel(size_t, rate))
+
+    def approvisionnement(self) -> Generator:
+        """Politique (s, Q) en revue continue : un navire dès que la position passe sous s.
+
+        Q vaut un navire, dont la taille est tirée à la commande. Si la position est très
+        en dessous de s — au démarrage, ou après une longue panne —, la boucle intérieure
+        commande autant de navires qu'il faut pour repasser au-dessus : c'est la forme
+        classique de la politique, qui commande par multiples de Q.
+
+        Taille, cadence et délai sont tirés **à la commande**, chacun dans son flux : la
+        n-ième commande a les mêmes trois valeurs d'une configuration à l'autre, même si
+        elle part à une autre date.
+        """
+        tailles = self.streams.stream("taille_navire")
+        cadences = self.streams.stream("cadence_dechargement")
+        delais = self.streams.stream("delai_approvisionnement")
+        seuil = self.config.point_de_commande_t
+        while True:
+            while self.position_de_stock() < seuil:
+                size_t = self.samplers.vessel_size_t.sample(tailles)
+                rate = self.samplers.discharge_rate_t_par_h.sample(cadences)
+                delai_h = self.samplers.lead_time_h.sample(delais)
+                self._engager(size_t)
+                self.metrics.lead_times_h.append(delai_h)
+                self.env.process(self.navire_en_mer(size_t, rate, delai_h))
+            self.reveil = self.env.event()
+            yield self.reveil
+
+    def navire_en_mer(self, size_t: float, rate: float, delai_h: float) -> Generator:
+        """Le délai d'approvisionnement, puis le même parcours qu'un navire exogène.
+
+        Le minerai compte dans la position de stock dès la commande : c'est ce qui empêche
+        la politique de commander un navire par heure jusqu'à l'arrivée du premier.
+        """
+        self.metrics.at_sea_tonnage.change(self.env.now, +size_t)
+        yield self.env.timeout(delai_h)
+        self.metrics.at_sea_tonnage.change(self.env.now, -size_t)
+        yield from self.vessel(size_t, rate)
+
+    def position_de_stock(self) -> float:
+        """Stockyard + usine + rail en transit + à flot. Tout le minerai déjà acquis.
+
+        « À flot » couvre les navires en mer, en rade **et** la cargaison encore à bord d'un
+        navire à quai : sans ce dernier terme, la position chuterait d'un navire entier à
+        l'accostage puis remonterait pendant le déchargement, et la politique commanderait
+        pour rien. Chaque tonne est ainsi comptée une fois et une seule, où qu'elle soit.
+        """
+        return (self.stockyard.level + self.plant.level
+                + self.metrics.pellets_in_transit_t + self.metrics.pellets_afloat_t)
+
+    def _engager(self, size_t: float) -> None:
+        """Le navire entre au bilan amont : commandé, ou arrivé en politique exogène."""
+        self.metrics.orders_placed += 1
+        self.metrics.pellets_ordered_t += size_t
+        self.metrics.pellets_afloat_t += size_t
+
+    def _reveiller(self) -> None:
+        """Réveille la politique de commande, si elle attend. Sans effet en exogène."""
+        if self.reveil is not None and not self.reveil.triggered:
+            self.reveil.succeed()
 
     def vessel(self, size_t: float, rate: float) -> Generator:
         """Un navire : attente en rade, puis poste, puis déchargement par tranches.
@@ -258,6 +355,7 @@ class _Corridor:
                 yield self.stockyard.put(chunk)  # bloque si plein : déchargement en pause
                 self.metrics.berth_blocked.change(self.env.now, -1)
                 self.metrics.pellets_delivered_t += chunk
+                self.metrics.pellets_afloat_t -= chunk
                 remaining -= chunk
             self.metrics.berth.change(self.env.now, -1)
             self.metrics.vessels_served += 1
@@ -320,6 +418,7 @@ class _Corridor:
                     yield self.plant_space.put(besoin_t)
                 self.metrics.pellets_consumed_t += besoin_t
                 self.metrics.dri_production_t += production_t
+                self._reveiller()
             else:
                 # stock usine épuisé : le four s'arrête, l'heure est comptée
                 self.metrics.dri_stop_hours += step_h
@@ -330,6 +429,7 @@ class _Corridor:
         while True:
             self.metrics.stockyard_samples.append(self.stockyard.level)
             self.metrics.plant_samples.append(self.plant.level)
+            self.metrics.inventory_samples.append(self.position_de_stock())
             yield self.env.timeout(self.config.pas_echantillonnage_h)
 
     def _planned_stop(self, now: float) -> bool:
@@ -375,6 +475,15 @@ class _Corridor:
             rame_utilisation=m.rame_rolling.read(now) / rame_hours if rame_hours else 0.0,
             rame_blocked_h=m.rame_blocked.read(now),
             waiting_tonnage_mean_t=m.anchorage_tonnage.mean(now, horizon_h),
+            pellets_ordered_t=m.pellets_ordered_t,
+            pellets_afloat_t=m.pellets_afloat_t,
+            pellets_at_sea_mean_t=m.at_sea_tonnage.mean(now, horizon_h),
+            orders_placed=m.orders_placed,
+            lead_time_mean_h=fmean(m.lead_times_h) if m.lead_times_h else 0.0,
+            inventory_position_min_t=min(m.inventory_samples) if m.inventory_samples else 0.0,
+            inventory_position_mean_t=(
+                fmean(m.inventory_samples) if m.inventory_samples else 0.0
+            ),
         )
 
 
@@ -397,6 +506,16 @@ def simulate(
     Passer un jeu de `samplers` permet de substituer des lois empiriques sans rien
     changer au modèle.
     """
+    env, corridor = _construire(config, seed, years, samplers)
+    env.run(until=years * config.heures_par_an)
+    return corridor.result(scenario=scenario, rep=rep, seed=seed, years=years)
+
+
+def _construire(config, seed, years, samplers=None) -> tuple[simpy.Environment, _Corridor]:
+    """L'environnement et le corridor, processus lancés : le seul endroit qui les assemble.
+
+    L'origine des navires est choisie ici et nulle part ailleurs dans le modèle.
+    """
     env = simpy.Environment()
     corridor = _Corridor(
         env=env,
@@ -405,10 +524,48 @@ def simulate(
         streams=Streams(seed),
         years=years,
     )
-    env.process(corridor.arrivals())
+    if config.politique_approvisionnement == "point_de_commande":
+        env.process(corridor.approvisionnement())
+    else:
+        env.process(corridor.arrivals())
     env.process(corridor.dri())
     env.process(corridor.monitor())
     for index in range(config.nombre_de_rames):
         env.process(corridor.rame(index))
-    env.run(until=years * config.heures_par_an)
-    return corridor.result(scenario=scenario, rep=rep, seed=seed, years=years)
+    return env, corridor
+
+
+def production_par_periode(
+    config: SimConfig,
+    seed: int,
+    years: float,
+    periode_h: float | None = None,
+    samplers: Samplers | None = None,
+) -> list[dict[str, float]]:
+    """Production et heures de rupture de chaque période d'**une seule** réplication.
+
+    Ce sont les lots de la méthode des moyennes par lots : une longue trajectoire coupée en
+    tranches successives, plutôt que des réplications indépendantes. Par défaut une période
+    vaut un an. La somme des productions des périodes vaut exactement la production de
+    `simulate` à la même graine et au même horizon : les périodes sont des différences de
+    cumuls relevés pendant la simulation, et la dernière est fermée sur l'état final.
+    """
+    periode = periode_h or config.heures_par_an
+    horizon = years * config.heures_par_an
+    env, corridor = _construire(config, seed, years, samplers)
+    m = corridor.metrics
+    jalons: list[tuple[float, float, float]] = [(0.0, 0.0, 0.0)]
+
+    def releve() -> Generator:
+        while True:
+            yield env.timeout(periode)
+            if env.now < horizon:
+                jalons.append((env.now, m.dri_production_t, m.dri_stop_hours))
+
+    env.process(releve())
+    env.run(until=horizon)
+    jalons.append((horizon, m.dri_production_t, m.dri_stop_hours))
+    return [
+        {"debut_h": a[0], "fin_h": b[0], "production_t": b[1] - a[1], "rupture_h": b[2] - a[2]}
+        for a, b in pairwise(jalons)
+    ]

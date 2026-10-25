@@ -37,6 +37,9 @@ AssumptionValues = dict[str, float | str | None]
 #: Politiques d'expédition des rames admises (voir rail.politique_expedition).
 EXPEDITION_POLICIES = ("pull", "push")
 
+#: Origines des arrivées de minéraliers (voir simulation.politique_approvisionnement).
+SUPPLY_POLICIES = ("exogene", "point_de_commande")
+
 #: Statuts épistémiques admis dans assumptions.yaml (l'en-tête du fichier les décrit).
 STATUSES = ("connu", "observé", "annoncé", "estimé", "inconnu", "technique")
 
@@ -192,6 +195,10 @@ class SimConfig:
     cv_cadence: float
     cv_durees_rail: float
     fraction_stock_initial: float
+    politique_approvisionnement: str  # exogene | point_de_commande
+    delai_approvisionnement_h: float
+    cv_delai_approvisionnement: float
+    point_de_commande_j: float
     pas_h: float
     pas_echantillonnage_h: float
     graine_par_defaut: int
@@ -209,6 +216,7 @@ class SimConfig:
     capacite_rail_t_par_h: float
     stock_initial_stockyard_t: float
     stock_initial_usine_t: float
+    point_de_commande_t: float
 
     @classmethod
     def from_scenario(cls, scenario: Scenario) -> SimConfig:
@@ -243,6 +251,15 @@ class SimConfig:
         fraction_initiale = value_of(v, "simulation.fraction_stock_initial")
 
         politique = text_of(v, "rail.politique_expedition", EXPEDITION_POLICIES)
+        approvisionnement = text_of(
+            v, "simulation.politique_approvisionnement", SUPPLY_POLICIES
+        )
+        point_de_commande_j = value_of(v, "approvisionnement.point_de_commande_j")
+        if approvisionnement == "point_de_commande" and point_de_commande_j <= 0:
+            # sans point de commande positif, aucune commande ne partirait jamais
+            raise ValueError(
+                f"point de commande de {point_de_commande_j} j : il doit être positif"
+            )
         if politique == "pull" and charge_par_train > capacite_usine:
             # sinon la rame attendrait indéfiniment une place qui ne peut pas exister
             raise ValueError(
@@ -271,6 +288,12 @@ class SimConfig:
             cv_cadence=value_of(v, "simulation.cv_cadence_dechargement"),
             cv_durees_rail=value_of(v, "simulation.cv_durees_rail"),
             fraction_stock_initial=fraction_initiale,
+            politique_approvisionnement=approvisionnement,
+            delai_approvisionnement_h=(
+                value_of(v, "approvisionnement.delai_moyen_j") * _HOURS_PER_DAY
+            ),
+            cv_delai_approvisionnement=value_of(v, "approvisionnement.cv_delai"),
+            point_de_commande_j=point_de_commande_j,
             pas_h=value_of(v, "simulation.pas_de_temps"),
             pas_echantillonnage_h=value_of(v, "simulation.pas_echantillonnage_stocks"),
             graine_par_defaut=int(value_of(v, "simulation.graine_par_defaut")),
@@ -288,6 +311,9 @@ class SimConfig:
             capacite_rail_t_par_h=nombre_de_rames * charge_par_train / cycle_rame,
             stock_initial_stockyard_t=capacite_stockyard * fraction_initiale,
             stock_initial_usine_t=capacite_usine * fraction_initiale,
+            # s est publié en jours de consommation, comme la couverture τ : on le
+            # convertit ici, une fois, pour que le modèle ne compare que des tonnes
+            point_de_commande_t=point_de_commande_j * debit_pellets * _HOURS_PER_DAY,
         )
 
     def arrets_planifies_fenetres(self, years: float) -> list[tuple[float, float]]:

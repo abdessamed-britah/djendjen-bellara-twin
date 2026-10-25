@@ -64,7 +64,7 @@ sur 16 trimestres de bilans publics), les deux capacités de stockage restent `i
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **700 tests, ~22 s mesurés**. S'y ajoutent **18 tests
+`ruff check .` et `pytest -q` passent : **747 tests, ~35 à 39 s mesurés au repos**. S'y ajoutent **20 tests
 marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
 `pytest -m slow -q` (~100 s) : la validation analytique du moteur de file, deux validations de
 comportement de `beta_site.py`, les deux mesures de la limite 0 (gain des nombres communs,
@@ -389,6 +389,38 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   construction*. La colonne `tau_brut` conserve les valeurs d'avant correction, et c'est elle
   qui mesure le bruit et juge le métamodèle. Même piège partout où l'on nettoie des données
   avant de s'en servir pour juger un modèle.
+- **Deux origines des navires, choisies par `simulation.politique_approvisionnement`.**
+  `exogene` (défaut, scénarios historiques) : un navire arrive après chaque intervalle tiré,
+  débit moyen calé sur la demande, sans rétroaction — donc sans régime stationnaire (limite 0).
+  Gardé parce que la validation contre Pollaczek-Khinchine exige des arrivées de Poisson
+  exogènes : **ne jamais basculer `baseline` ni `phase2` en endogène.** `point_de_commande`
+  (`baseline_endogene`, `phase2_endogene`) : politique (s, Q) en revue continue, Q = un navire.
+  Quatre choix et leur raison :
+  - **position de stock = stockyard + usine + rail en transit + à flot**, où « à flot » couvre
+    les navires en mer, en rade **et la cargaison encore à bord à quai**. Sans ce dernier
+    terme, la position chuterait d'un navire entier à l'accostage et la politique commanderait
+    pour rien ;
+  - **revue réveillée par le four, et lui seul** : décharger, expédier ou faire arriver un
+    navire déplace du minerai sans en retirer, donc seule une consommation fait baisser la
+    position. Une revue à pas fixe ajouterait un retard qui se confondrait avec le délai ;
+  - **taille, cadence et délai tirés à la commande**, chacun dans son flux : la n-ième
+    commande a les mêmes trois valeurs d'une configuration à l'autre ;
+  - **deux bilans de masse séparés**, aval (`stock_initial + déchargé = stocks + transit +
+    consommé`) et amont (`engagé = déchargé + à flot`), pour qu'une fuite dise de quel côté
+    du quai elle se produit. Le bilan amont vaut aussi en exogène, où un navire est « engagé »
+    à son arrivée.
+  Le modèle exogène est resté **identique bit à bit** à son état antérieur (vérifié sur 12
+  cas contre le commit précédent) : aucun résultat publié n'a bougé du fait de l'ajout.
+  **Résultat (2026-10-25, `convergence_horizon.py`, 20 réplications + 400 ans par lots)** :
+  β converge dans les deux scénarios endogènes — à 0,1 point de sa limite dès 4 ans, plus
+  aucune différence appariée significative au-delà de 8 ans, et les deux estimateurs
+  s'accordent. **β∞ = 0,9867 ± 0,0012 en baseline, 0,9912 ± 0,0008 en phase 2** (moyennes
+  par lots). Ruptures : 1,33 % et 0,88 % des heures ouvrées, plus de quatre années sur cinq
+  en voient au moins une. Exposant du déficit hors transitoire (T ≥ 8) : 1,05 [0,95 ; 1,13]
+  et 0,96 [0,88 ; 1,03], compatibles avec 1. En phase 2 l'exposant sur tous les horizons
+  exclut 1 (0,84) à cause de la rupture certaine du démarrage (stock initial < demande
+  pendant le délai) ; l'exposant hors transitoire a été ajouté **après** avoir vu ce
+  résultat. Le classement phase 2 > baseline tient aux dépassements entre navires (limite 20).
 - **Un générateur par source d'aléa, dérivé de la graine de réplication.**
   `corridor.sim.samplers.Streams` en donne un par source (`intervalle`, `taille_navire`,
   `cadence_dechargement`, `rail`, une sous-série par rame). Les arrêts planifiés n'en ont pas :
@@ -455,9 +487,11 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
    **0,492 [0,367 ; 0,599] à stock initial nul** ; β croît sans palier de 0,858 (1 an) à
    0,971 (50 ans). **Il n'existe aucun β stationnaire à mesurer** : tout β « à un an » du
    projet est un transitoire. Le stock initial pèse un tonnage fixe (63-64 % de S0 converti),
-   soit 7 points de β à un an et 0,1 à cinquante. Remède en cours : approvisionnement
-   endogène (politique de commande sur la position de stock), qui devra repasser ce même
-   script avec un exposant compatible avec 0.
+   soit 7 points de β à un an et 0,1 à cinquante. Remède : approvisionnement endogène
+   (politique de commande sur la position de stock), jugé sur la **convergence de β** et non
+   sur l'exposant. **Attention à la lecture de p** : p ≈ 1 signifie « régime stationnaire avec
+   pertes » (fraction constante perdue, β → β∞ < 1), pas « défaut de capacité ». Les deux
+   donnent la même pente ; la première version du script les confondait.
 
 1. **L'étape 3 n'est validée que partiellement sur du réel.** Elle tourne sur 82 instantanés
    (49 escales, 31 exploitables, dont 4 escales minerai) et ses invariants
@@ -544,6 +578,34 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
     quelques jours de couverture près. Ne pas lire « 27,8 jours » comme une spécification. Et
     surtout, **la position du site sur l'axe horizontal est inconnue** (limite 5) : la carte dit
     quelle mesure trancherait, elle ne tranche pas pour Djen Djen.
+18. **La politique de commande est en revue continue ; l'affrètement réel se décide souvent
+    par cycles.** Le modèle endogène affrète un navire à l'heure même où la position de stock
+    passe sous le point de commande. En pratique, un sidérurgiste fixe souvent ses
+    affrètements par cycles — programme mensuel ou trimestriel, contrats d'enlèvement à
+    cadence convenue — ce qui ajoute un retard de décision que le modèle ignore. Effet
+    attendu : la revue continue est la politique la plus réactive possible, donc ses ruptures
+    sont une **borne basse**. Une revue périodique de période R équivaut, au premier ordre, à
+    allonger le délai de R/2 ; le modèle la rendrait en ajoutant un pas de revue, pas en
+    touchant au délai, pour que les deux effets restent lisibles séparément.
+19. **Les trois paramètres d'approvisionnement sont sans source.** Délai moyen (22 j
+    [15 ; 30]), variabilité du délai (cv 0,25 [0,10 ; 0,60]) et point de commande (30 j
+    [15 ; 60]) sont des valeurs de travail de statut `estimé`. Le délai est un ordre de
+    grandeur de traversée Brésil ou Canada ; rien de public ne renseigne les contrats d'AQS.
+    **Ne jamais régler `cv_delai` pour retrouver le c_a² mesuré** : c'est cette comparaison
+    qui valide le modèle (étape 3 du chantier en cours), et la caler dessus la viderait.
+20. **Les navires peuvent se dépasser, et cela pèse jusqu'à 1,7 point de β.** Les délais
+    d'approvisionnement sont tirés indépendamment pour chaque commande : un navire en retard
+    peut être doublé par le suivant. Avec ~2,6 commandes en route à la fois en phase 2, cela
+    arrive à 12,7 % des arrivées (2,2 % en baseline, 1,3 commande en route), et chaque
+    dépassement comble une rupture que le retard aurait créée. Mesuré en interdisant les
+    dépassements (chaque navire arrive au plus tôt après le précédent), 12 graines × 20 ans :
+    phase 2 **0,9917 → 0,9749**, baseline 0,9893 → 0,9878. **C'est ce qui place la phase 2
+    au-dessus de la baseline** en endogène ; sans dépassement, l'ordre s'inverse comme le
+    prévoit le compte des cycles. Réaliste pour des affrètements indépendants venant
+    d'origines différentes (Brésil et Canada), optimiste pour une navette sur une seule
+    route. **Toute comparaison entre scénarios endogènes de cadences différentes doit être
+    publiée sous les deux hypothèses.** Le modèle ne propose pas encore l'option : elle a été
+    mesurée par une substitution de `navire_en_mer` dans un script de diagnostic.
 
 ## Reprise après une longue pause
 
@@ -587,6 +649,8 @@ python scripts/frontiere_service.py --reps 60 # frontière de service (c_a² x �
 python scripts/cout_regularite.py             # H4 : lisser l'affrètement ou stocker ?
 python scripts/beta_site.py --tirages 500     # chiffre appliqué : distribution de β (~8 min)
 python scripts/convergence_horizon.py         # β converge-t-il avec l'horizon ? (~20 min)
+python scripts/convergence_horizon.py --scenario phase2_endogene --lots-annees 400
+                                              # régime endogène : β∞ et ses critères
 python scripts/metamodele_frontiere.py        # formule contre carte : verdict et erreurs
 python scripts/frontiere_directe.py           # frontière par dichotomie (~30 min)
 python scripts/metamodele_frontiere.py --directe   # la même formule, sur cette frontière
@@ -615,7 +679,9 @@ config/assumptions.yaml  toutes les valeurs numériques du domaine
 config/scenarios/        baseline, phase2, phase2_plus_stockage, phase2_plus_poste,
                          phase2_plus_poste_plus_stockage (plan factoriel 2x2),
                          phase2_mesure (irrégularité estimée : le chiffre appliqué),
-                         baseline_sans_blocage (validation analytique, pas un cas physique)
+                         baseline_sans_blocage (validation analytique, pas un cas physique),
+                         baseline_endogene et phase2_endogene (approvisionnement par point
+                         de commande : les seuls à avoir un régime stationnaire)
 scripts/hooks/pre-commit lance `pytest -m slow -q` si src/corridor/sim/ est touché
 scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          economic_summary, compare_scenarios, h2_blocking,
