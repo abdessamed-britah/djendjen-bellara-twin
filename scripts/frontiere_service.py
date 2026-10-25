@@ -202,6 +202,10 @@ def donnees_figure(grilles, raw, base: SimConfig, levels=LEVELS) -> dict:
             (postes, level) for postes in grilles for level in levels
             if (postes, level) not in disponibles
         ),
+        "bandes": {(postes, level): bande_de_frontiere(cases, level)
+                   for postes, cases in grilles.items() for level in levels},
+        "rendements": {(postes, level): rendement_marginal(cases, level)
+                       for postes, cases in grilles.items() for level in levels},
     }
 
 
@@ -210,16 +214,23 @@ def matrice(cases) -> list[list[float]]:
     return [[cases[(c_a2, tau)].mean for c_a2 in C_A2_VALUES] for tau in TAU_DAYS]
 
 
-def couverture_requise(cases, level: float) -> dict[float, float | None]:
+def couverture_requise(cases, level: float, bord: float = 0.0) -> dict[float, float | None]:
     """Pour chaque c_a², la couverture τ à partir de laquelle β atteint `level`.
 
     Interpolation linéaire entre les deux τ qui encadrent le franchissement, en balayant
     du bas vers le haut. None si le niveau n'est jamais atteint dans le domaine exploré :
     c'est une information en soi, pas un trou à masquer.
+
+    `bord` déplace β de ce nombre de demi-largeurs d'IC avant de chercher le franchissement.
+    C'est ce qui transforme la frontière en bande : à `bord = +1` on lit la frontière du
+    corridor le plus favorable que l'IC autorise, donc **moins** de stockage requis ; à
+    `bord = −1`, le plus défavorable, donc davantage. La frontière n'est pas une ligne, et
+    la tracer comme une ligne laisse croire à une précision qu'un β à ± 0,01 n'a pas.
     """
     requis = {}
     for c_a2 in C_A2_VALUES:
-        betas = [cases[(c_a2, tau)].mean for tau in TAU_DAYS]
+        betas = [cases[(c_a2, tau)].mean + bord * cases[(c_a2, tau)].half_width
+                 for tau in TAU_DAYS]
         trouve = None
         for i in range(len(TAU_DAYS) - 1):
             bas, haut = betas[i], betas[i + 1]
@@ -231,6 +242,54 @@ def couverture_requise(cases, level: float) -> dict[float, float | None]:
             trouve = TAU_DAYS[0]  # déjà atteint au plus bas stockage exploré
         requis[c_a2] = trouve
     return requis
+
+
+def bande_de_frontiere(cases, level: float) -> dict[float, tuple | None]:
+    """La frontière comme bande : (τ optimiste, τ central, τ pessimiste) par c_a².
+
+    Les trois valeurs viennent du même franchissement, lu à trois hauteurs de β : la
+    moyenne, et les deux bornes de son IC à 95 %. Un c_a² dont même la borne optimiste
+    n'atteint pas le niveau n'a pas de bande du tout et vaut None ; un c_a² dont seule la
+    borne pessimiste manque garde sa bande, ouverte vers le haut (τ pessimiste à None).
+    """
+    optimiste = couverture_requise(cases, level, bord=+1.0)
+    central = couverture_requise(cases, level, bord=0.0)
+    pessimiste = couverture_requise(cases, level, bord=-1.0)
+    bandes: dict[float, tuple | None] = {}
+    for c_a2 in C_A2_VALUES:
+        if central[c_a2] is None and optimiste[c_a2] is None:
+            bandes[c_a2] = None
+            continue
+        bandes[c_a2] = (optimiste[c_a2], central[c_a2], pessimiste[c_a2])
+    return bandes
+
+
+def rendement_marginal(cases, level: float) -> dict[float, float | None]:
+    """Rendement marginal du stockage au voisinage de la frontière : dβ/dτ, par jour.
+
+    C'est la pente du segment de grille où β franchit le niveau. Elle répond à la question
+    du dimensionnement, que la frontière seule n'adresse pas : **un jour de couverture de
+    plus, ça rapporte combien de points de taux de service ?** Une pente faible signifie
+    que la frontière est plate, donc mal située par la simulation *et* peu sensible dans
+    la réalité — se tromper de cinq jours ne coûte alors presque rien. Une pente forte
+    signifie l'inverse : la frontière est nette et la rater se paie.
+
+    None là où le niveau n'est pas franchi dans le domaine (pas de segment à mesurer).
+    """
+    pentes: dict[float, float | None] = {}
+    for c_a2 in C_A2_VALUES:
+        betas = [cases[(c_a2, tau)].mean for tau in TAU_DAYS]
+        pente = None
+        for i in range(len(TAU_DAYS) - 1):
+            bas, haut = betas[i], betas[i + 1]
+            if bas < level <= haut:
+                pente = (haut - bas) / (TAU_DAYS[i + 1] - TAU_DAYS[i])
+                break
+        if pente is None and betas[0] >= level:
+            # déjà atteint au plancher : la pente utile est celle du premier segment
+            pente = (betas[1] - betas[0]) / (TAU_DAYS[1] - TAU_DAYS[0])
+        pentes[c_a2] = pente
+    return pentes
 
 
 def print_table(grilles, base: SimConfig) -> None:
@@ -298,17 +357,57 @@ def bande_c_a2(raw) -> tuple[float, float, float] | None:
     return bas, centre, haut
 
 
+def _bande_tracable(bande, c_a2_values=C_A2_VALUES):
+    """Les séries d'une bande, prêtes à remplir : bornes, centre, et où la bande est ouverte.
+
+    Une borne pessimiste absente signifie que même le bas de l'IC de β n'atteint pas le
+    niveau dans le domaine exploré. On la porte au plafond pour pouvoir tracer, mais le
+    point est marqué `ouvert` : la figure l'hachure au lieu de le remplir, parce qu'une
+    surface pleine jusqu'au plafond se lirait comme une borne mesurée alors qu'il n'y en a
+    pas. Faute de cette distinction, l'essentiel de la bande passerait pour du connu.
+    """
+    xs, bas, haut, centre, ouvert = [], [], [], [], []
+    plafond = max(TAU_DAYS)
+    for c_a2 in c_a2_values:
+        valeurs = bande.get(c_a2)
+        if valeurs is None:
+            continue
+        opt, cen, pess = valeurs
+        if opt is None:
+            continue
+        xs.append(c_a2)
+        bas.append(opt)
+        haut.append(plafond if pess is None else pess)
+        centre.append(None if cen is None else cen)
+        ouvert.append(pess is None)
+    return {"c_a2": xs, "bas": bas, "haut": haut, "centre": centre, "ouvert": ouvert,
+            "ouverte": any(ouvert)}
+
+
 def write_figure(grilles, base: SimConfig, raw, scenario: str, reps: int,
                  path=DEFAULT_FIGURE) -> Path:
-    """Trace les frontières β = 0,95 et β = 0,99 dans le plan (c_a², τ).
+    """La frontière comme **bande**, et le rendement marginal du stockage à côté.
 
-    Une **teinte** par nombre de postes, un **style de trait** par niveau de service :
-    jamais deux informations sur le même canal. La bande grise rappelle où se situe le
-    site d'après ses hypothèses, qui sont de statut `inconnu` — d'où une bande et non un
-    point. Au-dessus d'une courbe, le taux de service est atteint.
+    Deux panneaux, parce qu'il y a deux questions distinctes et qu'une seule courbe ne
+    répond pas aux deux :
+
+    - à gauche, **où passe la frontière**, et avec quelle imprécision. Une teinte par
+      nombre de postes, un style de trait par niveau de service : jamais deux informations
+      sur le même canal. La frontière est une bande et non une ligne, parce que β a un IC
+      de ± 0,01 à ± 0,03 selon les cases : la tracer en trait fin prêterait à la carte une
+      netteté qu'elle n'a pas ;
+    - à droite, **ce que rapporte un jour de stock de plus** au voisinage de la frontière.
+      C'est la grandeur de dimensionnement : elle dit si se tromper de cinq jours coûte
+      cinq points de taux de service ou un demi-point.
+
+    Les deux bandes du site — couverture en ordonnée, c_a² estimé en abscisse — rappellent
+    que ni l'une ni l'autre coordonnée du site n'est connue.
     """
-    figure, ax = plt.subplots(figsize=(10.5, 8.0), constrained_layout=True)
-    bas, centre, haut = bande_du_site(base, raw)
+    figure, (ax, ax_pente) = plt.subplots(
+        1, 2, figsize=(15.0, 8.0), width_ratios=[1.75, 1.0], constrained_layout=True
+    )
+    donnees = donnees_figure(grilles, raw, base)
+    bas, centre, haut = donnees["bande_tau"]
 
     ax.axhspan(bas, haut, color="0.93", zorder=0)
     for borne in (bas, haut):
@@ -322,16 +421,17 @@ def write_figure(grilles, base: SimConfig, raw, scenario: str, reps: int,
             fontsize=8.5, color="0.35")
 
     # position horizontale du site, estimée sur les bilans de trafic 2022-2025
-    horizontal = bande_c_a2(raw)
+    horizontal = donnees["bande_c_a2"]
     if horizontal is not None:
         ca_bas, ca_centre, ca_haut = horizontal
         # la fourchette déborde le domaine tracé : on la borne pour ne pas écrire hors cadre,
         # et le libellé dit la valeur réelle, pas la valeur bornée
         visible_haut = min(ca_haut, max(C_A2_VALUES))
-        ax.axvspan(ca_bas, visible_haut, color="#e8710a", alpha=0.07, zorder=0)
-        for borne in (ca_bas, visible_haut):
-            ax.axvline(borne, color="#b06a1a", linewidth=0.9, linestyle=":", zorder=2)
-        ax.axvline(ca_centre, color="#b06a1a", linewidth=1.6, linestyle="-.", zorder=2)
+        for axe in (ax, ax_pente):
+            axe.axvspan(ca_bas, visible_haut, color="#e8710a", alpha=0.07, zorder=0)
+            for borne in (ca_bas, visible_haut):
+                axe.axvline(borne, color="#b06a1a", linewidth=0.9, linestyle=":", zorder=2)
+            axe.axvline(ca_centre, color="#b06a1a", linewidth=1.6, linestyle="-.", zorder=2)
         ax.text(ca_centre, 0.988, f" c_a² estimé du site : {ca_centre:.2f} ".replace(".", ","),
                 transform=ax.get_xaxis_transform(), va="top", ha="left",
                 fontsize=9.5, color="#8a4f10", fontweight="bold")
@@ -341,15 +441,42 @@ def write_figure(grilles, base: SimConfig, raw, scenario: str, reps: int,
                 transform=ax.get_xaxis_transform(), va="top", ha="left",
                 fontsize=8.5, color="#8a4f10")
 
-    donnees = donnees_figure(grilles, raw, base)
+    ouvertes, sans_bande = [], []
     for postes in POSTES:
-        valeurs = donnees["matrices"][postes]
         for level in LEVELS:
-            ax.contour(
-                C_A2_VALUES, TAU_DAYS, valeurs, levels=[level],
-                colors=[COULEURS[postes]], linestyles=[STYLES[level]], linewidths=2.2,
-                zorder=3,
-            )
+            serie = _bande_tracable(donnees["bandes"][(postes, level)])
+            if not serie["c_a2"]:
+                continue
+            visibles = [(c, t) for c, t in zip(serie["c_a2"], serie["centre"], strict=True)
+                        if t is not None]
+            # Une bande de moins de trois points ne dessine pas une frontière, elle dessine
+            # un coin : β = 0,99 n'est atteint qu'aux deux premiers c_a², et sa bande
+            # remplissait tout le haut du cadre d'une surface que deux points ne portent
+            # pas. On garde alors le trait central seul, et la légende le dit.
+            if len(visibles) < 3:
+                if visibles:
+                    ax.plot([c for c, _ in visibles], [t for _, t in visibles],
+                            color=COULEURS[postes], linestyle=STYLES[level], linewidth=2.2,
+                            marker="o", markersize=5, zorder=4)
+                    sans_bande.append((postes, level, len(visibles)))
+                continue
+            ferme = [not o for o in serie["ouvert"]]
+            # la partie encadrée des deux côtés : une vraie surface
+            ax.fill_between(serie["c_a2"], serie["bas"], serie["haut"], where=ferme,
+                            color=COULEURS[postes], alpha=0.18, zorder=2, linewidth=0,
+                            interpolate=True)
+            # la partie ouverte vers le haut : hachurée, parce qu'elle n'a pas de borne
+            ax.fill_between(serie["c_a2"], serie["bas"], serie["haut"],
+                            where=serie["ouvert"], facecolor="none", hatch="///",
+                            edgecolor=COULEURS[postes], alpha=0.45, zorder=2,
+                            linewidth=0.0, interpolate=True)
+            ax.plot(serie["c_a2"], serie["bas"], color=COULEURS[postes],
+                    linewidth=0.9, alpha=0.8, zorder=3)
+            ax.plot([c for c, _ in visibles], [t for _, t in visibles],
+                    color=COULEURS[postes], linestyle=STYLES[level], linewidth=2.2,
+                    zorder=4)
+            if serie["ouverte"]:
+                ouvertes.append((postes, level))
 
     for postes in POSTES:
         ax.plot([], [], color=COULEURS[postes], linewidth=2.2,
@@ -358,6 +485,10 @@ def write_figure(grilles, base: SimConfig, raw, scenario: str, reps: int,
     for level in LEVELS:
         ax.plot([], [], color="0.35", linewidth=2.2, linestyle=STYLES[level],
                 label=f"β = {level:.2f}".replace(".", ","))
+    ax.fill_between([], [], [], color="0.45", alpha=0.18,
+                    label="bande = IC 95 % de β reporté sur τ")
+    ax.fill_between([], [], [], facecolor="none", hatch="///", edgecolor="0.45",
+                    linewidth=0.0, label="hachuré = pas de borne haute dans le domaine")
     # en bas à droite : la zone où aucun niveau n'est atteint, donc vide de courbes
     ax.legend(loc="lower right", fontsize=9, framealpha=0.95)
 
@@ -383,28 +514,79 @@ def write_figure(grilles, base: SimConfig, raw, scenario: str, reps: int,
                   "des intervalles) : 0 = parfaitement régulier, 1 = processus de Poisson")
     ax.set_ylabel("τ — couverture de stock, en jours de consommation de l'aciérie\n"
                   "(capacité port + usine) ÷ (pellets consommés par jour)")
-    ax.grid(True, color="0.90", linewidth=0.8, zorder=0)
-    ax.set_axisbelow(True)
+    ax.set_title("Où passe la frontière, et à combien de jours près", fontweight="bold")
+
+    # --- panneau de droite : le rendement marginal du stockage ---------------
+    for postes in POSTES:
+        for level in LEVELS:
+            pentes = donnees["rendements"][(postes, level)]
+            points = [(c, p * 100.0) for c, p in pentes.items() if p is not None]
+            if not points:
+                continue
+            ax_pente.plot([c for c, _ in points], [p for _, p in points],
+                          color=COULEURS[postes], linestyle=STYLES[level], linewidth=2.2,
+                          marker="o", markersize=5, zorder=3)
+    ax_pente.set_xlim(min(C_A2_VALUES), max(C_A2_VALUES))
+    ax_pente.set_ylim(bottom=0.0)
+    ax_pente.set_xlabel("c_a² — irrégularité des arrivées")
+    ax_pente.set_ylabel("dβ/dτ — points de taux de service gagnés\npar jour de couverture "
+                        "supplémentaire")
+    ax_pente.set_title("Ce que rapporte un jour de stock de plus", fontweight="bold")
+    toutes = [p * 100.0 for pentes in donnees["rendements"].values()
+              for p in pentes.values() if p is not None]
+    if toutes:
+        median = sorted(toutes)[len(toutes) // 2]
+        ax_pente.axhline(median, color="0.55", linewidth=1.0, linestyle=":", zorder=2)
+        ax_pente.text(
+            0.5, 0.03,
+            "Mesuré sur le segment de grille où β franchit le niveau.\n"
+            f"Médiane : {median:.2f} point de β par jour de couverture.\n".replace(
+                f"{median:.2f}", f"{median:.2f}".replace(".", ","))
+            + f"Se tromper de 10 jours sur la frontière coûte donc ~{10 * median:.0f} points\n"
+              "de taux de service : c'est l'enjeu réel de la largeur de la bande.",
+            transform=ax_pente.transAxes, ha="center", va="bottom", fontsize=8.5,
+            color="0.30", style="italic",
+        )
+
+    for axe in (ax, ax_pente):
+        axe.grid(True, color="0.90", linewidth=0.8, zorder=0)
+        axe.set_axisbelow(True)
 
     manquants = donnees["courbes_manquantes"]
     lignes = [
         f"Frontière de service du corridor — scénario {scenario}",
-        "Au-dessus d'une courbe, le taux de service est atteint : pour une irrégularité",
-        "d'affrètement donnée, elle se lit en jours de stock.",
+        "Au-dessus d'une bande, le taux de service est atteint : pour une irrégularité",
+        "d'affrètement donnée, elle se lit en jours de stock. La bande est l'IC 95 % de β",
+        "reporté sur l'axe des τ — la frontière n'est pas une ligne.",
         (f"β = production ÷ cible, moyenne sur {reps} réplications d'un an, "
-         f"{len(C_A2_VALUES)} × {len(TAU_DAYS)} points par courbe."),
+         f"{len(C_A2_VALUES)} × {len(TAU_DAYS)} points par bande."),
         "Axes sans dimension : un autre site se place sur la même carte. Ce qui ne s'y",
         "transpose pas est la charge du poste, que distinguent les deux couleurs.",
         ("Bande grise : couverture du site d'après ses hypothèses (statut inconnu). "
          "Bande orange : c_a² estimé"),
         "sur les bilans de trafic 2022-2025 — une estimation large, pas une mesure.",
     ]
+    if ouvertes:
+        ouvert = ", ".join(
+            f"{p} poste{'s' if p > 1 else ''} / β = {n:.2f}".replace(".", ",")
+            for p, n in ouvertes
+        )
+        lignes.append(f"Bande ouverte vers le haut ({ouvert}) : la borne pessimiste de β "
+                      "n'atteint le niveau nulle part dans le domaine.")
+    if sans_bande:
+        maigres = ", ".join(
+            f"{p} poste{'s' if p > 1 else ''} / β = {n:.2f}".replace(".", ",")
+            + f" : {combien} point{'s' if combien > 1 else ''}"
+            for p, n, combien in sans_bande
+        )
+        lignes.append(f"Point ou trait sans bande ({maigres}) : trop peu de valeurs de c_a² "
+                      "atteignent le niveau pour en dessiner une surface.")
     if manquants:
         absents = ", ".join(
             f"{p} poste{'s' if p > 1 else ''} / β = {n:.2f}".replace(".", ",")
             for p, n in manquants
         )
-        lignes.append(f"Courbe absente ({absents}) : niveau atteint nulle part dans le "
+        lignes.append(f"Bande absente ({absents}) : niveau atteint nulle part dans le "
                       "domaine exploré.")
     figure.suptitle("\n".join(lignes), fontsize=10.0)
     path = Path(path)

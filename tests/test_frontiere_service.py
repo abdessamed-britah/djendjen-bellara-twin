@@ -277,3 +277,145 @@ def test_disponibles_et_manquantes_sont_complementaires(base):
     donnees = fs.donnees_figure(_grilles_factices(), RAW, base)
     total = len(donnees["courbes_disponibles"]) + len(donnees["courbes_manquantes"])
     assert total == len(fs.POSTES) * len(fs.LEVELS)
+
+
+# --- la frontière est une bande, pas une ligne ------------------------------
+
+
+def _carte_bruitee(seuil_par_c_a2, demi_largeur: float):
+    """Même carte monotone que `_carte_monotone`, mais avec un IC non dégénéré."""
+    from corridor.sim.stats import Estimate
+
+    cases = {}
+    n = 100
+    std = demi_largeur * math.sqrt(n) / 1.96
+    for c_a2 in fs.C_A2_VALUES:
+        seuil = seuil_par_c_a2[c_a2]
+        for tau in fs.TAU_DAYS:
+            moyenne = 0.90 + 0.10 * min(tau / seuil, 1.0)
+            cases[(c_a2, tau)] = Estimate(mean=moyenne, std=std, n=n)
+    return cases
+
+
+def test_un_beta_sans_incertitude_donne_une_bande_de_largeur_nulle():
+    """Garde-fou : le décalage ne doit rien déplacer quand l'IC est nul."""
+    cases = _carte_monotone({c: 10.0 + 20.0 * c for c in fs.C_A2_VALUES})
+    bande = fs.bande_de_frontiere(cases, 0.95)
+    for valeurs in bande.values():
+        if valeurs is None:
+            continue
+        optimiste, central, pessimiste = valeurs
+        assert optimiste == pytest.approx(central)
+        if pessimiste is not None:
+            assert pessimiste == pytest.approx(central)
+
+
+def test_la_bande_encadre_la_frontiere_centrale():
+    """Un corridor plus favorable exige moins de stock : l'optimiste est en dessous."""
+    cases = _carte_bruitee({c: 10.0 + 20.0 * c for c in fs.C_A2_VALUES}, 0.01)
+    for valeurs in fs.bande_de_frontiere(cases, 0.95).values():
+        if valeurs is None:
+            continue
+        optimiste, central, pessimiste = valeurs
+        if central is None:
+            continue
+        assert optimiste <= central
+        if pessimiste is not None:
+            assert central <= pessimiste
+
+
+def test_un_beta_plus_bruite_donne_une_bande_plus_large():
+    """Sinon la bande ne mesurerait pas l'incertitude, seulement la forme de la carte."""
+    seuils = {c: 10.0 + 20.0 * c for c in fs.C_A2_VALUES}
+    etroite = fs.bande_de_frontiere(_carte_bruitee(seuils, 0.002), 0.95)
+    large = fs.bande_de_frontiere(_carte_bruitee(seuils, 0.01), 0.95)
+    mesurables = [
+        c for c in fs.C_A2_VALUES
+        if etroite[c] and large[c] and None not in etroite[c] and None not in large[c]
+    ]
+    assert mesurables, "aucune bande fermée des deux côtés : le test ne mesurerait rien"
+    for c_a2 in mesurables:
+        assert (large[c_a2][2] - large[c_a2][0]) > (etroite[c_a2][2] - etroite[c_a2][0])
+
+
+def test_un_niveau_hors_d_atteinte_meme_au_mieux_n_a_pas_de_bande():
+    cases = _carte_bruitee({c: 10.0 for c in fs.C_A2_VALUES}, 0.01)
+    assert fs.bande_de_frontiere(cases, 1.50) == dict.fromkeys(fs.C_A2_VALUES)
+
+
+# --- rendement marginal du stockage -----------------------------------------
+
+
+def test_le_rendement_marginal_est_la_pente_du_segment_franchi():
+    """β passe de 0,94 à 0,96 sur 5 jours : 0,004 point par jour."""
+    cases = _cases({(c, t): 0.5 for c in fs.C_A2_VALUES for t in fs.TAU_DAYS})
+    cases[(0.0, 5.0)] = estimate([0.90, 0.90])
+    cases[(0.0, 10.0)] = estimate([0.94, 0.94])
+    cases[(0.0, 15.0)] = estimate([0.96, 0.96])
+    assert fs.rendement_marginal(cases, 0.95)[0.0] == pytest.approx(0.004)
+
+
+def test_le_rendement_est_none_la_ou_le_niveau_n_est_pas_atteint():
+    cases = _cases({(c, t): 0.80 for c in fs.C_A2_VALUES for t in fs.TAU_DAYS})
+    assert fs.rendement_marginal(cases, 0.95)[0.0] is None
+
+
+def test_un_niveau_deja_atteint_au_plancher_rend_la_pente_du_premier_segment():
+    """Il faut bien une pente à afficher là où la frontière est sous le domaine."""
+    cases = _cases({(c, t): 0.999 for c in fs.C_A2_VALUES for t in fs.TAU_DAYS})
+    cases[(0.0, 5.0)] = estimate([0.96, 0.96])
+    cases[(0.0, 10.0)] = estimate([0.98, 0.98])
+    attendu = (0.98 - 0.96) / (fs.TAU_DAYS[1] - fs.TAU_DAYS[0])
+    assert fs.rendement_marginal(cases, 0.95)[0.0] == pytest.approx(attendu)
+
+
+def test_le_rendement_est_positif_sur_une_carte_croissante():
+    """Un rendement négatif signifierait que stocker fait baisser le taux de service."""
+    cases = _carte_monotone({c: 10.0 + 20.0 * c for c in fs.C_A2_VALUES})
+    pentes = [p for p in fs.rendement_marginal(cases, 0.95).values() if p is not None]
+    assert pentes and all(p > 0 for p in pentes)
+
+
+# --- séries tracées ---------------------------------------------------------
+
+
+def test_une_bande_sans_borne_haute_est_marquee_ouverte_et_non_fermee_au_plafond():
+    """Remplir jusqu'au plafond sans le dire ferait passer une ignorance pour une mesure.
+
+    Le seuil est réglé pour que β n'atteigne 0,955 qu'au sommet du domaine : la moyenne
+    franchit 0,95, la borne basse de son IC (0,945) jamais. C'est exactement le cas que la
+    figure doit hachurer.
+    """
+    cases = _carte_bruitee({c: 109.0 for c in fs.C_A2_VALUES}, 0.01)
+    serie = fs._bande_tracable(fs.bande_de_frontiere(cases, 0.95))
+    assert serie["ouverte"]
+    assert any(serie["ouvert"])
+    for ouvert, haut in zip(serie["ouvert"], serie["haut"], strict=True):
+        if ouvert:
+            assert haut == max(fs.TAU_DAYS)
+
+
+def test_les_series_tracables_ont_toutes_la_meme_longueur():
+    cases = _carte_bruitee({c: 10.0 + 20.0 * c for c in fs.C_A2_VALUES}, 0.005)
+    serie = fs._bande_tracable(fs.bande_de_frontiere(cases, 0.95))
+    tailles = {len(serie[cle]) for cle in ("c_a2", "bas", "haut", "centre", "ouvert")}
+    assert len(tailles) == 1
+
+
+def test_la_borne_basse_tracee_ne_depasse_jamais_la_borne_haute():
+    cases = _carte_bruitee({c: 10.0 + 20.0 * c for c in fs.C_A2_VALUES}, 0.01)
+    serie = fs._bande_tracable(fs.bande_de_frontiere(cases, 0.95))
+    for bas, haut in zip(serie["bas"], serie["haut"], strict=True):
+        assert bas <= haut
+
+
+def test_les_donnees_de_figure_portent_les_bandes_et_les_rendements(base):
+    """Ce que la boucle courte vérifie à la place du rendu : les séries, pas l'image."""
+    grilles = _grilles_factices()
+    donnees = fs.donnees_figure(grilles, RAW, base)
+    for postes in grilles:
+        for level in fs.LEVELS:
+            assert (postes, level) in donnees["bandes"]
+            assert (postes, level) in donnees["rendements"]
+            assert set(donnees["bandes"][(postes, level)]) == set(fs.C_A2_VALUES)
+            assert set(donnees["rendements"][(postes, level)]) == set(fs.C_A2_VALUES)
