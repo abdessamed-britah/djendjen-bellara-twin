@@ -141,9 +141,18 @@ def test_la_propagation_renvoie_autant_de_beta_que_de_tirages(base):
 
 
 def test_les_beta_sont_des_taux_plausibles(base):
+    """Le plafond n'est pas 1 sur un horizon court, et c'est un artefact, pas un bug.
+
+    La cible annualise les arrêts planifiés (`heures_ouvrees_par_an`), alors que la
+    simulation ne les subit qu'aux dates où ils tombent. Sur 0,2 an aucun n'y tombe, donc
+    β plafonne à `365 / jours_ouvrés` — 1,058 avec les hypothèses actuelles. Borner à 1,01
+    ne testait donc que la chance de la graine. Sur un an, le plafond redevient 1.
+    """
     rng = random.Random(5)
     sortie = bs.propager(base, RAW, [0.8], tirages=3, annees=0.2, rng=rng)
-    assert all(0.0 <= b <= 1.01 for b in sortie["beta"])
+    plafond = base.heures_par_an / base.heures_ouvrees_par_an
+    assert plafond > 1.0, "sans arrêt planifié, ce test n'aurait plus d'objet"
+    assert all(0.0 <= b <= plafond + 1e-9 for b in sortie["beta"])
 
 
 def test_le_tau_rapporte_est_une_couverture_en_jours(base):
@@ -158,11 +167,18 @@ def test_moyenner_plusieurs_annees_resserre_la_distribution(base):
 
     Marqué `slow` : il simule des dizaines d'années. Le hook de pré-commit le relance dès
     que `src/corridor/sim/` bouge, ce dont il dépend.
+
+    **L'horizon fait un an, pas trois mois.** Sur trois mois, le stock initial couvre toute
+    la fenêtre : la plupart des β valent exactement 1, la distribution est tronquée par le
+    haut, et c'est cette troncature — non l'aléa annuel — qui pilotait l'écart-type. Le test
+    passait alors au gré de la graine. Sur un an, l'écart est net et tenu par cinq graines
+    sur cinq : ~0,08 contre ~0,035, d'où le facteur 1,5 exigé plutôt qu'une simple
+    inégalité, qu'un demi-point de bruit suffirait à satisfaire.
     """
-    une = bs.propager(base, RAW, [0.8], tirages=10, annees=0.25, rng=random.Random(2))
-    plusieurs = bs.propager(base, RAW, [0.8], tirages=10, annees=0.25,
+    une = bs.propager(base, RAW, [0.8], tirages=12, annees=1.0, rng=random.Random(2))
+    plusieurs = bs.propager(base, RAW, [0.8], tirages=12, annees=1.0,
                             rng=random.Random(2), reps=4)
-    assert statistics.stdev(plusieurs["beta"]) < statistics.stdev(une["beta"])
+    assert statistics.stdev(plusieurs["beta"]) < statistics.stdev(une["beta"]) / 1.5
 
 
 def test_la_propagation_est_reproductible_a_graine_egale(base):
@@ -243,3 +259,27 @@ def test_une_decomposition_impossible_est_dite(base, capsys):
     sortie = {"beta": [0.9, 0.9, 0.9001], "c_a2": [0.8] * 3, "tau": [20.0] * 3, "reps": 1}
     bs.print_variante("Variante de test", sortie, 0.83, bruit=0.5)
     assert "non concluante" in capsys.readouterr().out
+
+
+# --- filtre du trimestre anormal, partagé avec economic_summary -------------
+
+
+def test_le_trimestre_anormal_est_ecarte_sur_son_tonnage():
+    """La règle porte sur le tonnage, pas sur le nombre de navires : un seuil en tonnes."""
+    taille = float(RAW["navires_minerai"]["taille_moyenne"]["value"])
+    sous_le_seuil = (bs.SEUIL_TRIMESTRE_ANORMAL_T / taille) / 2.0
+    au_dessus = (bs.SEUIL_TRIMESTRE_ANORMAL_T / taille) * 2.0
+    garde = bs.sans_trimestre_anormal([sous_le_seuil, au_dessus], RAW)
+    assert garde == [au_dessus]
+
+
+def test_une_serie_entierement_normale_n_est_pas_amputee():
+    taille = float(RAW["navires_minerai"]["taille_moyenne"]["value"])
+    serie = [(bs.SEUIL_TRIMESTRE_ANORMAL_T / taille) * k for k in (2.0, 3.0, 4.0)]
+    assert bs.sans_trimestre_anormal(serie, RAW) == serie
+
+
+def test_le_filtre_lit_les_hypotheses_quand_on_ne_les_lui_passe_pas():
+    """`economic_summary` l'appelle avec `raw`, un script tiers pourrait l'appeler sans."""
+    serie = [0.0, 1e9]
+    assert bs.sans_trimestre_anormal(serie) == bs.sans_trimestre_anormal(serie, RAW)

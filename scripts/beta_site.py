@@ -74,6 +74,18 @@ def navires_par_trimestre(root=None, taille_t=None) -> list[float]:
     return [tonnes / taille for _, _, tonnes in trimestres(cumules)]
 
 
+def sans_trimestre_anormal(navires, raw=None) -> list[float]:
+    """La série privée des trimestres dont le tonnage tombe sous `SEUIL_TRIMESTRE_ANORMAL_T`.
+
+    Extrait en fonction nommée parce que `economic_summary.py` publie la même variante B : si
+    chacun gardait son filtre, les deux scripts finiraient par écarter des trimestres
+    différents en annonçant le même chiffre.
+    """
+    raw = raw if raw is not None else load_yaml(ASSUMPTIONS_PATH)
+    taille = float(raw["navires_minerai"]["taille_moyenne"]["value"])
+    return [n for n in navires if n * taille >= SEUIL_TRIMESTRE_ANORMAL_T]
+
+
 def echantillon_bootstrap(navires, tirages: int, rng: random.Random) -> list[float]:
     """Échantillon bootstrap de l'indice de dispersion : la distribution de c_a² elle-même.
 
@@ -231,9 +243,7 @@ def main(argv=None) -> int:
     raw = load_yaml(ASSUMPTIONS_PATH)
     base = SimConfig.from_scenario(load_scenario(args.scenario))
     navires = navires_par_trimestre()
-    taille = float(raw["navires_minerai"]["taille_moyenne"]["value"])
-    sans_anormal = [n for n in navires
-                    if n * taille >= SEUIL_TRIMESTRE_ANORMAL_T]
+    sans_anormal = sans_trimestre_anormal(navires, raw)
 
     print(f"scénario {args.scenario} : cible {cible_t(base, args.annees) / 1e6:.3f} Mt de DRI "
           f"sur {args.annees:g} an(s)")
