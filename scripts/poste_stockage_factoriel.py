@@ -173,7 +173,24 @@ def print_effets(cases) -> None:
             ("interaction (haut − bas)        ", inter),
         ):
             verdict = "SIGNIFICATIF" if significant(d) else "non significatif"
-            print(f"  {nom}  {d.mean:>+11.{digits}f} ± {d.half_width:<10.{digits}f} {verdict}")
+            precision = _decimales_utiles(d, digits)
+            print(f"  {nom}  {d.mean:>+11.{precision}f} ± "
+                  f"{d.half_width:<10.{precision}f} {verdict}")
+
+
+def _decimales_utiles(d, digits: int, maximum: int = 6) -> int:
+    """Assez de décimales pour que l'effet et son IC ne s'affichent pas tous deux à zéro.
+
+    Avec des flux aléatoires synchronisés, certains effets appariés deviennent minuscules :
+    l'effet du second poste sur la production se compte en centièmes de tonne. Affiché à deux
+    décimales, il donne « +0.00 ± 0.00 », qui se lit comme un défaut de calcul alors que c'est
+    le résultat — un zéro mesuré très finement. On ajoute donc des décimales jusqu'à ce que la
+    demi-largeur en montre une, ce qui dit du même coup **à quelle précision** le zéro est établi.
+    """
+    plus_grand = max(abs(d.mean), d.half_width)
+    while digits < maximum and plus_grand > 0 and round(plus_grand, digits) == 0:
+        digits += 1
+    return digits
 
 
 def _serie(cases, cle, libelle):
@@ -224,19 +241,19 @@ def print_verdict(cases) -> None:
     print(f"\n{'=' * 104}\nPrédiction de H2 : le second poste ne paie que si le stockage "
           f"suit\n{'=' * 104}")
     print("Sur la perte de production de DRI, en points de pourcentage récupérés :\n")
-    print(f"  second poste seul (stockage de base) : {bas.mean:+.2f} ± {bas.half_width:.2f}  "
-          f"{'significatif' if significant(bas) else 'NON significatif'}")
-    print(f"  stockage seul (1 poste)              : {stockage_seul.mean:+.2f} ± "
-          f"{stockage_seul.half_width:.2f}  "
-          f"{'significatif' if significant(stockage_seul) else 'NON significatif'}")
-    print(f"  second poste, stockage déjà haut     : {haut.mean:+.2f} ± {haut.half_width:.2f}  "
-          f"{'significatif' if significant(haut) else 'NON significatif'}")
-    print(f"  les deux leviers ensemble            : {combine.mean:+.2f} ± "
-          f"{combine.half_width:.2f}  "
-          f"{'significatif' if significant(combine) else 'NON significatif'}")
-    print(f"\n  somme des deux gains séparés         : {somme:+.2f}")
-    print(f"  interaction (combiné − somme)        : {inter.mean:+.2f} ± "
-          f"{inter.half_width:.2f}  "
+    for nom, d in (
+        ("second poste seul (stockage de base)", bas),
+        ("stockage seul (1 poste)             ", stockage_seul),
+        ("second poste, stockage déjà haut    ", haut),
+        ("les deux leviers ensemble           ", combine),
+    ):
+        chiffres = _decimales_utiles(d, 2)
+        print(f"  {nom} : {d.mean:+.{chiffres}f} ± {d.half_width:.{chiffres}f}  "
+              f"{'significatif' if significant(d) else 'NON significatif'}")
+    chiffres = _decimales_utiles(inter, 2)
+    print(f"\n  somme des deux gains séparés          : {somme:+.{chiffres}f}")
+    print(f"  interaction (combiné − somme)         : {inter.mean:+.{chiffres}f} ± "
+          f"{inter.half_width:.{chiffres}f}  "
           f"{'SIGNIFICATIVE' if significant(inter) else 'NON significative'}")
 
     volet1 = not significant(bas)

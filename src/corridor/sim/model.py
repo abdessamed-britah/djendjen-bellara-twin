@@ -51,7 +51,6 @@ donc une borne basse.
 
 from __future__ import annotations
 
-import random
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from statistics import fmean
@@ -59,7 +58,7 @@ from statistics import fmean
 import simpy
 
 from corridor.sim.config import SimConfig
-from corridor.sim.samplers import Samplers
+from corridor.sim.samplers import Samplers, Streams
 
 #: Tolérance de masse sous laquelle une tranche résiduelle est considérée déchargée.
 _EPSILON_T = 1e-9
@@ -185,13 +184,13 @@ class _Corridor:
         env: simpy.Environment,
         config: SimConfig,
         samplers: Samplers,
-        rng: random.Random,
+        streams: Streams,
         years: float,
     ) -> None:
         self.env = env
         self.config = config
         self.samplers = samplers
-        self.rng = rng
+        self.streams = streams
         self.metrics = _Metrics()
         self.pull = config.politique_expedition == "pull"
         self.stops = config.arrets_planifies_fenetres(years)
@@ -215,13 +214,24 @@ class _Corridor:
     # --- processus ---------------------------------------------------------
 
     def arrivals(self) -> Generator:
-        """Engendre les minéraliers : intervalle tiré, puis taille tirée."""
-        while True:
-            yield self.env.timeout(self.samplers.interval_h.sample(self.rng))
-            size_t = self.samplers.vessel_size_t.sample(self.rng)
-            self.env.process(self.vessel(size_t))
+        """Engendre les minéraliers : intervalle, taille et cadence, un flux chacun.
 
-    def vessel(self, size_t: float) -> Generator:
+        Les trois grandeurs du navire sont tirées **ici**, à sa création, et non là où le
+        modèle s'en sert. La cadence de déchargement ne servira qu'une fois le poste obtenu,
+        mais la tirer à ce moment-là la ferait dépendre de l'ordre d'accostage, donc de la
+        congestion, donc du stockage. Tirée à l'arrivée, elle ne dépend que du rang du
+        navire : c'est ce qui rend deux configurations comparables tirage à tirage.
+        """
+        intervalles = self.streams.stream("intervalle")
+        tailles = self.streams.stream("taille_navire")
+        cadences = self.streams.stream("cadence_dechargement")
+        while True:
+            yield self.env.timeout(self.samplers.interval_h.sample(intervalles))
+            size_t = self.samplers.vessel_size_t.sample(tailles)
+            rate = self.samplers.discharge_rate_t_par_h.sample(cadences)
+            self.env.process(self.vessel(size_t, rate))
+
+    def vessel(self, size_t: float, rate: float) -> Generator:
         """Un navire : attente en rade, puis poste, puis déchargement par tranches.
 
         Le poste reste occupé pendant toute la durée du déchargement, y compris les
@@ -237,7 +247,6 @@ class _Corridor:
             self.metrics.anchorage_tonnage.change(self.env.now, -size_t)
             self.metrics.waits_h.append(self.env.now - arrived_at)
             self.metrics.berth.change(self.env.now, +1)
-            rate = self.samplers.discharge_rate_t_par_h.sample(self.rng)
             remaining = size_t
             while remaining > _EPSILON_T:
                 step_h = min(self.config.pas_h, remaining / rate)
@@ -253,8 +262,12 @@ class _Corridor:
             self.metrics.berth.change(self.env.now, -1)
             self.metrics.vessels_served += 1
 
-    def rame(self) -> Generator:
+    def rame(self, index: int = 0) -> Generator:
         """Une rame : attend d'avoir de quoi charger, fait l'aller-retour, recommence.
+
+        Chaque rame a **son** flux (`index`), pour que son j-ième cycle tire les mêmes
+        durées d'une configuration à l'autre. Un flux partagé les distribuerait dans
+        l'ordre où les rames se présentent, qui dépend de l'état des stocks.
 
         Trois temps distincts, qu'il ne faut pas confondre pour lire un goulot :
 
@@ -270,20 +283,21 @@ class _Corridor:
         charger et peut se retrouver immobilisée, chargée, devant une usine pleine.
         """
         charge = self.config.charge_par_train_t
+        durees = self.streams.stream("rail", index)
         while True:
             if self.pull:
                 yield self.plant_space.get(charge)  # inactif tant que l'usine est pleine
             yield self.stockyard.get(charge)  # inactif tant qu'il n'y a rien à charger
             self.metrics.pellets_in_transit_t += charge
-            yield from self._roll(self.samplers.load_h.sample(self.rng))
-            yield from self._roll(self.samplers.travel_h.sample(self.rng))
+            yield from self._roll(self.samplers.load_h.sample(durees))
+            yield from self._roll(self.samplers.travel_h.sample(durees))
             self.metrics.rame_blocked.change(self.env.now, +1)
             yield self.plant.put(charge)  # bloque si le stock usine est plein
             self.metrics.rame_blocked.change(self.env.now, -1)
             self.metrics.pellets_in_transit_t -= charge
             self.metrics.pellets_railed_t += charge
-            yield from self._roll(self.samplers.unload_h.sample(self.rng))
-            yield from self._roll(self.samplers.travel_h.sample(self.rng))  # retour à vide
+            yield from self._roll(self.samplers.unload_h.sample(durees))
+            yield from self._roll(self.samplers.travel_h.sample(durees))  # retour à vide
 
     def _roll(self, duration_h: float) -> Generator:
         """Une étape roulante de la rame, comptée dans son utilisation."""
@@ -374,22 +388,27 @@ def simulate(
 ) -> SimResult:
     """Simule `years` années de corridor et renvoie les indicateurs de la réplication.
 
-    Le générateur aléatoire est créé ici et nulle part ailleurs : à graine égale, le
-    résultat est identique. Passer un jeu de `samplers` permet de substituer des lois
-    empiriques sans rien changer au modèle.
+    Les générateurs sont créés ici et nulle part ailleurs : à graine égale, le résultat
+    est identique. Il y en a **un par source d'aléa** (`Streams`), de sorte que deux
+    configurations ne différant que par une capacité voient la même séquence dans chaque
+    flux — le navire n a la même taille et la même cadence dans les deux. C'est la
+    condition pour que les nombres aléatoires communs servent à quelque chose.
+
+    Passer un jeu de `samplers` permet de substituer des lois empiriques sans rien
+    changer au modèle.
     """
     env = simpy.Environment()
     corridor = _Corridor(
         env=env,
         config=config,
         samplers=samplers or Samplers.from_config(config),
-        rng=random.Random(seed),
+        streams=Streams(seed),
         years=years,
     )
     env.process(corridor.arrivals())
     env.process(corridor.dri())
     env.process(corridor.monitor())
-    for _ in range(config.nombre_de_rames):
-        env.process(corridor.rame())
+    for index in range(config.nombre_de_rames):
+        env.process(corridor.rame(index))
     env.run(until=years * config.heures_par_an)
     return corridor.result(scenario=scenario, rep=rep, seed=seed, years=years)

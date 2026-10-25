@@ -14,9 +14,14 @@ aléatoires indépendants d'un point de grille à l'autre.
    au lieu d'être réparti uniformément sur un domaine dont la moitié est loin de la frontière.
    Plus d'interpolation : τ* est encadré directement.
 2. **Nombres aléatoires communs** : la réplication *i* utilise la même graine pour **tous** les
-   τ et **tous** les c_a². Deux évaluations voisines voient donc la même séquence d'aléas, et
-   leur différence est bien moins bruitée que ne le sont les deux évaluations séparément.
-   C'est ce qui permet de trancher un côté avec peu de réplications.
+   τ et **tous** les c_a², et depuis les flux séparés de `corridor.sim.samplers.Streams`, le
+   navire *n* a la même taille et la même cadence d'une configuration à l'autre. La différence
+   entre deux évaluations voisines est alors **× 7 moins bruitée** que chacune des deux prise
+   isolément (mesuré par `diagnostic_pente`).
+   **Mais cela ne sert pas la dichotomie**, et c'est le piège à connaître : elle compare β à
+   une *constante* (le niveau visé), et la variance de `β − constante` est celle de β. Aucun
+   appariement ne la réduit. Le gain porte sur les comparaisons entre **deux configurations**
+   — c'est-à-dire sur tout le reste du projet, pas sur ce script.
 3. **Réplications adaptatives** : à chaque pas, le côté est décidé par l'intervalle de
    confiance de β − β cible. Tant qu'il contient zéro, on ne tranche pas et on ajoute des
    réplications — jusqu'à un plafond, au-delà duquel on déclare la résolution atteinte. Le
@@ -27,9 +32,11 @@ aléatoires indépendants d'un point de grille à l'autre.
    c'est elle qu'on compare aux 28 % de la grille.
 
 **Le résultat, annoncé d'avance pour qu'on ne lise pas le script en espérant autre chose.**
-La dichotomie coûte 43 % du calcul de la grille et rend un bruit du même ordre (25 % de paires
-reculantes contre 28 %, écart non significatif sur 24 paires) : **plus efficace, pas plus
-précise**. Le diagnostic de pente dit pourquoi, et il vaut pour les deux méthodes.
+La dichotomie coûte moins de la moitié du calcul de la grille et ne rend pas une frontière plus
+propre : **plus efficace, pas plus précise**. Elle produit moins de paires reculantes mais des
+reculs plus gros, et le verdict du métamodèle ne bouge pas d'un cran. Les chiffres exacts
+viennent de l'exécution, pas de ce texte — ils changent à chaque révision du modèle.
+Le diagnostic de pente dit pourquoi, et sa réponse vaut pour les deux méthodes.
 
 **Piège de lecture.** La frontière écrite en Parquet est celle d'*après* la régression isotone :
 la relire telle quelle donne 0 % de reculs et un bruit nul par construction. La colonne
@@ -215,8 +222,10 @@ def diagnostic_pente(evaluateur, postes, c_a2, bas, haut, reps) -> dict:
       aucune astuce d'échantillonnage n'y changera rien ;
     - le **gain des nombres aléatoires communs** : le rapport entre la demi-largeur qu'on
       aurait avec des tirages indépendants et celle de la différence appariée. Mesuré, pas
-      supposé — changer la capacité de stockage change la trajectoire de la simulation, donc
-      rien ne garantit que les deux exécutions restent corrélées ;
+      supposé, parce qu'il dépend entièrement de la façon dont le modèle consomme l'aléa :
+      avec un seul générateur partagé il valait × 1,1, avec un générateur par source
+      (`Streams`) il vaut × 7. **Ce gain ne profite pourtant pas à la dichotomie**, qui
+      compare β à une constante et non à une autre configuration ;
     - le **budget** : les réplications qu'il faudrait par évaluation pour situer τ* à un jour
       près, déduit de la pente et de la variance observée.
     """
@@ -439,15 +448,25 @@ def print_comparaison(comparaison, monotonie) -> None:
           f"{comparaison['part_violee_grille']:>14.0%}")
     print(f"  {'recul moyen (j)':30s}{comparaison['recul_moyen_directe']:>14.1f}"
           f"{comparaison['recul_moyen_grille']:>14.1f}")
-    print(f"\n  La dichotomie coûte {comparaison['rapport_cout']:.0%} du calcul de la grille "
-          "et rend un bruit du")
-    print("  même ordre. **Elle est donc plus efficace, pas plus précise.** Le gain est réel")
-    print("  mais modeste, et il ne change aucune conclusion : la frontière reste floue à")
-    print("  quelques jours près, par les deux chemins. Deux réserves à ne pas masquer :")
-    print("  la grille rend une carte complète dont la frontière n'est qu'un sous-produit,")
-    print(f"  et le bruit de la dichotomie n'est mesuré que sur {monotonie['paires']} paires :")
-    print(f"  l'écart entre {monotonie['part_violee']:.0%} et {GRILLE_PART_VIOLEE:.0%} n'est "
-          "pas significatif à cet effectif.")
+    moins_de_reculs = comparaison["part_violee_directe"] < comparaison["part_violee_grille"]
+    reculs_plus_gros = comparaison["recul_moyen_directe"] > comparaison["recul_moyen_grille"]
+    print(f"\n  La dichotomie coûte {comparaison['rapport_cout']:.0%} du calcul de la grille.")
+    if moins_de_reculs and reculs_plus_gros:
+        print("  Sur le bruit, elle échange un défaut contre un autre : **moins de paires")
+        print("  reculantes, mais des reculs plus gros**. Il n'y a donc pas de gain de")
+        print("  précision à annoncer, seulement un gain d'efficacité.")
+    elif moins_de_reculs:
+        print("  Elle rend aussi une frontière un peu plus propre — moins de paires reculantes")
+        print("  et des reculs plus petits — mais l'écart reste petit devant son incertitude.")
+    else:
+        print("  Sur le bruit, elle ne fait pas mieux que la grille.")
+    print("  **Elle est donc plus efficace, pas plus précise**, et cela ne change aucune")
+    print("  conclusion : la frontière reste floue à une dizaine de jours près, par les deux")
+    print("  chemins. Deux réserves à ne pas masquer : la grille rend une carte complète dont")
+    print("  la frontière n'est qu'un sous-produit, et le bruit de la dichotomie n'est mesuré")
+    print(f"  que sur {monotonie['paires']} paires — l'écart entre "
+          f"{monotonie['part_violee']:.0%} et {GRILLE_PART_VIOLEE:.0%} n'est pas")
+    print("  significatif à cet effectif.")
     print("\n  La précision se juge en bout de chaîne, sur ce que le métamodèle arrive à")
     print(f"  transposer : {GRILLE_ERREUR_METAMODELE:.1f} j d'erreur avec la grille. Pour le "
           "chiffre de cette\n  frontière-ci : python scripts/metamodele_frontiere.py --directe")
@@ -466,9 +485,12 @@ def _main_suite(evaluateur, args) -> int:
     print("  couverture. Situer τ* au jour près demande donc de résoudre β à cette finesse,")
     print("  ce qui coûte des milliers de réplications par évaluation. **La difficulté est")
     print("  dans la platitude de β(τ), pas dans la méthode** : ni la grille ni la dichotomie")
-    print("  n'y échappent. Et le gain des nombres aléatoires communs est mesuré, pas supposé")
-    print("  — changer la capacité de stockage change la trajectoire de la simulation, donc")
-    print("  les deux exécutions se décorrèlent malgré la graine partagée.")
+    print("  n'y échappent. Le gain des nombres aléatoires communs, lui, est mesuré et non")
+    print("  supposé : il valait ×1,1 avec un générateur unique partagé par toutes les")
+    print("  sources d'aléa, et ×7 depuis qu'il y en a un par source. **Mais il ne profite")
+    print("  pas à cette dichotomie**, qui compare β à une constante — la variance de")
+    print("  β − constante est celle de β, et aucun appariement ne la réduit. Le gain sert")
+    print("  les comparaisons entre deux configurations, donc tout le reste du projet.")
 
     print(f"\n  Frontière écrite : {args.table}")
     print("  Réajuster le métamodèle dessus : "

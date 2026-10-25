@@ -12,10 +12,12 @@ Les valeurs attendues sont recalculées depuis la configuration, jamais recopié
 import dataclasses
 import math
 import time
+from statistics import fmean
 
 import pytest
 
 from corridor.sim import model as md
+from corridor.sim import stats as md_stats
 from corridor.sim.config import SimConfig, load_scenario
 from corridor.sim.samplers import Samplers
 
@@ -485,3 +487,147 @@ def test_le_blocage_croit_quand_le_stockage_se_resserre(baseline):
         )
         blocages.append(md.simulate(config, seed=GRAINE, years=1.0).berth_blocked_h)
     assert blocages == sorted(blocages, reverse=True)
+
+
+# --- flux aléatoires synchronisés -------------------------------------------
+#
+# Chaque source d'aléa a son générateur, dérivé de la graine de réplication. La
+# conséquence observable, et c'est elle qui est testée ici : deux configurations qui ne
+# diffèrent que par une capacité voient **exactement la même séquence d'arrivées**. Avant
+# cette séparation, un unique générateur partagé faisait glisser toute la suite dès qu'une
+# configuration tirait une valeur de plus que l'autre — le navire n n'était plus le même
+# navire d'un scénario à l'autre, et apparier les réplications ne servait presque à rien.
+
+
+def _par_stockage(base: SimConfig, capacite_t: float, seed: int) -> md.SimResult:
+    return md.simulate(dataclasses.replace(base, capacite_stockyard_t=capacite_t),
+                       seed=seed, years=1.0)
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_les_arrivees_ne_dependent_pas_du_stockage(baseline, seed):
+    """Le nombre de navires n'est produit que par le flux des intervalles."""
+    petit = _par_stockage(baseline, 200_000.0, seed)
+    grand = _par_stockage(baseline, 900_000.0, seed)
+    assert petit.vessels_arrived == grand.vessels_arrived
+
+
+def test_le_stockage_change_bien_autre_chose_que_les_arrivees(baseline):
+    """Garde-fou du test précédent : s'il passait parce que rien ne change, il ne dirait rien.
+
+    On vérifie donc que les deux simulations ont bel et bien divergé — le quai ne bloque pas
+    autant et la rade ne porte pas le même tonnage — alors que la séquence d'arrivées, elle,
+    est restée identique. C'est exactement la propriété recherchée : même aléa, trajectoires
+    différentes.
+    """
+    erratique = dataclasses.replace(baseline, dispersion_arrivees=1.0)
+    petit = _par_stockage(erratique, 200_000.0, seed=GRAINE)
+    grand = _par_stockage(erratique, 900_000.0, seed=GRAINE)
+    assert petit.vessels_arrived == grand.vessels_arrived
+    assert petit.berth_blocked_h != grand.berth_blocked_h
+    assert petit.waiting_tonnage_mean_t != grand.waiting_tonnage_mean_t
+
+
+def test_le_nombre_de_postes_ne_change_pas_non_plus_les_arrivees(baseline):
+    """Même exigence pour l'autre levier comparé en données appariées."""
+    erratique = dataclasses.replace(baseline, dispersion_arrivees=1.0)
+    un = md.simulate(erratique, seed=GRAINE, years=1.0)
+    deux = md.simulate(dataclasses.replace(erratique, postes_minerai=2),
+                       seed=GRAINE, years=1.0)
+    assert un.vessels_arrived == deux.vessels_arrived
+
+
+def test_la_cadence_de_dechargement_est_tiree_a_l_arrivee_et_non_a_l_accostage(baseline):
+    """Tirée à l'accostage, elle dépendrait de l'ordre d'accostage, donc de la congestion.
+
+    Le signe observable : à arrivées erratiques, le tonnage débarqué du cas très stocké est
+    celui d'un corridor qui n'a jamais bloqué, donc égal au tonnage arrivé — ce qui n'est
+    vrai que si chaque navire garde sa cadence quelle que soit la file devant lui.
+    """
+    erratique = dataclasses.replace(baseline, dispersion_arrivees=1.0,
+                                    capacite_stockyard_t=1e9, capacite_stock_usine_t=1e9)
+    a = md.simulate(erratique, seed=GRAINE, years=1.0)
+    b = md.simulate(dataclasses.replace(erratique, postes_minerai=2),
+                    seed=GRAINE, years=1.0)
+    assert a.vessels_arrived == b.vessels_arrived
+    assert a.berth_blocked_h == pytest.approx(0.0)
+    assert b.berth_blocked_h == pytest.approx(0.0)
+
+
+@pytest.mark.slow
+def test_les_flux_separes_rendent_les_differences_appariees_bien_moins_bruitees(baseline):
+    """La mesure qui justifie toute la séparation des flux : le gain réel de l'appariement.
+
+    On compare deux stockages sur les mêmes graines et on regarde la demi-largeur de l'IC de
+    la différence appariée, face à celle qu'on aurait avec des tirages indépendants. Avec un
+    générateur unique partagé, le gain mesuré valait × 1,1 : changer une capacité décalait
+    toute la suite des tirages et les deux exécutions se décorrélaient. Avec un générateur
+    par source, il dépasse × 3 ici.
+
+    Marqué `slow` : il simule 2 × 24 années.
+    """
+    def _erratique(scenario: str) -> SimConfig:
+        return dataclasses.replace(SimConfig.from_scenario(load_scenario(scenario)),
+                                   dispersion_arrivees=1.0)
+
+    # les deux scénarios du plan factoriel, et non une seule capacité retouchée : agrandir le
+    # seul stockyard du port ne change rien à la production, c'est le stock de l'usine qui
+    # tamponne le four
+    bas, haut = _erratique("phase2"), _erratique("phase2_plus_stockage")
+    graines = range(1000, 1024)
+    petit = [md.simulate(bas, seed=g, years=1.0).dri_production_t for g in graines]
+    grand = [md.simulate(haut, seed=g, years=1.0).dri_production_t for g in graines]
+    appariee = md_stats.estimate([b - a for a, b in zip(petit, grand, strict=True)])
+    independante = math.sqrt(
+        md_stats.estimate(petit).half_width ** 2 + md_stats.estimate(grand).half_width ** 2
+    )
+    assert appariee.half_width > 0.0
+    assert independante / appariee.half_width > 3.0
+
+
+@pytest.mark.slow
+def test_la_capacite_de_stockage_ne_change_pas_la_production():
+    """Le résultat le plus inconfortable du modèle, verrouillé pour qu'il ne se reperde pas.
+
+    À stock initial **figé**, faire varier les deux capacités de stockage d'un facteur 12 ne
+    déplace pas la production d'un cent-millième. Ce n'est pas un bug : quand le stockyard est
+    plein, le navire garde sa cargaison à quai ou en rade, et cette flotte-tampon n'a pas de
+    plafond dans le modèle (ni surestaries, ni déroutement — limite 9). Les silos déplacent le
+    minerai, ils ne nourrissent pas le four.
+
+    Le gain que le projet attribuait au stockage venait du **stock initial**, que les scénarios
+    dérivent de la capacité : c'est ce que le second assert isole.
+
+    Si ce test tombe un jour, c'est que le modèle a appris à plafonner le tampon flottant — et
+    il faudra alors refaire toute la frontière de service, dont l'axe τ est une capacité.
+    """
+    base = dataclasses.replace(SimConfig.from_scenario(load_scenario("phase2")),
+                               dispersion_arrivees=1.0)
+    graines = range(4000, 4012)
+
+    def production(facteur, initial=None):
+        sy, us = initial or (base.stock_initial_stockyard_t, base.stock_initial_usine_t)
+        config = dataclasses.replace(
+            base,
+            capacite_stockyard_t=base.capacite_stockyard_t * facteur,
+            capacite_stock_usine_t=base.capacite_stock_usine_t * facteur,
+            stock_initial_stockyard_t=sy, stock_initial_usine_t=us,
+        )
+        return [md.simulate(config, seed=g, years=1.0).dri_production_t for g in graines]
+
+    reference = production(1.0)
+    moyenne = fmean(reference)
+    for facteur in (0.5, 2.0, 6.0):
+        autre = production(facteur)
+        ecarts = [b - a for a, b in zip(reference, autre, strict=True)]
+        # en moyenne : moins de 0,01 %, soit quelques dizaines de tonnes sur 3,7 Mt, quand le
+        # « gain du stockage » publié valait 2,57 points, c'est-à-dire ~95 000 t
+        assert abs(fmean(ecarts)) / moyenne < 1e-4, f"facteur {facteur} : {fmean(ecarts):.1f} t"
+        # réplication par réplication : moins de 0,1 %, donc jamais de quoi déplacer une
+        # conclusion, même sur l'année la plus sensible
+        assert max(abs(e) for e in ecarts) / moyenne < 1e-3, f"facteur {facteur}"
+
+    # ... alors que le stock initial, lui, change tout
+    double = production(1.0, initial=(base.stock_initial_stockyard_t * 2,
+                                      base.stock_initial_usine_t * 2))
+    assert fmean(double) > moyenne * 1.01

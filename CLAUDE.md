@@ -64,10 +64,11 @@ sur 16 trimestres de bilans publics), les deux capacités de stockage restent `i
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **637 tests, ~14 s mesurés machine au
-repos**. S'y ajoutent **15 tests marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
-`pytest -m slow -q` (~11 s) : la validation analytique du moteur de file, deux validations de
-comportement de `beta_site.py`, et **tous les rendus de figures**. Obligatoires avant tout
+`ruff check .` et `pytest -q` passent : **676 tests, ~35 s mesurés**. S'y ajoutent **17 tests
+marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
+`pytest -m slow -q` (~100 s) : la validation analytique du moteur de file, deux validations de
+comportement de `beta_site.py`, les deux mesures de la limite 0 (gain des nombres communs,
+inertie de la capacité) et **tous les rendus de figures**. Obligatoires avant tout
 commit qui touche à `corridor.sim` ; la CI lance les deux suites, dans deux étapes séparées.
 Les deux mesures triplent sur une machine chargée : la limite de 45 s se vérifie au repos,
 pas pendant qu'une simulation tourne à côté.
@@ -168,7 +169,8 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   poste monte de 1 à 3 points à arrivées régulières. Pertes en Poisson, 50 réplications :
   baseline 7,6 %, phase 2 9,7 %, phase 2 + stockage 5,1 % ;
 - stockage : de 200 kt à 900 kt de capacité totale, la perte baseline en Poisson passe de
-  14,1 % à 5,8 % ;
+  14,1 % à 5,8 % — **mais c'est le stock initial qui le produit, pas la capacité : voir
+  limite 0. Résultat à refaire** ;
 - politique `pull` contre `push` : un seul cas significatif sur six (baseline, Poisson,
   +0,059 ± 0,040 Mt) ;
 - blocage du poste (H2) : jusqu'à 3 087 h de quai immobilisé par an (baseline, Poisson,
@@ -176,7 +178,10 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
 - second poste : **tranché à 200 réplications dans un plan factoriel 2×2** (poste × stockage,
   Poisson). Le poste ne récupère de production dans aucune configuration de stockage —
   +0,90 ± 1,33 point à stockage de base, −0,84 ± 1,32 à stockage haut, aucune interaction
-  (−1,75 ± 1,88). Tout le gain vient du stockage (+4,98 ± 1,50). Le poste déplace en revanche
+  (−1,75 ± 1,88) — refait avec les flux séparés : +0,002 ± 0,003 et +0,000 ± 0,002, donc un
+  zéro mesuré au centième de point. Le gain attribué au stockage (+4,98 ± 1,50, puis
+  +2,57 ± 0,23) **vient du stock initial et non de la capacité : voir limite 0**. Le poste
+  déplace en revanche
   la file de la rade vers le quai, de façon significative (voir décisions) ;
 - **irrégularité des arrivées, première estimation** : c_a² = 0,83, IC bootstrap
   [0,21 ; 1,73], sur 16 trimestres de bilans de trafic du port (2022-2025). Soit des arrivées
@@ -277,13 +282,19 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   (Spearman +0,91), positive aussi à stockage fixé et à dispersion fixée. Le minerai en rade est
   coincé en amont du goulot présumé, qui affame aussi le four. Un tampon n'aide que s'il est en
   aval de la contrainte. Corrélation entre sorties d'un même modèle, pas causalité démontrée.
-- **Le poste de déchargement n'est pas la ressource contrainte : tranché, pas supposé.** Plan
+- **Le poste de déchargement n'est pas la ressource contrainte : tranché, pas supposé.**
+  Depuis les flux séparés, l'effet du second poste sur la production vaut **+0,002 ± 0,003
+  point** à stockage de base et **+0,000 ± 0,002** à stockage haut : non plus « non
+  significatif à ±1,3 point », mais un zéro établi au centième de point. Plan
   factoriel 2×2 (poste × stockage) en Poisson, 200 réplications appariées
   (`poste_stockage_factoriel.py`). Le second poste ne récupère de production **dans aucune des
   deux configurations de stockage** : +0,90 ± 1,33 point à stockage de base, −0,84 ± 1,32 à
   stockage haut, et aucune interaction (−1,75 ± 1,88). Les deux leviers ensemble (+4,13 ± 1,50)
   ne font pas mieux que le stockage seul (+4,98 ± 1,50). L'ancien résultat « non concluant » à
-  30 réplications est donc clos, et dans le sens négatif.
+  30 réplications est donc clos, et dans le sens négatif. **Refait avec les flux séparés**
+  (2026-10-25) : l'effet du poste tombe à +0,002 ± 0,003 et +0,000 ± 0,002, un zéro au
+  centième de point au lieu d'un « non significatif » à ±1,3. Le gain du stockage, lui, est
+  un artefact de stock initial (limite 0).
 - **Le second poste déplace la file, il ne la supprime pas.** Les trois indicateurs de
   congestion bougent significativement quand on l'ajoute : l'attente en rade baisse
   (−59,7 ± 49,3 h à stockage de base, −120,3 ± 32,0 h à stockage haut) pendant que le blocage
@@ -373,6 +384,20 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   construction*. La colonne `tau_brut` conserve les valeurs d'avant correction, et c'est elle
   qui mesure le bruit et juge le métamodèle. Même piège partout où l'on nettoie des données
   avant de s'en servir pour juger un modèle.
+- **Un générateur par source d'aléa, dérivé de la graine de réplication.**
+  `corridor.sim.samplers.Streams` en donne un par source (`intervalle`, `taille_navire`,
+  `cadence_dechargement`, `rail`, une sous-série par rame). Les arrêts planifiés n'en ont pas :
+  ils sont déterministes. La cadence de déchargement est tirée **à l'arrivée du navire**, pas à
+  son accostage, sans quoi elle dépendrait de l'ordre d'accostage et donc de la congestion.
+  Conséquence observable et testée : deux configurations ne différant que par une capacité
+  voient **la même séquence d'arrivées**, le navire n ayant la même taille et la même cadence.
+  **Le gain mesuré est de ×7 sur les différences appariées** (contre ×1,1 avec un générateur
+  unique partagé, où changer une capacité décalait toute la suite des tirages). C'est ce qui a
+  fait apparaître le zéro de la limite 0 : avec ±1,3 point de bruit, il passait pour un
+  « non significatif ».
+  **Ce gain ne sert pas une recherche de racine contre une cible fixe** (`frontiere_directe`) :
+  la variance de `β − constante` est celle de β, et aucun appariement ne la réduit. Il sert les
+  comparaisons entre deux configurations, donc tout le reste.
 - **Le chiffre appliqué est une distribution, jamais un point.** `beta_site.py` tire c_a²
   dans son échantillon bootstrap et chaque capacité de stockage dans sa propre fourchette
   (indépendamment : tirer le total ferait descendre la part du port sous son minimum
@@ -401,6 +426,25 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
 
 À lire avant de croire un résultat.
 
+0. **LA CAPACITÉ DE STOCKAGE N'EST PAS UN LEVIER DANS CE MODÈLE, et tout ce qui est publié
+   là-dessus est à refaire.** Mesuré le 2026-10-25, après la séparation des flux aléatoires :
+   à **stock initial figé**, multiplier les deux capacités par 12 (τ de 13 à 160 jours) change
+   la production de moins de **0,002 %** — quelques dizaines de tonnes sur 3,7 Mt — aux
+   horizons de 1, 4 et 12 ans. Le « gain du stockage » de +2,57 points vient **entièrement du
+   stock initial**, que les scénarios dérivent de la capacité via `fraction_stock_initial`
+   (décomposition : capacité seule +0,000 %, stock initial seul +3,438 %, les deux +3,439 %).
+   **Mécanisme** : quand le stockyard est plein, le navire garde sa cargaison à quai ou en
+   rade, et ce tampon flottant n'a aucun plafond (ni surestaries, ni déroutement — limite 9).
+   Le four ne s'arrête que s'il n'y a plus de minerai nulle part, ce qui dépend des arrivées.
+   **Les silos déplacent la file, exactement comme le second poste** — le garde-fou était déjà
+   écrit dans ce fichier, il n'avait pas été appliqué au stockage.
+   **Conséquence** : sont invalidés le gain du stockage du plan factoriel, la bande de perte
+   de la grille de sensibilité, et **l'axe τ de la frontière de service**, donc aussi H4, le
+   métamodèle et la frontière directe. Verrouillé par
+   `tests/test_sim_model.py::test_la_capacite_de_stockage_ne_change_pas_la_production` : si ce
+   test tombe, c'est que le modèle plafonne enfin le tampon flottant, et il faut tout refaire.
+   **C'est le premier chantier du projet, avant toute nouvelle analyse.**
+
 1. **L'étape 3 n'est validée que partiellement sur du réel.** Elle tourne sur 82 instantanés
    (49 escales, 31 exploitables, dont 4 escales minerai) et ses invariants
    tiennent, mais rien n'a été confronté à une vérité terrain, et `tests/fixtures/` ne contient
@@ -415,9 +459,10 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
    GitHub exécute avec 2 à 6 h de retard et en saute parfois (le créneau de 13:00 le 28/09 n'a
    jamais tourné). Les trous élargissent d'autant la censure des départs (5 à 12 h mesurées sur
    les escales terminées). Ne jamais dépasser 3×/jour (respect de la source).
-4. **Les deux capacités de stockage sont de statut `inconnu`** et pilotent tout le résultat : de
-   200 kt à 900 kt, la perte de production passe de 14,1 % à 5,8 % (baseline, Poisson). Aucune
-   conclusion chiffrée sans cette fourchette.
+4. **Les deux capacités de stockage sont de statut `inconnu`.** On lisait « de 200 kt à
+   900 kt, la perte passe de 14,1 % à 5,8 % » ; la limite 0 montre que cet écart vient du
+   stock initial couplé à la capacité, pas de la capacité. Les deux hypothèses restent non
+   sourcées, mais elles ne pilotent **pas** le résultat de la façon annoncée.
 5. **`dispersion_arrivees` a une première estimation, pas une mesure.**
    `dispersion_arrivees_observee` = 0,91 (c_a² = 0,83, IC bootstrap [0,21 ; 1,73]), obtenue sur
    16 trimestres de bilans de trafic du port, 2022-2025 (`scripts/arrival_dispersion.py`).
@@ -496,7 +541,7 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
    les workflows planifiés d'un dépôt inactif depuis 60 jours : les réactiver si besoin),
    puis `python -m corridor.ingest.port_status` en local pour tester la source.
 4. `pip install -e ".[dev]"` puis `ruff check . && pytest -q && pytest -m slow -q` avant de
-   toucher quoi que ce soit (~15 s et ~11 s).
+   toucher quoi que ce soit (~35 s et ~100 s).
 
 ## Commandes
 

@@ -128,3 +128,58 @@ def test_un_sampler_maison_respecte_l_interface(baseline):
     assert remplace.vessel_size_t.sample(random.Random(0)) in empirique.observations
     # les autres tirages ne sont pas touchés
     assert remplace.interval_h is jeu.interval_h
+
+
+# --- flux synchronisés ------------------------------------------------------
+
+
+def test_chaque_source_a_son_propre_flux():
+    """Deux sources qui partageraient une séquence se voleraient leurs tirages."""
+    flux = sp.Streams(seed=7)
+    tirages = {
+        source: [flux.stream(source).random() for _ in range(5)] for source in sp.SOURCES
+    }
+    distincts = {tuple(valeurs) for valeurs in tirages.values()}
+    assert len(distincts) == len(sp.SOURCES)
+
+
+def test_un_flux_est_entierement_determine_par_la_graine_et_le_nom():
+    a = sp.Streams(seed=7).stream("intervalle")
+    b = sp.Streams(seed=7).stream("intervalle")
+    assert [a.random() for _ in range(5)] == [b.random() for _ in range(5)]
+
+
+def test_deux_graines_donnent_deux_sequences():
+    a = sp.Streams(seed=7).stream("intervalle")
+    b = sp.Streams(seed=8).stream("intervalle")
+    assert [a.random() for _ in range(5)] != [b.random() for _ in range(5)]
+
+
+def test_les_entites_d_une_meme_source_ne_se_partagent_pas_un_flux():
+    """Deux rames sur un même flux tirent dans l'ordre où elles se présentent, donc dans un
+    ordre qui dépend de la configuration. C'est exactement ce qu'on veut éviter."""
+    flux = sp.Streams(seed=7)
+    premiere = [flux.stream("rail", 0).random() for _ in range(5)]
+    seconde = [flux.stream("rail", 1).random() for _ in range(5)]
+    assert premiere != seconde
+
+
+def test_le_flux_d_une_entite_est_stable_d_un_appel_a_l_autre():
+    flux = sp.Streams(seed=7)
+    assert [flux.stream("rail", 3).random() for _ in range(5)] == [
+        flux.stream("rail", 3).random() for _ in range(5)
+    ]
+
+
+def test_une_source_inconnue_est_refusee():
+    """Une faute de frappe donnerait sinon un flux silencieusement désynchronisé."""
+    with pytest.raises(ValueError, match="source d'aléa inconnue"):
+        sp.Streams(seed=7).stream("intervale")
+
+
+def test_les_arrets_planifies_ne_sont_pas_une_source_d_alea():
+    """Ils sont déterministes : leur donner un flux laisserait croire qu'ils en consomment."""
+    assert not any("arret" in source for source in sp.SOURCES)
+    assert set(sp.SOURCES) == {
+        "intervalle", "taille_navire", "cadence_dechargement", "rail",
+    }

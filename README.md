@@ -220,6 +220,42 @@ Reproductible par `python -m corridor.ingest.port_stats` puis
 
 ## Résultats préliminaires
 
+> ### ⚠️ Correction du 2026-10-25 : la capacité de stockage n'est pas un levier dans ce modèle
+>
+> En séparant les flux aléatoires (un générateur par source d'aléa), les différences appariées
+> ont cessé d'être bruitées — et un zéro exact est apparu là où le projet lisait un gain.
+> **Mesure : en faisant varier les deux capacités de stockage d'un facteur 12 (τ de 13 à
+> 160 jours de couverture), à stock initial figé, la production de DRI varie de moins de
+> 0,002 % — quelques dizaines de tonnes sur 3,7 Mt** (β = 0,9211 aux quatre facteurs), aux
+> horizons de 1, 4 et 12 ans. À comparer au « gain du stockage » publié, +2,57 points, soit
+> ~95 000 t : l'effet réel de la capacité est **plus de mille fois plus petit**. Ce qui change,
+> c'est uniquement *où se trouve le minerai* : le blocage du quai tombe de 1 575 h à 0 et le
+> tonnage en rade de 313 kt à 96 kt.
+>
+> **D'où venait alors le « gain du stockage » publié ?** Du **stock initial**. Les scénarios
+> dérivent le stock de départ de la capacité (`fraction_stock_initial`), donc doubler la
+> capacité double aussi les 225 kt présents à l'instant zéro. En décomposant : capacité haute
+> seule, **+0,000 %** ; stock initial haut seul, **+3,438 %** ; les deux ensemble,
+> **+3,439 %**. Tout l'effet est dans la condition initiale.
+>
+> **Le mécanisme est le même que celui du second poste, et le projet avait écrit le
+> garde-fou sans l'appliquer ici** : quand le stockyard est plein, le navire garde sa
+> cargaison à quai ou en rade. Le minerai n'est pas perdu, il est différé — la flotte *est*
+> le tampon, et elle n'a pas de plafond. Le four ne s'arrête que lorsqu'il n'y a plus de
+> minerai nulle part, ce qui dépend des arrivées et non de la taille des silos. Les silos
+> déplacent la file, ils ne nourrissent pas le four.
+>
+> **Ce que cela invalide, en l'état :** le gain attribué au stockage dans le plan factoriel,
+> la bande de perte de la grille de sensibilité (« de 200 kt à 900 kt, la perte passe de
+> 14,1 % à 5,8 % »), et **l'axe τ de la frontière de service** — donc aussi l'arbitrage H4,
+> le métamodèle et l'estimation directe, qui en dépendent tous. Les sections qui suivent sont
+> conservées telles qu'elles ont été produites, chacune portant ce renvoi : les refaire
+> demande d'abord de décider si le modèle doit plafonner le tampon flottant (surestaries,
+> déroutement, fenêtres d'accostage), ce qui est aujourd'hui **hors périmètre** (limite 9).
+> C'est le premier chantier du projet.
+>
+> Reproductible : voir `tests/test_sim_model.py`, section « flux aléatoires synchronisés ».
+
 > **Ces chiffres ne sont pas des prévisions.** Les deux paramètres qui les pilotent ne sont
 > pas sourcés : la **régularité des arrivées** de minéraliers (statut *estimé*, jamais
 > mesurée) et les **capacités de stockage** du port et de l'usine (statut *inconnu*). Le
@@ -525,16 +561,24 @@ aléatoire) :
 
 | Levier | Gain | Verdict |
 | --- | ---: | --- |
-| second poste seul (stockage de base) | +0,90 ± 1,33 | non significatif |
-| **stockage seul (1 poste)** | **+4,98 ± 1,50** | **significatif** |
-| second poste, stockage déjà haut | **−0,84 ± 1,32** | non significatif |
-| les deux leviers ensemble | +4,13 ± 1,50 | significatif |
-| interaction (combiné − somme des gains séparés) | −1,75 ± 1,88 | non significative |
+| Levier | Gain, flux unique (publié) | Gain, flux séparés (2026-10-25) | Verdict |
+| --- | ---: | ---: | --- |
+| second poste seul (stockage de base) | +0,90 ± 1,33 | **+0,002 ± 0,003** | non significatif |
+| stockage seul (1 poste) | +4,98 ± 1,50 | +2,57 ± 0,23 | significatif — mais voir ci-dessous |
+| second poste, stockage déjà haut | −0,84 ± 1,32 | **+0,000 ± 0,002** | non significatif |
+| les deux leviers ensemble | +4,13 ± 1,50 | +2,57 ± 0,23 | significatif — mais voir ci-dessous |
+| interaction | −1,75 ± 1,88 | −0,002 ± 0,003 | non significative |
 
-Le second poste ne récupère de production dans **aucune** des deux configurations de stockage, y
-compris celle où H2 le prédisait. Il n'y a pas d'interaction : les deux leviers ensemble
-(+4,13) ne font pas mieux que le stockage seul (+4,98), l'écart étant du bruit. **Tout le gain
-vient du stockage.**
+**Le résultat sur le poste se durcit considérablement.** En séparant les flux aléatoires (un
+générateur par source), les différences appariées ont cessé d'être bruitées : l'effet du second
+poste n'est plus « non significatif à ± 1,3 point », c'est **un zéro établi au centième de
+point**. On passe de « on ne peut pas exclure un gain de deux points » à « le gain est inférieur
+à 0,01 point ». C'est le même résultat, mais il n'est plus discutable.
+
+**Le gain attribué au stockage, lui, ne tient pas.** Il ne vient pas de la capacité mais du
+**stock initial**, que le scénario dérive de la capacité — voir l'avertissement en tête de
+cette section. À capacité variée seule, l'effet est nul. Ce qui reste valide ici est donc le
+résultat négatif sur le poste, pas le résultat positif sur le stockage.
 
 **Mais le poste n'est pas sans effet — il déplace la file.** Les trois indicateurs de congestion
 bougent tous de façon significative quand on ajoute un poste :
@@ -579,7 +623,8 @@ production annuelle perdue faute d'approvisionnement ».
 ![Frontière de service : couverture de stock requise selon l'irrégularité des arrivées](docs/frontiere_service.png)
 
 Couverture τ requise pour tenir un niveau de service (scénario phase 2, 60 réplications d'un an
-par point, 7 × 9 points par courbe) :
+par point, 7 × 9 points par courbe). **Les valeurs centrales ci-dessous sont le milieu d'une
+bande de plus ou moins dix jours** : la section suivante la chiffre.
 
 | c_a² | 0,00 | 0,25 | 0,50 | 0,75 | 1,00 (Poisson) | 1,25 | 1,50 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -619,11 +664,48 @@ serait en deçà d'un taux de service de 95 % — **il ne la démontre pas**. Re
 bandes reste le travail qui ferait le plus pour ce projet, et c'est la raison d'être de la
 collecte qui continue de tourner.
 
-Trois réserves de lecture. β est une moyenne sur 60 réplications, de demi-largeur d'IC ±0,01 à
-±0,03 selon les cases : les contours sont tracés sur les moyennes, donc la position exacte d'une
-courbe vaut à quelques jours près. La grille fait 7 × 9 points, interpolés linéairement. Enfin
-la carte vaut pour le scénario phase 2 ; ce qui ne se transpose pas d'un site à l'autre est la
-charge du poste ρ = λ·E[S]/c, qui est précisément ce que distinguent les deux couleurs.
+#### La frontière est une bande, et un jour de stock rapporte 0,2 point
+
+*Sert la **généralité** : une frontière tracée en trait fin se transpose comme une
+spécification, ce qu'elle n'est pas. La bande et son rendement marginal disent **à quelle
+précision** le résultat se transpose, et c'est cela qui est réutilisable ailleurs.*
+
+β est une moyenne sur 60 réplications, de demi-largeur d'IC ± 0,01 à ± 0,03 selon les cases.
+Reporter cet intervalle sur l'axe des τ — en relisant le franchissement du niveau à la borne
+haute puis à la borne basse de β — donne non pas une courbe mais une **bande**, et elle est
+large :
+
+| c_a² | 0,25 | 0,50 | 0,75 | 1,00 (Poisson) |
+| --- | ---: | ---: | ---: | ---: |
+| **β = 0,95**, 1 poste | 9 à 27 j (centre 23) | 17 à 43 j (centre 28) | 27 j à > 60 (centre 46) | 47 j à > 60 (centre 59) |
+| **β = 0,95**, 2 postes | 8 à 25 j (centre 22) | 25 à 45 j (centre 30) | 29 j à > 60 (centre 47) | 50 j à > 60 |
+
+À c_a² = 0,5, la couverture requise pour tenir 95 % est donc « entre 17 et 43 jours », pas
+« 27,8 jours ». Au-delà de c_a² = 0,5, la borne pessimiste de β n'atteint plus le niveau nulle
+part dans le domaine : la bande est **ouverte vers le haut**, ce que la figure hachure au lieu
+de la remplir — une surface pleine jusqu'au plafond se lirait comme une borne mesurée alors
+qu'il n'y en a pas.
+
+**Pourquoi cette largeur n'est pas rédhibitoire : le rendement marginal du stockage.** Le
+panneau de droite de la figure donne dβ/dτ au voisinage de la frontière, c'est-à-dire ce que
+rapporte un jour de couverture de plus. Médiane sur toutes les cases franchies : **0,21 point
+de taux de service par jour**, entre 0,12 et 0,48 selon l'irrégularité. Se tromper de dix jours
+sur la frontière coûte donc de l'ordre de **deux points de β**, pas vingt. C'est ce qui rend la
+bande supportable pour une décision d'investissement — et c'est aussi, vu de l'autre côté, la
+raison pour laquelle la frontière est si difficile à situer : une grandeur qui ne bouge que de
+0,002 par jour demande d'être résolue au millième pour placer τ* au jour près (voir la section
+sur l'estimation directe).
+
+Le rendement marginal **culmine vers c_a² = 0,5** (0,48 point/jour à 1 poste) puis retombe à
+0,12 au régime de Poisson. Lecture : le stockage est un levier efficace contre une irrégularité
+modérée, et de plus en plus inefficace contre une irrégularité forte. Acheter du silo pour
+compenser un affrètement erratique est un mauvais placement, ce qui rejoint H4 par un troisième
+chemin.
+
+Deux réserves subsistent. La grille fait 7 × 9 points, interpolés linéairement : la bande hérite
+de cette maille, et ses bornes sont elles-mêmes lues entre deux τ distants de 5 à 10 jours.
+Enfin la carte vaut pour le scénario phase 2 ; ce qui ne se transpose pas d'un site à l'autre est
+la charge du poste ρ = λ·E[S]/c, qui est précisément ce que distinguent les deux couleurs.
 
 Reproductible par `python scripts/frontiere_service.py --reps 60` (~25 min), ou
 `--from-parquet data/sim/frontiere_service.parquet` pour retracer la figure sans resimuler.

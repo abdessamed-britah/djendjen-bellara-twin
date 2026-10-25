@@ -208,3 +208,39 @@ def test_les_tableaux_s_affichent_sans_lever(capsys):
     assert "Les quatre cases du plan" in sortie
     assert "Volets de la prédiction" in sortie
     assert "Où passe la file" in sortie
+
+
+# --- précision d'affichage des effets minuscules ----------------------------
+
+
+def test_un_effet_ordinaire_garde_les_decimales_demandees():
+    from corridor.sim.stats import Estimate
+
+    d = Estimate(mean=2.57, std=1.6, n=200)
+    assert fx._decimales_utiles(d, 2) == 2
+
+
+def test_un_effet_minuscule_gagne_des_decimales():
+    """« +0.00 ± 0.00 » se lirait comme un défaut de calcul, alors que c'est le résultat."""
+    from corridor.sim.stats import Estimate
+
+    d = Estimate(mean=0.00004, std=0.0003, n=200)
+    chiffres = fx._decimales_utiles(d, 2)
+    assert chiffres > 2
+    assert f"{d.half_width:.{chiffres}f}" != "0." + "0" * chiffres
+
+
+def test_un_effet_exactement_nul_ne_boucle_pas():
+    """Un zéro parfait n'a aucune décimale utile : la recherche doit s'arrêter."""
+    from corridor.sim.stats import Estimate
+
+    d = Estimate(mean=0.0, std=0.0, n=200)
+    assert fx._decimales_utiles(d, 2) == 2
+
+
+def test_la_precision_reste_bornee():
+    """Sans plafond, un effet de l'ordre de 1e-12 produirait une colonne illisible."""
+    from corridor.sim.stats import Estimate
+
+    d = Estimate(mean=1e-15, std=1e-14, n=200)
+    assert fx._decimales_utiles(d, 2, maximum=6) == 6

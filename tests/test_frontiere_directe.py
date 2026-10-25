@@ -320,5 +320,9 @@ def test_le_tableau_de_comparaison_s_affiche_sans_lever(capsys):
 
 
 def test_le_module_s_annonce_comme_plus_efficace_et_non_plus_precis():
-    """Le docstring porte le résultat : s'il promettait mieux, il mentirait sur la mesure."""
-    assert "plus efficace, pas plus\nprécise" in fd.__doc__
+    """Le docstring porte le résultat : s'il promettait mieux, il mentirait sur la mesure.
+
+    Comparé sur le texte dé-retouré, pour qu'un simple reflux des lignes ne casse pas le test.
+    """
+    texte = " ".join(fd.__doc__.split())
+    assert "plus efficace, pas plus précise" in texte
