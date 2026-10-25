@@ -64,11 +64,13 @@ sur 16 trimestres de bilans publics), les deux capacités de stockage restent `i
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **597 tests, ~33 s mesurés**. S'y ajoutent **15 tests
-marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
-`pytest -m slow -q` (~25 s) : la validation analytique du moteur de file, deux validations de
+`ruff check .` et `pytest -q` passent : **637 tests, ~14 s mesurés machine au
+repos**. S'y ajoutent **15 tests marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
+`pytest -m slow -q` (~11 s) : la validation analytique du moteur de file, deux validations de
 comportement de `beta_site.py`, et **tous les rendus de figures**. Obligatoires avant tout
 commit qui touche à `corridor.sim` ; la CI lance les deux suites, dans deux étapes séparées.
+Les deux mesures triplent sur une machine chargée : la limite de 45 s se vérifie au repos,
+pas pendant qu'une simulation tourne à côté.
 
 **La limite de la boucle courte est de 45 s.** Elle remplace les ~30 s fixés quand la suite
 comptait 310 tests. **Règle de révision : elle se renégocie quand le nombre de tests double**
@@ -191,6 +193,16 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   six termes. **Ni validée ni réfutée** : l'erreur est du même ordre que l'incohérence interne
   de la carte (28 % des paires consécutives reculent là où τ* devrait croître, de 6,8 j en
   moyenne). Résultat annexe net : ajouter un terme en nombre de postes ne gagne que 0,003 j ;
+- **frontière cherchée au lieu d'être lue** (`scripts/frontiere_directe.py`) : dichotomie sur
+  τ, nombres aléatoires communs, réplications adaptatives, monotonie imposée par régression
+  isotone. **43 % du calcul de la grille (3 226 années contre 7 560) pour un bruit du même
+  ordre** (25 % de paires reculantes contre 28 %, écart non significatif sur 24 paires) :
+  plus efficace, pas plus précise. Le métamodèle réajusté dessus donne
+  τ* = 7,7 + 0,18·c_a²/(1−β)^1,80 et 7,5 j d'erreur par colonne retirée (contre 10,3 j) —
+  **le verdict reste « on ne peut pas trancher »**, 7,5 j valant toujours les 5,7 j de recul
+  moyen. Deux diagnostics transposables : pente dβ/dτ = 0,0014/jour, d'où ~7 700 réplications
+  par évaluation pour situer τ* à ± 1 jour, et **gain des nombres aléatoires communs mesuré à
+  × 1,1 seulement** ;
 - **frontière de service** (`scripts/frontiere_service.py`, phase 2, 60 réplications) : la
   couverture τ requise pour tenir β = 0,95 passe de ≤ 5 jours à arrivées régulières à ~59 jours
   à régime de Poisson, et devient hors d'atteinte (> 60 j) au-delà. β = 0,99 n'est atteignable
@@ -345,6 +357,22 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   même ordre que l'imprécision de sa cible, et la bonne conclusion est « on ne peut pas
   trancher », pas « la formule est fausse ». Ce diagnostic ne coûte rien et ne suppose rien :
   il n'utilise qu'une monotonie physiquement obligatoire.
+- **Quand une méthode échoue, mesurer ce qui la limite avant d'en essayer une autre.** La
+  frontière par grille était floue ; la chercher par dichotomie avec nombres aléatoires
+  communs et réplications adaptatives était la réponse évidente, et elle n'a presque rien
+  donné. Le diagnostic de pente dit pourquoi, et il valait pour les deux méthodes depuis le
+  début : près de la frontière, β ne monte que de ~0,1 point par jour de couverture, donc
+  situer τ* au jour près demande de résoudre β au millième — des milliers de réplications par
+  évaluation. **La difficulté est dans la platitude de β(τ), pas dans la méthode.** Corollaire
+  à ne pas oublier : les nombres aléatoires communs ne gagnent ici que × 1,1, *mesuré*, parce
+  que changer la capacité de stockage change la trajectoire et décorrèle les deux exécutions
+  malgré la graine partagée. Partager une graine ne suffit pas, il faut que les deux systèmes
+  consomment les aléas dans le même ordre.
+- **Lisser une contradiction ne la supprime pas.** La frontière directe est publiée après
+  régression isotone : relue telle quelle, elle a 0 % de reculs et un bruit nul *par
+  construction*. La colonne `tau_brut` conserve les valeurs d'avant correction, et c'est elle
+  qui mesure le bruit et juge le métamodèle. Même piège partout où l'on nettoie des données
+  avant de s'en servir pour juger un modèle.
 - **Le chiffre appliqué est une distribution, jamais un point.** `beta_site.py` tire c_a²
   dans son échantillon bootstrap et chaque capacité de stockage dans sa propre fourchette
   (indépendamment : tirer le total ferait descendre la part du port sous son minimum
@@ -444,9 +472,11 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
 16. **Aucune formule ne remplace encore la carte de frontière.** Le métamodèle n'est ni
     validé ni réfuté : son erreur de transposition (10,3 j) est du même ordre que le bruit de
     la carte qui le juge (6,8 j de recul moyen là où τ* devrait croître, sur 28 % des paires).
-    Pour trancher il faudrait une grille plus serrée en τ — τ* est obtenu par interpolation
-    entre deux niveaux distants de 5 à 10 jours — et davantage de réplications par point.
-    En attendant, lire la frontière demande de rejouer `frontiere_service.py`.
+    **Chercher τ* directement par dichotomie a été essayé et ne suffit pas** : le verdict
+    reste le même (7,5 j d'erreur contre 5,7 j de bruit), pour 43 % du calcul. Le coût de
+    trancher est maintenant chiffré : ~7 700 réplications par évaluation, contre 10 à 60
+    aujourd'hui. En attendant, lire la frontière demande de rejouer `frontiere_service.py`
+    ou `frontiere_directe.py`.
 17. **La frontière de service est tracée sur des moyennes.** β a une demi-largeur d'IC de
     ±0,01 à ±0,03 selon les cases, la grille fait 7 × 9 points interpolés linéairement, et les
     contours sont tirés des moyennes sans lissage : la position exacte d'une courbe vaut à
@@ -464,7 +494,7 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
    les workflows planifiés d'un dépôt inactif depuis 60 jours : les réactiver si besoin),
    puis `python -m corridor.ingest.port_status` en local pour tester la source.
 4. `pip install -e ".[dev]"` puis `ruff check . && pytest -q && pytest -m slow -q` avant de
-   toucher quoi que ce soit (~33 s et ~25 s).
+   toucher quoi que ce soit (~15 s et ~11 s).
 
 ## Commandes
 
@@ -496,6 +526,8 @@ python scripts/frontiere_service.py --reps 60 # frontière de service (c_a² x �
 python scripts/cout_regularite.py             # H4 : lisser l'affrètement ou stocker ?
 python scripts/beta_site.py --tirages 500     # chiffre appliqué : distribution de β (~8 min)
 python scripts/metamodele_frontiere.py        # formule contre carte : verdict et erreurs
+python scripts/frontiere_directe.py           # frontière par dichotomie (~30 min)
+python scripts/metamodele_frontiere.py --directe   # la même formule, sur cette frontière
 python scripts/frontiere_service.py --from-parquet data/sim/frontiere_service.parquet
                                               # retrace la figure sans resimuler
 python -m corridor.sim.sensitivity --reps 5   # version rapide
@@ -505,7 +537,7 @@ python scripts/economic_summary.py --reps 30  # coût annuel de la perte, avec f
 
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de
 `docs/` : `sensibilite_dri.png`, `h2_blocage.png`, `frontiere_service.png`,
-`cout_regularite.png` et `metamodele_frontiere.png`.
+`cout_regularite.png`, `metamodele_frontiere.png` et `metamodele_frontiere_directe.png`.
 
 ## Structure du dépôt
 
@@ -524,7 +556,8 @@ config/scenarios/        baseline, phase2, phase2_plus_stockage, phase2_plus_pos
 scripts/hooks/pre-commit lance `pytest -m slow -q` si src/corridor/sim/ est touché
 scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          economic_summary, compare_scenarios, h2_blocking,
-                         poste_stockage_factoriel, frontiere_service, cout_regularite,
+                         poste_stockage_factoriel, frontiere_service, frontiere_directe,
+                         cout_regularite,
                          beta_site, metamodele_frontiere, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
 data/raw/port_stats/     bilans de trafic 2022-2025 : pages HTML versionnées (ce sont elles

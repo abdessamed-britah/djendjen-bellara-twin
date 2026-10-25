@@ -61,7 +61,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 from frontiere_service import TAU_DAYS, couverture_requise, from_table
 
 DEFAULT_TABLE = Path("data/sim/frontiere_service.parquet")
+#: Frontière estimée directement par dichotomie, alternative à la lecture sur grille.
+TABLE_DIRECTE = Path("data/sim/frontiere_directe.parquet")
 DEFAULT_FIGURE = Path("docs/metamodele_frontiere.png")
+#: Figure de la variante ajustée sur la frontière par dichotomie, pour ne pas écraser l'autre.
+FIGURE_DIRECTE = Path("docs/metamodele_frontiere_directe.png")
 DEFAULT_SEED = 20260924
 #: Niveaux de service pour lesquels on inverse la carte. Au-delà de 0,98, presque aucun
 #: point n'est atteignable et le jeu de données se viderait.
@@ -89,6 +93,21 @@ def dataset(grilles, betas=BETAS) -> list[dict]:
                     continue
                 points.append({"k": postes, "c_a2": c_a2, "beta": beta, "tau": tau})
     return points
+
+
+def points_directs(table) -> list[dict]:
+    """Points de frontière estimés par dichotomie, dans le format attendu par l'ajustement.
+
+    Même structure que `dataset`, mais sans inversion ni censure : la dichotomie a déjà
+    rendu des τ* encadrés, et les cas inatteignables ou au plancher en ont été retirés.
+    """
+    donnees = table.to_pydict()
+    return [
+        {"k": int(donnees["k"][i]), "c_a2": float(donnees["c_a2"][i]),
+         "beta": float(donnees["beta"][i]), "tau": float(donnees["tau"][i]),
+         "tau_brut": float(donnees["tau_brut"][i])}
+        for i in range(table.num_rows)
+    ]
 
 
 def _ols(xs, ys) -> tuple[float, float]:
@@ -246,7 +265,7 @@ def apport_du_nombre_de_postes(points) -> dict:
     }
 
 
-def incoherence_de_la_carte(points) -> dict:
+def incoherence_de_la_carte(points, cle: str = "tau") -> dict:
     """Mesure le bruit de la carte, par ses propres contradictions internes.
 
     À nombre de postes et niveau de service fixés, τ* **doit** croître avec c_a² : des
@@ -266,15 +285,16 @@ def incoherence_de_la_carte(points) -> dict:
             )
             for avant, apres in pairwise(serie):
                 total += 1
-                if apres["tau"] < avant["tau"]:
+                if apres[cle] < avant[cle]:
                     violations += 1
-                    amplitudes.append(avant["tau"] - apres["tau"])
+                    amplitudes.append(avant[cle] - apres[cle])
     return {
         "paires": total,
         "violations": violations,
         "part": violations / total if total else math.nan,
         "recul_moyen": sum(amplitudes) / len(amplitudes) if amplitudes else 0.0,
         "recul_max": max(amplitudes) if amplitudes else 0.0,
+        "colonne": cle,
     }
 
 
@@ -285,7 +305,9 @@ def print_rapport(points, structurel, souple, aleatoire, colonnes, apport_k) -> 
     print(f"  {len(points)} points (k, c_a², β) → τ*, après retrait des points censurés "
           "au plancher")
     print(f"  τ* va de {min(taus):.1f} à {max(taus):.1f} jours, écart-type {dispersion:.1f}")
-    print(f"  niveaux de β : {', '.join(f'{b:.2f}'.replace('.', ',') for b in BETAS)}")
+    niveaux = sorted({p["beta"] for p in points})
+    print(f"  niveaux de β : "
+          f"{', '.join(f'{b:.2f}'.replace('.', ',') for b in niveaux)}")
 
     print(f"\n{'=' * 86}\nAjustement sur la totalité des points\n{'=' * 86}")
     print(f"  structurel  τ* = {structurel['a']:.1f} + {structurel['b']:.2f} · c_a² / "
@@ -344,6 +366,11 @@ def verdict(dispersion, moy_s, moy_f, err_s_alea, err_f_alea, bruit) -> None:
           f"recul moyen de {bruit['recul_moyen']:.1f} j (au pire {bruit['recul_max']:.1f} j).")
     print("  Ces reculs sont impossibles physiquement : c'est le bruit de la carte, mesuré "
           "par ses\n  propres contradictions.")
+    if bruit.get("colonne") == "tau_brut":
+        print("  Mesuré **avant** la régression isotone : la frontière publiée a été rendue")
+        print("  croissante, donc la lire telle quelle donnerait 0 % de reculs et un bruit")
+        print("  nul par construction. Lisser une contradiction ne la supprime pas — elle")
+        print("  reste dans l'incertitude des τ*, et c'est elle qui juge la formule.")
 
     print(f"\n{'=' * 86}\nVerdict\n{'=' * 86}")
     seuil = 0.5 * dispersion
@@ -352,7 +379,7 @@ def verdict(dispersion, moy_s, moy_f, err_s_alea, err_f_alea, bruit) -> None:
     # si l'erreur du modèle est du même ordre que le bruit des données, on ne tranche pas
     indecidable = moy_s <= 2.0 * bruit["recul_moyen"]
 
-    if tient and presque_aussi_bon:
+    if tient and presque_aussi_bon and not indecidable:
         print("  **Une forme simple tient.** La formule structurelle prédit une couverture")
         print(f"  jamais vue à {moy_s:.1f} jour(s) près en moyenne, soit "
               f"{moy_s / dispersion:.0%} de la dispersion des")
@@ -369,9 +396,10 @@ def verdict(dispersion, moy_s, moy_f, err_s_alea, err_f_alea, bruit) -> None:
               f"({moy_f:.1f} j), ce qui confirme")
         print("  que la limite est dans les données, pas dans la forme choisie.")
         print("\n  Conclusion honnête : **la formule n'est ni validée ni réfutée**. Ce qu'il")
-        print("  faudrait pour trancher est une carte plus fine — davantage de réplications")
-        print("  par point, et surtout une grille plus serrée en τ, puisque τ* est obtenu")
-        print("  par interpolation entre deux niveaux de stockage distants de 5 à 10 jours.")
+        print("  faudrait pour trancher n'est pas une meilleure formule, c'est une frontière")
+        print("  plus précise — et cela se paie en réplications : près de la frontière, β ne")
+        print("  monte que de ~0,1 point par jour de couverture, donc situer τ* au jour près")
+        print("  demande des milliers de réplications par évaluation (voir frontiere_directe).")
         print("  En l'état, la carte simulée reste le seul moyen fiable de lire la frontière.")
     else:
         print("  **Aucune forme simple ne tient sur ce domaine.** L'erreur de transposition")
@@ -409,8 +437,25 @@ def donnees_figure(points, structurel, souple) -> dict:
     return series
 
 
-def write_figure(points, structurel, souple, path=DEFAULT_FIGURE) -> Path:
+#: Comment les τ* ont été obtenus. La figure doit le dire : la mise en garde n'est pas la même
+#: selon qu'ils sont interpolés sur une grille ou encadrés par dichotomie puis lissés.
+ORIGINE_TAU = {
+    "grille": (
+        "τ* lu sur la carte simulée (jours)",
+        ("Les τ* sont lus sur une carte simulée, pas mesurés : ils en héritent le bruit, "
+         "et deux points voisins sont corrélés."),
+    ),
+    "dichotomie": (
+        "τ* encadré par dichotomie (jours)",
+        ("Les τ* sont encadrés par dichotomie puis rendus croissants par régression "
+         "isotone : le bruit est lissé, pas supprimé."),
+    ),
+}
+
+
+def write_figure(points, structurel, souple, path=DEFAULT_FIGURE, origine="grille") -> Path:
     """Prédit contre observé, et résidus par c_a² : où la formule se trompe, et comment."""
+    abscisse, mise_en_garde = ORIGINE_TAU[origine]
     figure, (gauche, droite) = plt.subplots(1, 2, figsize=(13.0, 6.0),
                                             constrained_layout=True)
     observes = [p["tau"] for p in points]
@@ -426,7 +471,7 @@ def write_figure(points, structurel, souple, path=DEFAULT_FIGURE) -> Path:
                        alpha=0.75, zorder=3)
     borne = max(observes) * 1.05
     gauche.plot([0, borne], [0, borne], color="0.35", linestyle="--", linewidth=1.2, zorder=2)
-    gauche.set_xlabel("τ* lu sur la carte simulée (jours)")
+    gauche.set_xlabel(abscisse)
     gauche.set_ylabel("τ* prédit par le métamodèle (jours)")
     gauche.set_title("Prédit contre observé", fontweight="bold")
     gauche.legend(fontsize=9)
@@ -441,9 +486,7 @@ def write_figure(points, structurel, souple, path=DEFAULT_FIGURE) -> Path:
     figure.suptitle(
         "Métamodèle de la frontière de service — une formule à la place d'une carte\n"
         "Ajustement sur la totalité des points (optimiste) ; les erreurs qui comptent sont "
-        "celles de la validation.\n"
-        "Les τ* sont lus sur une carte simulée, pas mesurés : ils en héritent le bruit, et "
-        "deux points voisins sont corrélés.",
+        "celles de la validation.\n" + mise_en_garde,
         fontsize=10.5,
     )
     path = Path(path)
@@ -456,17 +499,32 @@ def write_figure(points, structurel, souple, path=DEFAULT_FIGURE) -> Path:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--table", type=Path, default=DEFAULT_TABLE)
-    parser.add_argument("--figure", type=Path, default=DEFAULT_FIGURE)
+    parser.add_argument("--figure", type=Path, default=None,
+                        help="par défaut, une figure distincte selon la source ajustée")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument("--directe", action="store_true",
+                        help="ajuster sur la frontière estimée par dichotomie, pas sur la "
+                             "grille")
+    parser.add_argument("--table-directe", type=Path, default=TABLE_DIRECTE)
     args = parser.parse_args(argv)
 
-    if not args.table.exists():
-        print(f"carte de frontière absente ({args.table}) : "
-              "python scripts/frontiere_service.py --reps 60")
-        return 1
-
-    grilles = from_table(pq.read_table(args.table))
-    points = dataset(grilles)
+    if args.directe:
+        if not args.table_directe.exists():
+            print(f"frontière directe absente ({args.table_directe}) : "
+                  "python scripts/frontiere_directe.py")
+            return 1
+        points = points_directs(pq.read_table(args.table_directe))
+        figure = args.figure or FIGURE_DIRECTE
+        print(f"ajustement sur la frontière estimée par dichotomie "
+              f"({args.table_directe})")
+    else:
+        if not args.table.exists():
+            print(f"carte de frontière absente ({args.table}) : "
+                  "python scripts/frontiere_service.py --reps 60")
+            return 1
+        points = dataset(from_table(pq.read_table(args.table)))
+        figure = args.figure or DEFAULT_FIGURE
+        print(f"ajustement sur la carte par grille ({args.table})")
     if len(points) < 20:
         print(f"trop peu de points exploitables ({len(points)}) pour ajuster un métamodèle")
         return 1
@@ -492,9 +550,10 @@ def main(argv=None) -> int:
     verdict(dispersion, moy_s, moy_f,
             rmse(test, predire_structurel, fit_structurel(apprentissage)),
             rmse(test, predire_souple, fit_souple(apprentissage)),
-            incoherence_de_la_carte(points))
+            incoherence_de_la_carte(points, "tau_brut" if args.directe else "tau"))
 
-    chemin = write_figure(points, structurel, souple, args.figure)
+    chemin = write_figure(points, structurel, souple, figure,
+                          "dichotomie" if args.directe else "grille")
     print(f"\nfigure écrite : {chemin}")
     return 0
 

@@ -800,6 +800,83 @@ limite honnête du papier, pas un détail à taire : une revue d'ingénierie la 
 
 Reproductible par `python scripts/metamodele_frontiere.py` (instantané : il relit la carte).
 
+### Chercher la frontière au lieu de la lire : plus efficace, pas plus précise
+
+*Sert la **généralité**, par la **méthode** : la recette — dichotomie, nombres aléatoires
+communs, réplications adaptatives, monotonie imposée — s'applique à n'importe quelle frontière
+de service d'un corridor logistique. Le résultat chiffré est négatif, et c'est justement lui
+qui est transposable : il dit à quelle condition cette famille de méthodes paie.*
+
+La section précédente laisse la frontière floue pour une raison identifiée : τ* y est **lu par
+interpolation** sur une grille dont les niveaux de τ sont distants de 5 à 10 jours. La réponse
+méthodologique évidente est de chercher τ* directement, et de dépenser l'effort de calcul là où
+la réponse se joue. `scripts/frontiere_directe.py` le fait, avec quatre ingrédients :
+
+1. **dichotomie sur τ** pour chaque (c_a², β, k) : τ* est encadré, plus interpolé ;
+2. **nombres aléatoires communs** : la réplication *i* utilise la même graine pour tous les τ et
+   tous les c_a², donc la *différence* entre deux évaluations voisines est moins bruitée que
+   chacune des deux ;
+3. **réplications adaptatives** : à chaque pas, le côté est décidé par l'IC apparié de
+   β − β cible ; tant qu'il contient zéro on ajoute des réplications, jusqu'à un plafond ;
+4. **régression isotone** (PAVA) après coup, sur l'axe c_a², où τ* doit croître. Le nombre de
+   corrections nécessaires *est* la mesure du bruit résiduel.
+
+Résultat sur le même domaine (phase 2, c_a² de 0 à 1,5, τ de 5 à 60 jours, 1 et 2 postes,
+β visés 0,90 / 0,93 / 0,95 / 0,97) :
+
+| | dichotomie | grille |
+| --- | ---: | ---: |
+| années de simulation | **3 226** | 7 560 |
+| cases ou dichotomies payées | 32 | 126 |
+| paires de la frontière qui reculent | 25 % (6 / 24) | 28 % (9 / 32) |
+| recul moyen | 5,7 j | 6,8 j |
+| erreur du métamodèle, colonne retirée | **7,5 j** | 10,3 j |
+
+![Métamodèle réajusté sur la frontière cherchée par dichotomie](docs/metamodele_frontiere_directe.png)
+
+**Le gain est réel et modeste : 43 % du calcul pour un bruit du même ordre.** L'écart entre
+25 % et 28 % de paires reculantes n'est pas significatif sur 24 paires, et deux réserves
+interdisent de le vendre plus cher : la grille rend une **carte complète** dont la frontière
+n'est qu'un sous-produit, et la frontière publiée par la dichotomie est celle d'*après*
+lissage isotone — la relire telle quelle donnerait 0 % de reculs et un bruit nul par
+construction. C'est pour cela que la colonne `tau_brut` est conservée dans le Parquet et que
+c'est **elle** qui juge le métamodèle. Lisser une contradiction ne la retire pas de
+l'incertitude.
+
+Le métamodèle réajusté sur cette frontière donne τ* = 7,7 + 0,18 · c_a² / (1 − β)^1,80, avec
+7,5 j d'erreur par retrait d'une colonne de c_a² (contre 8,5 j pour la régression souple, qui
+ne fait donc pas mieux). **Le verdict ne change pas : on ne peut toujours pas trancher**, parce
+que 7,5 j reste du même ordre que les 5,7 j de recul moyen. Ce que confirme au passage le
+résultat annexe : le terme en nombre de postes ne gagne que 0,07 j, par un troisième chemin
+indépendant.
+
+**Et la raison est maintenant mesurée, pas conjecturée.** Le script la publie, à c_a² = 0,75
+entre 40 et 60 jours de couverture, sur 120 réplications :
+
+| Diagnostic | Mesure | Ce qu'il implique |
+| --- | ---: | --- |
+| pente dβ/dτ | 0,00135 /jour | β ne monte que de ~0,1 point par jour de couverture |
+| demi-largeur de l'IC, tirages appariés | 0,0165 | — |
+| demi-largeur si les tirages étaient indépendants | 0,0177 | — |
+| **gain des nombres aléatoires communs** | **× 1,1** | la technique ne paie presque pas ici |
+| réplications pour situer τ* à ± 1 jour | **~7 700 par évaluation** | hors de portée |
+
+Deux enseignements transposables, et ce sont eux le vrai livrable de cette section :
+
+- **la difficulté est dans la platitude de β(τ), pas dans la méthode.** Près de la frontière,
+  une grande incertitude sur τ* correspond à une toute petite incertitude sur β. Aucune astuce
+  d'échantillonnage n'y échappe : ni la grille, ni la dichotomie. Pour situer τ* au jour près
+  il faut résoudre β au millième, soit des milliers de réplications par évaluation ;
+- **les nombres aléatoires communs ne gagnent que × 1,1, et c'est mesuré.** On les suppose
+  habituellement très efficaces. Ici changer la capacité de stockage **change la trajectoire**
+  de la simulation — les navires n'accostent plus aux mêmes dates, le four ne s'arrête plus aux
+  mêmes heures — donc les deux exécutions se décorrèlent malgré la graine partagée. Partager
+  une graine ne suffit pas : il faut que les deux systèmes consomment les aléas dans le même
+  ordre, ce qu'un modèle à ressources partagées ne garantit pas.
+
+Reproductible par `python scripts/frontiere_directe.py` (~30 min) puis
+`python scripts/metamodele_frontiere.py --directe` (instantané).
+
 ### Ce que cela coûte : ordres de grandeur seulement
 
 `couts.cout_journee_arret_dri` vaut 130 000 USD/jour, fourchette [40 000 ; 230 000], statut

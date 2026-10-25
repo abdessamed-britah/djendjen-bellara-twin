@@ -231,6 +231,30 @@ def test_le_nombre_de_postes_separe_aussi_les_series():
     assert mm.incoherence_de_la_carte(points)["violations"] == 0
 
 
+def test_la_figure_dit_d_ou_viennent_les_tau():
+    """Les deux origines n'appellent pas la même mise en garde : les confondre tromperait."""
+    assert set(mm.ORIGINE_TAU) == {"grille", "dichotomie"}
+    assert "carte simulée" in mm.ORIGINE_TAU["grille"][1]
+    assert "isotone" in mm.ORIGINE_TAU["dichotomie"][1]
+    for abscisse, garde in mm.ORIGINE_TAU.values():
+        assert "τ*" in abscisse and "jours" in abscisse
+        assert garde.endswith(".")
+
+
+def test_le_bruit_se_mesure_sur_la_colonne_demandee():
+    """La frontière par dichotomie est publiée après lissage isotone : lue telle quelle, elle
+    n'a plus aucune contradiction. Le bruit se mesure donc sur `tau_brut`, d'avant lissage."""
+    points = [
+        {**_point(0.0, 0.95, 20.0), "tau_brut": 20.0},
+        {**_point(0.5, 0.95, 20.0), "tau_brut": 12.0},
+    ]
+    assert mm.incoherence_de_la_carte(points, "tau")["violations"] == 0
+    brut = mm.incoherence_de_la_carte(points, "tau_brut")
+    assert brut["violations"] == 1
+    assert brut["recul_moyen"] == pytest.approx(8.0)
+    assert brut["colonne"] == "tau_brut"
+
+
 # --- sorties ----------------------------------------------------------------
 
 
@@ -255,6 +279,36 @@ def test_le_verdict_conclut_au_succes_quand_l_erreur_est_petite(capsys):
     mm.verdict(dispersion=16.0, moy_s=2.0, moy_f=2.0, err_s_alea=2.0, err_f_alea=2.0,
                bruit=bruit)
     assert "Une forme simple tient" in capsys.readouterr().out
+
+
+def test_une_erreur_petite_ne_suffit_pas_si_le_bruit_est_du_meme_ordre(capsys):
+    """Le piège de la frontière lissée : l'erreur tombe sous le seuil, mais le bruit aussi.
+
+    Avec une erreur de 7,5 j pour 5,7 j de recul moyen, « la formule tient » serait un verdict
+    volé au hasard. On ne tranche pas.
+    """
+    bruit = {"paires": 24, "violations": 6, "part": 0.25, "recul_moyen": 5.7,
+             "recul_max": 8.6, "colonne": "tau_brut"}
+    mm.verdict(dispersion=17.6, moy_s=7.5, moy_f=8.5, err_s_alea=8.1, err_f_alea=7.1,
+               bruit=bruit)
+    sortie = capsys.readouterr().out
+    assert "ne peut pas trancher" in sortie
+    assert "Une forme simple tient" not in sortie
+
+
+def test_le_verdict_signale_que_le_bruit_est_mesure_avant_le_lissage(capsys):
+    bruit = {"paires": 24, "violations": 6, "part": 0.25, "recul_moyen": 5.7,
+             "recul_max": 8.6, "colonne": "tau_brut"}
+    mm.verdict(dispersion=17.6, moy_s=7.5, moy_f=8.5, err_s_alea=8.1, err_f_alea=7.1,
+               bruit=bruit)
+    assert "avant** la régression isotone" in capsys.readouterr().out
+
+
+def test_le_verdict_ne_parle_pas_de_lissage_quand_la_carte_n_en_a_pas_subi(capsys):
+    bruit = {"paires": 30, "violations": 9, "part": 0.3, "recul_moyen": 7.0, "recul_max": 15.0}
+    mm.verdict(dispersion=16.0, moy_s=10.0, moy_f=9.0, err_s_alea=9.0, err_f_alea=5.0,
+               bruit=bruit)
+    assert "régression isotone" not in capsys.readouterr().out
 
 
 def test_le_rapport_s_affiche_sans_lever(capsys):
