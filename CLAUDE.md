@@ -465,7 +465,9 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
     pas vue** par la boucle courte. Lancer `pytest -m slow -q` avant tout commit touchant à
     `corridor.sim` ; la CI le fait dans une étape dédiée, et `scripts/hooks/pre-commit` le
     fait en local dès que `src/corridor/sim/` est à l'index — à installer une fois par
-    `git config core.hooksPath scripts/hooks`. Ne pas baisser `VALIDATION_YEARS` pour gagner
+    `git config core.hooksPath scripts/hooks`. **Il ne se contourne jamais** (voir « Ce qu'il
+    ne faut pas faire ») : c'est le seul filet local du moteur de file.
+    Ne pas baisser `VALIDATION_YEARS` pour gagner
     du temps : à 4 ans le biais d'horizon fini passe de −1,4 % à −1,8 % et le test se
     rapproche de son seuil d'échec pour rien.
 
@@ -671,6 +673,12 @@ appariées, et l'écart est commenté dans le README ; les nouveaux tests passen
 
 ## Ce qu'il ne faut pas faire
 
+- **Contourner le hook pre-commit, sous quelque forme que ce soit** : ni `--no-verify`, ni
+  `-c core.hooksPath=…`, ni `HUSKY=0`, ni désinstallation temporaire. **Y compris quand on a
+  vérifié qu'il n'aurait rien lancé** : c'est précisément le raisonnement qui le rend inutile,
+  puisqu'un garde-fou qu'on désarme après avoir jugé soi-même du risque ne garde plus rien.
+  Si le hook gêne, il faut corriger le hook ou le commit, pas le sauter — et si on l'a sauté,
+  le dire.
 - Inventer des chiffres sur AQS ou le port : soit une source publique, soit une hypothèse étiquetée.
 - Écrire une valeur numérique du domaine dans le code plutôt que dans `assumptions.yaml`.
 - Augmenter la fréquence de collecte au-delà de 3×/jour (respect de la source).
