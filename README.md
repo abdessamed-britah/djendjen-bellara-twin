@@ -256,6 +256,51 @@ Reproductible par `python -m corridor.ingest.port_stats` puis
 >
 > Reproductible : voir `tests/test_sim_model.py`, section « flux aléatoires synchronisés ».
 
+### Pourquoi : un modèle sans rétroaction n'a pas de taux de service stationnaire
+
+*Sert la **généralité** : le diagnostic vaut pour tout modèle de corridor dont les arrivées
+sont exogènes et calées sur la demande — c'est-à-dire pour la manière la plus courante de
+construire un tel modèle.*
+
+Dans le modèle actuel, le débit moyen d'arrivée est **exactement** celui de la demande
+(`navires_par_an = besoin_annuel / taille_navire`, dérive relative mesurée : 1,6·10⁻¹⁶). L'offre
+cumulée moins la demande cumulée est donc une marche aléatoire **sans dérive**. Bornée en bas
+par zéro — le four s'arrête — et pas en haut — le navire garde sa cargaison —, elle produit un
+déficit cumulé qui croît comme √T. Le taux de perte décroît alors en 1/√T, et β tend vers 1
+sans jamais se stabiliser : **il n'existe aucun taux de service stationnaire inférieur à 1**.
+Tout β publié est la valeur d'un transitoire, lue à l'horizon choisi.
+
+Le script `scripts/convergence_horizon.py` a été écrit pour pouvoir **réfuter** ce diagnostic :
+il ajuste le déficit en loi de puissance D ≈ a·T^p et regarde trois issues fixées d'avance —
+p ≈ 1/2 (marche sans dérive), p ≈ 1 (déficit structurel : le corridor manque sa cible d'une
+fraction fixe), p ≈ 0 (déficit borné). Baseline, arrivées de Poisson, 20 réplications jouées
+chacune de 1 à 50 ans sur une même trajectoire :
+
+| T (années) | 1 | 2 | 4 | 8 | 16 | 32 | 50 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| β | 0,858 | 0,888 | 0,919 | 0,944 | 0,958 | 0,967 | 0,971 |
+| déficit cumulé (années de cible) | 0,14 | 0,22 | 0,32 | 0,45 | 0,67 | 1,07 | 1,43 |
+| part de β due au stock initial | 0,070 | 0,036 | 0,018 | 0,009 | 0,005 | 0,002 | 0,001 |
+
+![Convergence avec l'horizon](docs/convergence_horizon.png)
+
+- **Exposant du déficit : p = 0,578 [0,434 ; 0,718]** (R² = 0,997). Compatible avec 1/2,
+  exclut 1 et 0. **À stock initial nul : p = 0,492 [0,367 ; 0,599].** L'écart entre les deux
+  s'explique : le stock de départ réduit les déficits des horizons courts et raidit la pente
+  apparente ; sans lui, on lit la marche elle-même, et elle tombe sur 1/2.
+- **β croît sans palier** de 0,858 à 0,971 sur un demi-siècle simulé. Le « taux de service à un
+  an » de toutes les sections qui suivent n'est donc pas une propriété du corridor, c'est une
+  propriété du corridor *et* de l'horizon de lecture.
+- **Le stock initial pèse un tonnage fixe**, pas une fraction : 63 à 64 % de S0 finit converti
+  en production à tout horizon, si bien que sa part de β décroît exactement en 1/T. À un an il
+  vaut 7 points de β — plus que la plupart des effets que le projet cherchait à mesurer.
+
+**Conséquence pour la suite.** Mesurer mieux ne sert à rien tant que le modèle n'a pas de
+rétroaction : il faut une politique d'approvisionnement qui commande en fonction du stock, ce
+qui rend au système une dérive de rappel et donc un régime stationnaire. C'est le chantier en
+cours, et le premier critère qu'il devra passer est ce même script : un exposant compatible
+avec 0.
+
 > **Ces chiffres ne sont pas des prévisions.** Les deux paramètres qui les pilotent ne sont
 > pas sourcés : la **régularité des arrivées** de minéraliers (statut *estimé*, jamais
 > mesurée) et les **capacités de stockage** du port et de l'usine (statut *inconnu*). Le

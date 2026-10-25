@@ -64,7 +64,7 @@ sur 16 trimestres de bilans publics), les deux capacités de stockage restent `i
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **676 tests, ~35 s mesurés**. S'y ajoutent **17 tests
+`ruff check .` et `pytest -q` passent : **700 tests, ~22 s mesurés**. S'y ajoutent **18 tests
 marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
 `pytest -m slow -q` (~100 s) : la validation analytique du moteur de file, deux validations de
 comportement de `beta_site.py`, les deux mesures de la limite 0 (gain des nombres communs,
@@ -449,6 +449,15 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
    `tests/test_sim_model.py::test_la_capacite_de_stockage_ne_change_pas_la_production` : si ce
    test tombe, c'est que le modèle plafonne enfin le tampon flottant, et il faut tout refaire.
    **C'est le premier chantier du projet, avant toute nouvelle analyse.**
+   **Diagnostic confirmé** (`scripts/convergence_horizon.py`, 2026-10-25) : les arrivées sont
+   exogènes et leur débit moyen égale exactement la demande, donc l'écart offre − demande est
+   une marche sans dérive. Déficit cumulé ≈ a·T^p avec **p = 0,578 [0,434 ; 0,718]**, et
+   **0,492 [0,367 ; 0,599] à stock initial nul** ; β croît sans palier de 0,858 (1 an) à
+   0,971 (50 ans). **Il n'existe aucun β stationnaire à mesurer** : tout β « à un an » du
+   projet est un transitoire. Le stock initial pèse un tonnage fixe (63-64 % de S0 converti),
+   soit 7 points de β à un an et 0,1 à cinquante. Remède en cours : approvisionnement
+   endogène (politique de commande sur la position de stock), qui devra repasser ce même
+   script avec un exposant compatible avec 0.
 
 1. **L'étape 3 n'est validée que partiellement sur du réel.** Elle tourne sur 82 instantanés
    (49 escales, 31 exploitables, dont 4 escales minerai) et ses invariants
@@ -577,6 +586,7 @@ python scripts/poste_stockage_factoriel.py    # plan 2x2 poste x stockage, 200 r
 python scripts/frontiere_service.py --reps 60 # frontière de service (c_a² x τ) : ~25 min
 python scripts/cout_regularite.py             # H4 : lisser l'affrètement ou stocker ?
 python scripts/beta_site.py --tirages 500     # chiffre appliqué : distribution de β (~8 min)
+python scripts/convergence_horizon.py         # β converge-t-il avec l'horizon ? (~20 min)
 python scripts/metamodele_frontiere.py        # formule contre carte : verdict et erreurs
 python scripts/frontiere_directe.py           # frontière par dichotomie (~30 min)
 python scripts/metamodele_frontiere.py --directe   # la même formule, sur cette frontière
@@ -610,6 +620,7 @@ scripts/hooks/pre-commit lance `pytest -m slow -q` si src/corridor/sim/ est touc
 scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          economic_summary, compare_scenarios, h2_blocking,
                          poste_stockage_factoriel, frontiere_service, frontiere_directe,
+                         convergence_horizon,
                          cout_regularite,
                          beta_site, metamodele_frontiere, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
