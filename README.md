@@ -981,6 +981,41 @@ Ces montants sont **des ordres de grandeur**, arrondis au million : ils dépende
 étrangère au site, d'une dispersion des arrivées non mesurée et de capacités de stockage
 inconnues. Ils servent à comparer des scénarios entre eux, pas à chiffrer un préjudice.
 
+#### Le chiffre appliqué : le manque à produire du site, en plage
+
+*Sert l'**importance** : c'est le montant qu'un décideur regarderait. Il n'existe que sous
+forme d'intervalle, et la méthode de propagation fait partie du résultat.*
+
+Le tableau ci-dessus fixe c_a² à 0 ou à 1 par convention et le stockage à sa valeur centrale :
+trois hypothèses pour un seul montant. Le chiffre appliqué du site les **tire** à la place —
+c_a² dans son échantillon bootstrap, chaque capacité de stockage dans sa propre fourchette,
+200 tirages d'une année, scénario `phase2_mesure` — et publie la distribution qui en sort
+(`python scripts/economic_summary.py --mesure`) :
+
+| Variante | Manque à produire (Mt/an) | Coût (M USD/an) |
+| --- | ---: | ---: |
+| A — tous les trimestres (c_a² = 0,83) | **0,197** [0,000 ; 0,931] | **4** [< 1 ; 37] |
+| B — sans le trimestre anormal 2022 T3 (c_a² = 0,45) | **0,111** [0,000 ; 0,598] | **2** [< 1 ; 24] |
+
+Médiane et intervalle à 90 % des tirages, croisés avec la fourchette de la marge unitaire.
+Trois choses à ne pas se cacher :
+
+- **la plage couvre presque deux ordres de grandeur.** Elle empile deux ignorances : où se
+  situe le site sur l'axe de l'irrégularité, et ce que vaut une tonne de DRI non produite au
+  Maghreb. La borne haute n'est pas un scénario catastrophe, c'est le coin où les deux
+  tombent du mauvais côté en même temps ;
+- **le choix de garder ou non 2022 T3 déplace la médiane de près de moitié.** Un trimestre sur
+  seize. C'est la mesure de fragilité du résultat, et c'est pourquoi les deux variantes sont
+  publiées côte à côte plutôt qu'une moyenne des deux ;
+- **la borne basse est zéro dans les deux variantes** : une année plausible sur dix voit le
+  corridor tenir sa cible. Citer « 4 M USD » seul serait donc faux dans les deux sens.
+
+Réserve supplémentaire depuis l'avertissement en tête de section : le tirage du stockage dans
+sa fourchette fait varier la capacité **et** le stock initial qui en dérive. Vu la limite 0,
+ce qu'il propage est donc surtout l'incertitude sur le stock de départ, pas sur la capacité.
+La plage reste honnête quant à l'irrégularité, qui est l'incertitude dominante ; elle attribue
+mal la part du stockage.
+
 ### Limites de ces résultats
 
 La table des escales tourne désormais sur une vraie série (82 collectes du 2026-09-24 au

@@ -186,6 +186,11 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
 - **irrégularité des arrivées, première estimation** : c_a² = 0,83, IC bootstrap
   [0,21 ; 1,73], sur 16 trimestres de bilans de trafic du port (2022-2025). Soit des arrivées
   proches du régime de Poisson. Voir limite 5 pour ce que ce chiffre ne vaut pas ;
+- **coût appliqué du manque à produire** (`economic_summary.py --mesure`, 200 tirages) :
+  médiane **0,197 Mt/an [0 ; 0,931]**, soit **4 M USD/an [< 1 ; 37]** en gardant tous les
+  trimestres ; **0,111 Mt/an [0 ; 0,598]**, soit **2 M USD/an [< 1 ; 24]** sans 2022 T3. La
+  borne basse est nulle dans les deux cas : une année sur dix tient la cible. Voir limite 0
+  pour ce que le tirage du stockage propage réellement ;
 - **chiffre appliqué du site** (`scripts/beta_site.py`, scénario `phase2_mesure`, 500
   tirages) : taux de service β de long terme **93,2 % [86,8 ; 98,3]** en gardant tous les
   trimestres, **95,4 % [90,4 ; 98,2]** sans 2022 T3. Sur une seule année, 94,9 %
@@ -580,6 +585,7 @@ python scripts/frontiere_service.py --from-parquet data/sim/frontiere_service.pa
 python -m corridor.sim.sensitivity --reps 5   # version rapide
 python scripts/compare_scenarios.py --reps 50 # pull/push, régulier/Poisson, 1 contre 2 postes
 python scripts/economic_summary.py --reps 30  # coût annuel de la perte, avec fourchette
+python scripts/economic_summary.py --mesure   # chiffre appliqué : le manque à produire en plage
 ```
 
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de
