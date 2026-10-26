@@ -64,10 +64,8 @@ sur 16 trimestres de bilans publics), les deux capacités de stockage restent `i
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **794 tests** — ~35 à 40 s attendus au repos sur secteur ; mesurés le
-2026-10-26 sur batterie seulement (processeur bridé à 1,6 GHz, 60 à 85 s selon l'instant), en
-alternance avec la suite de l'étape 1 qui tenait 35-39 s sur secteur : l'écart entre les deux
-reste dans le bruit. **À remesurer sur secteur à la reprise.** S'y ajoutent **21 tests
+`ruff check .` et `pytest -q` passent : **824 tests, ~19 s mesurés au repos sur secteur**
+(2026-10-26 ; sur batterie, processeur bridé, comptez trois à quatre fois plus). S'y ajoutent **22 tests
 marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
 `pytest -m slow -q` (~100 s) : la validation analytique du moteur de file, deux validations de
 comportement de `beta_site.py`, les deux mesures de la limite 0 (gain des nombres communs,
@@ -437,6 +435,19 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   surestaries** (pas par la production). **L'option de report est écartée** : inerte en
   baseline (un centième de point), nuisible en phase 2 (−0,6 à −2,5 points de β, attente
   allongée de 3 à 11 h, +0,5 à +2,5 M USD/an) — reporter fait commander par grappes.
+  **Étape 3 (2026-10-26, `validation_ca2.py`, règles écrites avant le calcul) : la
+  validation échoue — le modèle endogène est trop régulier.** I trimestriel sur des fenêtres
+  de 16 trimestres, calculé comme sur les bilans du port : médiane 0,067 à 0,089 à cv_delai
+  central, P(I ≥ 0,45) = 0 dans les quatre cas, « trop régulier » pour les deux bandes. Sur
+  toute la fourchette de cv_delai, la baseline (le corridor que décrivent les données) n'atteint
+  jamais la bande étroite ; la bande large ne l'est qu'à cv ≥ 0,40-0,50, valeurs non plausibles
+  pour un délai de transport (écart-type ~11 j sur 22). Insensible à s ± 5 j. **Cause, par
+  bilan de masse** : débarqué = consommé + variation du stock ; la consommation du modèle est
+  quasi constante (0,002 sur un I de 0,059), donc atteindre I = 0,45 demanderait 215 kt
+  d'écart-type de stock par trimestre sur 450 kt de capacité. Contrôles de regroupement (un
+  intervalle de 1,6 j sur 2, une attente de 183 h) : chacun ≤ 5 % de chances au rythme actuel.
+  **Rien n'a été corrigé** : six mécanismes candidats sont listés au README, à choisir avec le
+  porteur du projet à l'étape suivante.
 - **Régime stationnaire : un instantané des cumuls, pas une remise à zéro.**
   `simulate(..., warmup_years=W)` publie la fenêtre [W, years]. À W, on relève les compteurs
   et les intégrales, et chaque indicateur publié est une différence. Une remise à zéro
@@ -553,6 +564,11 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
    tonnage divisé par une taille moyenne, pas un comptage. Un seul trimestre (2022 T3, 606 t)
    fait passer I de 0,83 à 0,45 selon qu'on le garde ou non. La série de situations portuaires
    ne contient toujours que 4 arrivées minerai : elle ne permettra pas de trancher avant 2027.
+   **Ce que mesure vraiment I (étape 3)** : par bilan de masse, la dispersion des
+   débarquements trimestriels vaut celle de la consommation plus celle des variations de
+   stock. Elle ne s'identifie à c_a² que si les arrivées sont **exogènes** ; avec une
+   rétroaction, elle mesure d'abord la variabilité de la consommation. L'estimation 0,83
+   est donc à relire selon le modèle d'approvisionnement retenu.
    **`simulation.dispersion_arrivees` reste à 0** : c'est le cas de référence régulier du
    scénario `baseline`, et le changer transformerait en silence tous les résultats publiés.
 6. **Le coût de la journée d'arrêt vient de marges chinoises** (statut `estimé`) et donne des
@@ -648,6 +664,9 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
     groupées que ce que produit la politique (la série en montre deux à 1,6 jour
     d'intervalle). **C'est ce que l'étape 3, la validation par c_a², doit trancher** ; ne
     pas publier de résultat endogène comme décrivant le site avant qu'elle soit faite.
+    **Faite le 2026-10-26 : elle échoue** (voir décisions, étape 3). La règle tient donc
+    toujours : aucun résultat endogène ne décrit le site tant qu'un mécanisme de
+    regroupement n'a pas été choisi et validé à son tour.
 
 ## Reprise après une longue pause
 
@@ -705,6 +724,7 @@ python scripts/economic_summary.py --mesure   # chiffre appliqué : le manque à
 python scripts/economic_summary.py --stationnaire --reps 16
                                               # coût total en régime stationnaire, 3 termes
 python scripts/politique_commande.py          # report, balayage de s, attente vs observé (~50 min)
+python scripts/validation_ca2.py              # validation par la dispersion (~1 h secteur)
 ```
 
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de
@@ -731,7 +751,7 @@ scripts/hooks/pre-commit lance `pytest -m slow -q` si src/corridor/sim/ est touc
 scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          economic_summary, compare_scenarios, h2_blocking,
                          poste_stockage_factoriel, frontiere_service, frontiere_directe,
-                         convergence_horizon, politique_commande,
+                         convergence_horizon, politique_commande, validation_ca2,
                          cout_regularite,
                          beta_site, metamodele_frontiere, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés

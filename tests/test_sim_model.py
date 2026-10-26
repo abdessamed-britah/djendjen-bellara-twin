@@ -923,3 +923,36 @@ def test_les_bilans_tiennent_avec_les_deux_options():
     resultat = md.simulate(config, seed=GRAINE, years=1.5, warmup_years=0.5)
     _verifie_la_masse(resultat)
     _verifie_l_amont_fenetre(resultat)
+
+
+# --- étape 3 : la chronique, pour juger la dispersion comme sur les données ---
+
+
+@pytest.mark.parametrize("scenario", ["baseline", "baseline_endogene"])
+def test_le_tonnage_decharge_par_periode_somme_au_total(scenario):
+    config = SimConfig.from_scenario(load_scenario(scenario))
+    c = md.chronique(config, seed=GRAINE, years=1.0, periode_h=config.heures_par_an / 4)
+    total = md.simulate(config, seed=GRAINE, years=1.0)
+    assert len(c["periodes"]) == 4
+    assert sum(p["debarque_t"] for p in c["periodes"]) == pytest.approx(
+        total.pellets_delivered_t)
+
+
+def test_chaque_attente_porte_la_date_d_arrivee_de_son_navire(endogene):
+    c = md.chronique(endogene, seed=GRAINE, years=1.0)
+    assert len(c["attentes_h"]) == len(c["attentes_arrivee_h"])
+    assert set(c["attentes_arrivee_h"]) <= set(c["arrivees_h"])
+
+
+def test_les_arrivees_sont_datees_dans_l_horizon_et_dans_l_ordre(endogene):
+    c = md.chronique(endogene, seed=GRAINE, years=1.0)
+    assert c["arrivees_h"] == sorted(c["arrivees_h"])
+    assert all(0 <= a < endogene.heures_par_an for a in c["arrivees_h"])
+
+
+def test_production_par_periode_reste_une_vue_de_la_chronique(endogene):
+    """Le refactoring ne doit pas changer la sortie historique."""
+    vue = md.production_par_periode(endogene, seed=GRAINE, years=1.0)
+    brute = md.chronique(endogene, seed=GRAINE, years=1.0)["periodes"]
+    assert [p["production_t"] for p in vue] == [p["production_t"] for p in brute]
+    assert set(vue[0]) == {"debut_h", "fin_h", "production_t", "rupture_h"}

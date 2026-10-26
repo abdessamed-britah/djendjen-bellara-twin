@@ -227,6 +227,10 @@ class _Metrics:
     stockyard_samples: list[float] = field(default_factory=list)
     plant_samples: list[float] = field(default_factory=list)
     inventory_samples: list[float] = field(default_factory=list)
+    arrival_times_h: list[float] = field(default_factory=list)
+    # date d'arrivée du navire de chaque attente de `waits_h`, dans le même ordre : une
+    # attente est enregistrée à l'accostage, pas à l'arrivée
+    waits_arrival_h: list[float] = field(default_factory=list)
 
 
 class _Corridor:
@@ -375,6 +379,7 @@ class _Corridor:
         """
         arrived_at = self.env.now
         self.metrics.vessels_arrived += 1
+        self.metrics.arrival_times_h.append(arrived_at)
         # le navire attend en rade avec sa cargaison : stock flottant, pas encore au port
         self.metrics.anchorage_tonnage.change(arrived_at, +size_t)
         self.metrics.anchorage_ships.change(arrived_at, +1)
@@ -386,6 +391,7 @@ class _Corridor:
                 # une commande a pu être reportée à cause de ce navire : réévaluer
                 self._reveiller()
             self.metrics.waits_h.append(self.env.now - arrived_at)
+            self.metrics.waits_arrival_h.append(arrived_at)
             self.metrics.berth.change(self.env.now, +1)
             remaining = size_t
             while remaining > _EPSILON_T:
@@ -491,7 +497,7 @@ class _Corridor:
         "at_sea_tonnage", "anchorage_ships",
     )
     _LISTES = ("waits_h", "stockyard_samples", "plant_samples", "inventory_samples",
-               "lead_times_h")
+               "lead_times_h", "arrival_times_h", "waits_arrival_h")
 
     def prendre_instantane(self) -> None:
         """Fin de l'échauffement : relève les cumuls, sans rien remettre à zéro."""
@@ -653,6 +659,52 @@ def _construire(config, seed, years, samplers=None,
     return env, corridor
 
 
+def chronique(
+    config: SimConfig,
+    seed: int,
+    years: float,
+    periode_h: float | None = None,
+    samplers: Samplers | None = None,
+) -> dict[str, list]:
+    """La trajectoire d'**une** réplication, lue en une seule simulation.
+
+    - `periodes` : pour chaque période successive (un an par défaut), la production, les
+      heures de rupture et le **tonnage déchargé**. Ce dernier est ce que publient les
+      bilans de trafic du port (« marchandises débarquées ») : c'est sur lui que se calcule
+      l'indice de dispersion trimestriel, de la même façon que sur les données réelles ;
+    - `arrivees_h` : la date d'arrivée en rade de chaque navire ;
+    - `attentes_h` : l'attente en rade de chaque navire accosté, et `attentes_arrivee_h` la
+      date d'arrivée de ce navire, pour écarter proprement l'échauffement.
+
+    Les grandeurs d'une période sont des différences de cumuls relevés pendant la
+    simulation, et la dernière période est fermée sur l'état final : leurs sommes valent
+    exactement les totaux de `simulate` à la même graine et au même horizon.
+    """
+    periode = periode_h or config.heures_par_an
+    horizon = years * config.heures_par_an
+    env, corridor = _construire(config, seed, years, samplers)
+    m = corridor.metrics
+    jalons: list[tuple[float, ...]] = [(0.0, 0.0, 0.0, 0.0)]
+
+    def releve() -> Generator:
+        while True:
+            yield env.timeout(periode)
+            if env.now < horizon:
+                jalons.append((env.now, m.dri_production_t, m.dri_stop_hours,
+                               m.pellets_delivered_t))
+
+    env.process(releve())
+    env.run(until=horizon)
+    jalons.append((horizon, m.dri_production_t, m.dri_stop_hours, m.pellets_delivered_t))
+    periodes = [
+        {"debut_h": a[0], "fin_h": b[0], "production_t": b[1] - a[1],
+         "rupture_h": b[2] - a[2], "debarque_t": b[3] - a[3]}
+        for a, b in pairwise(jalons)
+    ]
+    return {"periodes": periodes, "arrivees_h": list(m.arrival_times_h),
+            "attentes_h": list(m.waits_h), "attentes_arrivee_h": list(m.waits_arrival_h)}
+
+
 def production_par_periode(
     config: SimConfig,
     seed: int,
@@ -664,26 +716,9 @@ def production_par_periode(
 
     Ce sont les lots de la méthode des moyennes par lots : une longue trajectoire coupée en
     tranches successives, plutôt que des réplications indépendantes. Par défaut une période
-    vaut un an. La somme des productions des périodes vaut exactement la production de
-    `simulate` à la même graine et au même horizon : les périodes sont des différences de
-    cumuls relevés pendant la simulation, et la dernière est fermée sur l'état final.
+    vaut un an. Vue de `chronique`, dont elle garde les clés historiques.
     """
-    periode = periode_h or config.heures_par_an
-    horizon = years * config.heures_par_an
-    env, corridor = _construire(config, seed, years, samplers)
-    m = corridor.metrics
-    jalons: list[tuple[float, float, float]] = [(0.0, 0.0, 0.0)]
-
-    def releve() -> Generator:
-        while True:
-            yield env.timeout(periode)
-            if env.now < horizon:
-                jalons.append((env.now, m.dri_production_t, m.dri_stop_hours))
-
-    env.process(releve())
-    env.run(until=horizon)
-    jalons.append((horizon, m.dri_production_t, m.dri_stop_hours))
     return [
-        {"debut_h": a[0], "fin_h": b[0], "production_t": b[1] - a[1], "rupture_h": b[2] - a[2]}
-        for a, b in pairwise(jalons)
+        {cle: p[cle] for cle in ("debut_h", "fin_h", "production_t", "rupture_h")}
+        for p in chronique(config, seed, years, periode_h, samplers)["periodes"]
     ]

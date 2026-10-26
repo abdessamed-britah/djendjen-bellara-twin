@@ -479,6 +479,122 @@ au modèle endogène en baseline.
 Reproductible par `python scripts/politique_commande.py` (~50 min) et
 `python scripts/economic_summary.py --stationnaire --reps 16`.
 
+### Validation par la dispersion des arrivées : le modèle endogène est trop régulier
+
+*Sert l'**originalité** par la méthode : une validation pré-enregistrée contre une donnée
+publique, dont les règles ont été écrites avant le premier calcul. Sert aussi la
+**généralité** : l'argument de bilan de masse qui explique l'échec vaut pour tout corridor, et
+il change ce qu'on peut lire dans des statistiques portuaires trimestrielles.*
+
+Dans le modèle endogène, l'irrégularité des arrivées n'est plus une hypothèse : elle sort de
+la politique de commande et de la variabilité du délai. La comparer à celle que mesurent les
+bilans du port est donc une **validation**, pas un réglage. Les règles sont figées dans
+`scripts/validation_ca2.py` avant tout calcul :
+
+- **statistique** : l'indice de dispersion des comptages trimestriels de minéraliers,
+  I = Var/Moyenne, calculé **exactement** comme sur les données du port (tonnage déchargé par
+  trimestre ÷ taille moyenne, même fonction) ;
+- **comparaison à 16 trimestres** : l'observé est jugé contre la distribution de I sur des
+  fenêtres de 16 trimestres simulés, ce que 16 trimestres peuvent produire, et non contre une
+  moyenne de long terme ;
+- **bandes** : large = IC à 95 % de l'observé, [0,21 ; 1,73] ; étroite = les deux variantes
+  publiées, [0,45 ; 0,83]. Le modèle est *compatible* avec une bande si son intervalle à 90 %
+  la rencontre ;
+- **seul s est calibré**, sur un critère étranger à la dispersion (l'optimum en coût de
+  l'étape 2) ; `cv_delai` reste à sa valeur d'hypothèse, 0,25, et le script refuse de tourner
+  si elle a bougé. Le balayage de `cv_delai` est une carte de sensibilité, pas un réglage.
+
+**Verdict à cv_delai central : trop régulier, pour les deux bandes et dans les quatre cas.**
+8 graines × 100 ans en régime stationnaire, soit 200 fenêtres disjointes par configuration :
+
+| configuration | I médian [5 % ; 95 %] | P(I ≥ 0,83) | P(I ≥ 0,45) | bande large | bande étroite |
+| --- | ---: | ---: | ---: | --- | --- |
+| baseline, dépassements permis | 0,069 [0,028 ; 0,133] | 0 % | 0 % | trop régulier | trop régulier |
+| baseline, dépassements interdits | 0,067 [0,027 ; 0,125] | 0 % | 0 % | trop régulier | trop régulier |
+| phase 2, dépassements permis | 0,075 [0,034 ; 0,137] | 0 % | 0 % | trop régulier | trop régulier |
+| phase 2, dépassements interdits | 0,089 [0,040 ; 0,174] | 0 % | 0 % | trop régulier | trop régulier |
+
+**Sur toute la fourchette de cv_delai, la bande étroite n'est jamais atteinte au rythme
+actuel.** I monte avec la variabilité du délai, mais lentement :
+
+| cv_delai | 0,10 | 0,20 | 0,25 | 0,30 | 0,40 | 0,50 | 0,60 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline, permis — I médian | 0,039 | 0,063 | 0,068 | 0,085 | 0,097 | 0,127 | 0,161 |
+| baseline, interdits — I médian | 0,039 | 0,062 | 0,068 | 0,081 | 0,126 | 0,163 | 0,209 |
+| phase 2, permis — I médian | 0,049 | 0,067 | 0,073 | 0,083 | 0,095 | 0,117 | 0,123 |
+| phase 2, interdits — I médian | 0,048 | 0,070 | 0,090 | 0,104 | 0,161 | 0,215 | 0,296 |
+
+- la **bande large** n'est rejointe qu'à partir de **cv = 0,40 à 0,50**, et seulement par sa
+  borne basse (0,21) ;
+- la **bande étroite** ne l'est qu'en un seul point : phase 2, dépassements interdits,
+  cv = 0,60, le bord de la fourchette, avec P(I ≥ 0,45) = 17 % et P(I ≥ 0,83) = 0 %. Or les
+  données de 2022-2025 décrivent le corridor **actuel**, donc la baseline, qui n'y parvient
+  pour aucune valeur ;
+- ces valeurs de cv ne sont **pas plausibles pour un délai de transport.** Un délai moyen de
+  22 jours avec un cv de 0,5 suppose un écart-type de ~11 jours : un navire sur trois
+  arriverait avec plus de dix jours d'avance ou de retard. La traversée elle-même varie de
+  quelques jours tout au plus ; seuls des files d'attente au port de chargement et des
+  affrètements très erratiques donneraient un tel ordre de grandeur, et rien de public ne le
+  documente pour AQS. **La validation n'est donc pas obtenue** ;
+- le verdict ne dépend pas du seul paramètre calibré : à s ± 5 jours, I médian ne bouge pas
+  (0,067 à 0,070 en baseline).
+
+![Dispersion trimestrielle simulée face à l'observé](docs/validation_ca2.png)
+
+**Pourquoi : un bilan de masse, et il vaut pour tout corridor.** Sur un trimestre, le tonnage
+déchargé égale la consommation plus la variation du stock physique. Dans le modèle, la
+consommation est presque constante : sur 400 trimestres simulés en baseline, elle ne pèse que
+0,002 dans un I de 0,059 ; tout le reste vient du stock, dont la variation trimestrielle a un
+écart-type de 78 kt. Pour atteindre I = 0,45, il faudrait 215 kt d'écart-type, et 292 kt pour
+0,83 — **avec 450 kt de capacité totale, le stock devrait passer presque de vide à plein d'un
+trimestre à l'autre.** Une politique de commande qui suit la consommation ne peut pas produire
+cela, quel que soit le délai. C'est aussi pourquoi le CV² des intervalles entre arrivées (0,20
+en baseline, jusqu'à 0,61 en phase 2) ne dit pas grand-chose de I : un intervalle court y est
+suivi d'un long, et sur un trimestre les écarts se compensent.
+
+Conséquence pour la lecture de l'estimation publiée (I = 0,83) : **elle ne mesure c_a² que si
+les arrivées sont exogènes**. Dès qu'il y a rétroaction, la dispersion des débarquements
+trimestriels mesure d'abord **la variabilité de la consommation** et les grands mouvements de
+stock — ce que la limite 5 soupçonnait déjà comme une source de surestimation.
+
+**Contrôles de regroupement, à cv central : ils pointent dans la même direction**, sans rien
+trancher. Une seule série courte est observée : 2 intervalles entre arrivées mesurés, dont un
+de 1,6 jour, et une seule attente mesurable, 183 h.
+
+| configuration | P(intervalle < 2 j) | chance de voir ≥ 1 sur 2 | P(attente > 150 h) | chance de voir 1 sur 1 |
+| --- | ---: | ---: | ---: | ---: |
+| baseline, permis | 1,9 % | 3,8 % | 0,3 % | 0,3 % |
+| baseline, interdits | 2,6 % | 5,1 % | 0,7 % | 0,7 % |
+| phase 2, permis | 12,2 % | 22,9 % | 6,2 % | 6,2 % |
+| phase 2, interdits | 20,5 % | 36,8 % | 14,9 % | 14,9 % |
+
+Au rythme actuel, le modèle rend chacun des deux faits observés peu probable (5 % au plus).
+Pris isolément, aucun ne pèse : ce sont une ou deux observations. Mais les trois indicateurs —
+dispersion trimestrielle, intervalle court, attente longue — vont dans le même sens : **les
+arrivées réelles sont plus groupées que ce que produit une politique de commande sur
+consommation constante.**
+
+**Ce qui pourrait l'expliquer — rien n'est corrigé ici, le choix se fera avec le porteur du
+projet.** Chaque mécanisme découple, d'une façon différente, les débarquements de la
+consommation :
+
+1. **Une consommation variable.** Montée en cadence, arrêts de four, campagnes de production :
+   le modèle la tient constante, et le bilan de masse dit que c'est l'explication la plus
+   directe. Le trimestre 2022 T3, quasi vide (606 t), en est peut-être un exemple ;
+2. **Des contrats à fenêtres fixes.** Enlèvements programmés à date (laycans contractuels),
+   indépendants du stock : les arrivées suivent un calendrier, pas un seuil ;
+3. **Plusieurs fournisseurs**, chacun avec son propre calendrier et ses propres délais (Brésil,
+   Canada, d'autres encore) : leurs superpositions créent des grappes ;
+4. **Des navires pour d'autres destinataires.** La ligne « Pellets » des bilans ne distingue
+   pas l'importateur : si une partie ne va pas à AQS, la statistique mêle deux flux ;
+5. **Des commandes groupées** : achats par lots quand les prix ou le fret sont favorables, et
+   constitution délibérée de stock ;
+6. et, côté mesure, le nombre de navires est un tonnage divisé par une taille moyenne, pas un
+   comptage (limite 5).
+
+Reproductible par `python scripts/validation_ca2.py` (plusieurs heures sur batterie, ~1 h sur
+secteur).
+
 > **Ces chiffres ne sont pas des prévisions.** Les deux paramètres qui les pilotent ne sont
 > pas sourcés : la **régularité des arrivées** de minéraliers (statut *estimé*, jamais
 > mesurée) et les **capacités de stockage** du port et de l'usine (statut *inconnu*). Le
