@@ -64,8 +64,8 @@ sur 16 trimestres de bilans publics), les deux capacités de stockage restent `i
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **824 tests, ~19 s mesurés au repos sur secteur**
-(2026-10-26 ; sur batterie, processeur bridé, comptez trois à quatre fois plus). S'y ajoutent **22 tests
+`ruff check .` et `pytest -q` passent : **865 tests, ~19 s mesurés au repos sur secteur**
+(2026-10-26 ; sur batterie, processeur bridé, comptez trois à quatre fois plus). S'y ajoutent **23 tests
 marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
 `pytest -m slow -q` (~100 s) : la validation analytique du moteur de file, deux validations de
 comportement de `beta_site.py`, les deux mesures de la limite 0 (gain des nombres communs,
@@ -448,6 +448,18 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   intervalle de 1,6 j sur 2, une attente de 183 h) : chacun ≤ 5 % de chances au rythme actuel.
   **Rien n'a été corrigé** : six mécanismes candidats sont listés au README, à choisir avec le
   porteur du projet à l'étape suivante.
+  **Étape 4 (2026-10-26, `diagnostic_dispersion.py`, règle écrite avant le calcul) : l'écart
+  n'est pas un artefact de mesure.** Indice du verdict, CV² intra-annuel des tonnages (sans
+  tendance ni taille de navire) : observé 0,174 contre [0,006 ; 0,032] simulé en baseline,
+  sous les deux hypothèses → **l'écart demeure**. Toutes les variantes concordent, y compris
+  I sur 2023-2025 (0,23, au-dessus du 95e centile 0,14). Pas de tendance (retirer la moyenne
+  annuelle fait monter I de 0,83 à 0,93) ; pas d'effet de taille (il faudrait des navires de
+  885 kt, les 4 observés font 139-143 kt) ; volume juste (719 kt simulés contre 762 kt
+  observés par trimestre). Exportations du port (archivées pour l'occasion) : corrélation
+  avec les pellets nulle à IC immense (0,14 [−0,53 ; 0,62]) — trop petites (~95 kt par
+  trimestre, les ventes locales partent par la route) et aussi irrégulières que les
+  importations : **elles ne disent rien de la variabilité de la consommation.** Le mécanisme
+  reste à choisir avec le porteur du projet.
 - **Régime stationnaire : un instantané des cumuls, pas une remise à zéro.**
   `simulate(..., warmup_years=W)` publie la fenêtre [W, years]. À W, on relève les compteurs
   et les intégrales, et chaque indicateur publié est une différence. Une remise à zéro
@@ -725,6 +737,8 @@ python scripts/economic_summary.py --stationnaire --reps 16
                                               # coût total en régime stationnaire, 3 termes
 python scripts/politique_commande.py          # report, balayage de s, attente vs observé (~50 min)
 python scripts/validation_ca2.py              # validation par la dispersion (~1 h secteur)
+python -m corridor.ingest.port_stats --serie embarquement  # exportations (ponctuel)
+python scripts/diagnostic_dispersion.py       # tendance, taille, production (~15 min)
 ```
 
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de
@@ -752,10 +766,12 @@ scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          economic_summary, compare_scenarios, h2_blocking,
                          poste_stockage_factoriel, frontiere_service, frontiere_directe,
                          convergence_horizon, politique_commande, validation_ca2,
+                         diagnostic_dispersion,
                          cout_regularite,
                          beta_site, metamodele_frontiere, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
-data/raw/port_stats/     bilans de trafic 2022-2025 : pages HTML versionnées (ce sont elles
+data/raw/port_stats/     bilans de trafic 2022-2025, débarquements et embarquements :
+                         pages HTML versionnées (ce sont elles
                          qui portent les tableaux lus), PDF joints git-ignorés (~10 Mo),
                          empreintes des deux dans _manifest.csv
 releases raw-AAAA-MM     les PDF bruts eux-mêmes, un asset par collecte

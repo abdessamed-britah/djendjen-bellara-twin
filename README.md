@@ -595,6 +595,99 @@ consommation :
 Reproductible par `python scripts/validation_ca2.py` (plusieurs heures sur batterie, ~1 h sur
 secteur).
 
+### Diagnostic de la mesure : l'écart n'est pas un artefact
+
+*Sert l'**originalité** par la méthode : avant de modifier un modèle qui échoue, on vérifie
+que la donnée qui le juge mesure bien ce qu'on croit. Sert aussi la **généralité** : les
+trois corrections — tendance, taille de navire, production — s'appliquent à toute
+estimation de la régularité des arrivées tirée de statistiques portuaires trimestrielles.*
+
+L'étape précédente juge le modèle endogène trop régulier. Trois suspects pourraient tenir à
+la statistique observée plutôt qu'au modèle : une **tendance** des importations d'une année à
+l'autre, comptée à tort comme de l'irrégularité ; la **taille de navire** supposée, puisque
+I varie comme 1/q ; et une **production** variable, que les importations suivraient.
+`scripts/diagnostic_dispersion.py` teste les trois **sans toucher au modèle**, en appliquant
+chaque calcul à l'identique aux données et aux comptages simulés de l'étape 3, sur des
+fenêtres de 16 trimestres alignées sur les années.
+
+**La règle, écrite avant le calcul.** L'indice corrigé soumis au verdict est le **CV²
+intra-annuel des tonnages trimestriels** : la variance autour de la moyenne de chaque année,
+rapportée au carré de la moyenne générale. C'est le seul indice qui retire à la fois la
+tendance et la taille de navire, puisqu'il ne contient que des tonnages mesurés. S'il tombe
+entre les quantiles 5 % et 95 % de sa distribution simulée, le modèle n'est pas réfuté ;
+sinon, l'écart demeure. Le verdict se lit sur `baseline_endogene`, le corridor que décrivent
+les données.
+
+**Verdict : l'écart demeure.** CV² intra-annuel observé **0,174**, contre **[0,006 ;
+0,032]** simulé (médiane 0,016), sous les deux hypothèses de dépassement — cinq fois le 95e
+centile. **Aucune variante ne le contredit** : toutes tombent hors de leur distribution
+simulée, dans les quatre configurations.
+
+| indice (baseline, dépassements permis) | observé | simulé médian [5 % ; 95 %] |
+| --- | ---: | ---: |
+| **CV² intra-annuel des tonnages (verdict)** | **0,174** | 0,016 [0,006 ; 0,032] |
+| CV² des tonnages | 0,155 | 0,014 [0,005 ; 0,027] |
+| I sur 16 trimestres (étape 3) | 0,829 | 0,072 [0,027 ; 0,134] |
+| I intra-annuel | 0,931 | 0,081 [0,030 ; 0,164] |
+| I sur 2022 seul | 3,581 | 0,074 [0,001 ; 0,206] |
+| I sur 2023-2025 | 0,231 | 0,068 [0,025 ; 0,142] |
+| I sans 2022 T3 | 0,451 | 0,069 [0,026 ; 0,140] |
+
+![Diagnostic de la dispersion des débarquements](docs/diagnostic_dispersion.png)
+
+Ce que chaque correction dit :
+
+- **Pas de tendance.** Retirer la moyenne de chaque année *augmente* I (0,83 → 0,93) au lieu
+  de le réduire : la dispersion est à l'intérieur des années, pas entre elles. Les
+  importations croissent pourtant (2,5 Mt en 2022, 3,5 Mt en 2024), mais cette pente pèse peu
+  face aux écarts d'un trimestre au suivant.
+- **2022 porte l'essentiel, mais pas tout.** Un trimestre quasi vide (2022 T3, 0,6 kt) suivi
+  du plus gros de la série (2022 T4, 1 356 kt) fait monter I à 3,6 sur cette seule année. Sur
+  2023-2025, I tombe à 0,23 — mais reste au-dessus du 95e centile simulé (0,14). L'écart n'est
+  donc pas l'affaire d'un trimestre anormal.
+- **La taille de navire ne l'explique pas.** I observé varie de 1,69 (q = 70 kt) à 0,74
+  (q = 160 kt) ; pour retomber sous le 95e centile simulé, il faudrait des navires de
+  **885 kt**. Les quatre minéraliers observés depuis septembre portent de 139 à 143 kt, à
+  moins de 3 % de la taille retenue : la flotte est homogène. Des deux indices, **le CV² est le
+  plus défendable**, parce qu'il ne suppose aucune taille ; ici les deux concluent pareil,
+  justement parce que la flotte est homogène.
+- **Le volume, lui, est juste.** Le modèle débarque 719 kt par trimestre en moyenne, contre
+  762 observés (−6 %) : la comparaison des CV², sans dimension, porte bien sur la seule
+  irrégularité.
+
+**La production indépendante ne dit rien de la variabilité de la consommation.** Les bilans
+d'embarquement du port, archivés pour l'occasion (14 pages, période lue dans l'en-tête de
+chaque tableau parce qu'adresses et titres se trompent trois fois), donnent les exportations
+trimestrielles de CDRI, billettes, rond à béton et fil machine :
+
+| corrélation avec les pellets débarqués | même trimestre | un trimestre de décalage |
+| --- | ---: | ---: |
+| exportations totales | 0,14 [−0,53 ; 0,62] | 0,02 [−0,64 ; 0,56] |
+| CDRI seul | 0,18 [−0,35 ; 0,63] | −0,04 [−0,73 ; 0,63] |
+
+Les intervalles couvrent tout, de fortement négatif à fortement positif : **rien n'est
+mesurable**. Deux raisons, et elles tiennent à la source, pas à l'échantillon. Les
+exportations sont petites — ~95 kt par trimestre face à ~760 kt de pellets importés — parce
+que **les ventes locales de l'aciérie partent par la route et n'apparaissent dans aucun bilan
+portuaire**. Et elles sont aussi irrégulières que les importations (CV² 0,185 contre 0,155),
+parce qu'une exportation est une cargaison entière : les billettes de 2023 sont toutes
+parties au premier trimestre. Un indice, pas une preuve : 2022 T3, le trimestre sans pellets,
+est aussi celui des exportations les plus basses de la série (28 kt).
+
+Quatre publications contradictoires ont été trouvées et tranchées explicitement (majorité,
+puis page de l'année elle-même) : deux coquilles dans la page du 1er semestre 2023 publiée
+deux fois, une ligne DRI absente de la page 2022, et un tonnage de rond à béton 2022 recopié
+par erreur depuis une autre ligne sur la page 2023.
+
+**Ce que cela implique.** L'écart entre le modèle endogène et les données n'est ni une
+tendance, ni un effet de taille de navire, ni l'œuvre d'un seul trimestre. Il est réel. La
+variabilité de la consommation reste la piste la plus directe selon le bilan de masse, mais
+**les données publiques ne permettent ni de la confirmer ni de l'exclure**. Le choix du
+mécanisme reste ouvert.
+
+Reproductible par `python -m corridor.ingest.port_stats --serie embarquement` (collecte
+ponctuelle) puis `python scripts/diagnostic_dispersion.py` (~15 min sur secteur).
+
 > **Ces chiffres ne sont pas des prévisions.** Les deux paramètres qui les pilotent ne sont
 > pas sourcés : la **régularité des arrivées** de minéraliers (statut *estimé*, jamais
 > mesurée) et les **capacités de stockage** du port et de l'usine (statut *inconnu*). Le

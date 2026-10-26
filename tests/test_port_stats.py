@@ -5,10 +5,14 @@ décidés dans le test. Ce qui est vérifié, c'est l'archivage — ne jamais é
 tracer chaque fichier, et ne pas s'arrêter sur une page absente.
 """
 
+import html as html_module
+import re
+from pathlib import Path
 
 import pytest
 
 from corridor.ingest import port_stats as ps
+from corridor.ingest.port_stats import PAGES_EMBARQUEMENT, SERIES
 
 
 class _FausseReponse:
@@ -162,3 +166,39 @@ def test_les_quatre_cumuls_de_chaque_exercice_sont_couverts(annee):
     couverts = {p.cumul for p in ps.PAGES
                 if annee in (p.annee_gauche, p.annee_droite)}
     assert couverts == set(ps.CUMULS), f"{annee} : {couverts}"
+
+
+# --- pages d'embarquement -----------------------------------------------------------
+
+_ARCHIVE = Path(__file__).parent.parent / "data" / "raw" / "port_stats"
+#: Ce que l'en-tête de colonne dit de la période, pour chaque cumul.
+_MOT_DU_CUMUL = {"AN": "ann", "T1": "trim", "S1": "sem", "9M": "sept"}
+
+
+def _entetes(chemin):
+    cellules = re.findall(r"<t[hd]\b[^>]*>(.*?)</t[hd]>", chemin.read_text(encoding="utf-8"),
+                          re.DOTALL)[:4]
+    return [html_module.unescape(re.sub(r"<[^>]+>", "", c)).strip().lower() for c in cellules]
+
+
+@pytest.mark.parametrize("page", PAGES_EMBARQUEMENT, ids=lambda p: p.slug)
+def test_la_periode_declaree_est_celle_de_l_entete_de_la_page(page):
+    """Adresses et titres se trompent trois fois : seule la ligne d'en-tête fait foi."""
+    chemin = _ARCHIVE / f"{page.annee_droite}_{page.cumul}_{page.slug}.html"
+    assert chemin.exists(), "lancer : python -m corridor.ingest.port_stats --serie embarquement"
+    gauche, droite = _entetes(chemin)[1:3]
+    for entete, annee in ((gauche, page.annee_gauche), (droite, page.annee_droite)):
+        assert _MOT_DU_CUMUL[page.cumul] in entete, (page.slug, entete)
+        assert str(annee) in entete, (page.slug, entete)
+
+
+def test_l_embarquement_couvre_chaque_cumul_de_2022_a_2025():
+    couverts = {(a, p.cumul) for p in PAGES_EMBARQUEMENT for a in (p.annee_gauche, p.annee_droite)}
+    for annee in (2022, 2023, 2024, 2025):
+        for cumul in ("T1", "S1", "9M", "AN"):
+            assert (annee, cumul) in couverts, (annee, cumul)
+
+
+def test_les_deux_series_sont_proposees_a_la_collecte():
+    assert set(SERIES) == {"debarquement", "embarquement"}
+    assert SERIES["embarquement"] is PAGES_EMBARQUEMENT

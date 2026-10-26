@@ -23,6 +23,7 @@ pointe par erreur vers le PDF de 2024 : le HTML est donc la source de lecture, l
 pièce justificative. Les deux sont empreintés dans `_manifest.csv`.
 
 Usage : python -m corridor.ingest.port_stats [--root data/raw/port_stats] [--delay 1.0]
+        python -m corridor.ingest.port_stats --serie embarquement
 """
 
 from __future__ import annotations
@@ -90,6 +91,34 @@ PAGES = (
     StatsPage("trafic-portuaire-debarquement-fin-septembre-2025", "9M", 2024, 2025),
     StatsPage("trafic-portuaire-debarquement-2025", "AN", 2024, 2025),
 )
+
+#: Les pages d'**embarquement** de la même période, trouvées par le plan du site
+#: (`wp-sitemap.xml`), pas par le menu, qui en omet quatre. **La période de chaque page a été
+#: lue dans les en-têtes de colonnes de son tableau, pas dans son adresse ni dans son titre**,
+#: qui se trompent trois fois : `…-1er-trim-2024` porte le 1er **semestre** 2023/2024,
+#: `…-1er-trim-2024-2` le 1er trimestre, et les pages 2025 sont toutes titrées « 1er Trim
+#: 2024 ». Le 1er semestre 2023 est publié sous deux adresses ; les deux sont gardées, et leur
+#: recoupement fait partie de la vérification. Servent à suivre la production exportée de
+#: l'aciérie (CDRI, billettes, rond à béton, fil machine) : `scripts/diagnostic_dispersion.py`.
+PAGES_EMBARQUEMENT = (
+    StatsPage("embarquement-2022", "AN", 2021, 2022),
+    StatsPage("trafic-portuaire-embarquement-1ertrim2023", "T1", 2022, 2023),
+    StatsPage("trafic-portuaire-embarquement-1er-sem-2023", "S1", 2022, 2023),
+    StatsPage("trafic-portuaire-embarquement-1er-semestre-2023", "S1", 2022, 2023),
+    StatsPage("trafic-portuaire-embarquement-sept-2023", "9M", 2022, 2023),
+    StatsPage("trafic-portuaire-embarquement-2023", "AN", 2022, 2023),
+    StatsPage("trafic-portuaire-embarquement-1er-trim-2024-2", "T1", 2023, 2024),
+    StatsPage("trafic-portuaire-embarquement-1er-trim-2024", "S1", 2023, 2024),
+    StatsPage("embarquement-fin-septembre-2024", "9M", 2023, 2024),
+    StatsPage("trafic-portuaire-embarquement-2024", "AN", 2023, 2024),
+    StatsPage("trafic-portuaire-embarquement-1er-trim-2025", "T1", 2024, 2025),
+    StatsPage("trafic-portuaire-embarquement-1er-sem-2025", "S1", 2024, 2025),
+    StatsPage("trafic-portuaire-embarquement-fin-septembre-2025", "9M", 2024, 2025),
+    StatsPage("trafic-portuaire-embarquement-2025", "AN", 2024, 2025),
+)
+
+#: Les séries que la collecte sait archiver.
+SERIES = {"debarquement": PAGES, "embarquement": PAGES_EMBARQUEMENT}
 
 MANIFEST_FIELDS = (
     "fetched_at_utc", "slug", "cumul", "annee_gauche", "annee_droite",
@@ -207,9 +236,11 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--delay", type=float, default=DEFAULT_DELAY_S)
+    parser.add_argument("--serie", choices=sorted(SERIES), default="debarquement",
+                        help="débarquements (pellets importés) ou embarquements (exportations)")
     args = parser.parse_args(argv)
 
-    lignes = collect(args.root, delay_s=args.delay)
+    lignes = collect(args.root, pages=SERIES[args.serie], delay_s=args.delay)
     erreurs = [x for x in lignes if x["status"] != "ok"]
     print(f"{len(lignes)} fichiers traités dans {args.root} "
           f"({sum(1 for x in lignes if x['kind'] == 'html')} pages, "
