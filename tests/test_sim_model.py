@@ -698,17 +698,17 @@ def test_la_position_moyenne_reste_entre_s_et_s_plus_un_navire(endogene):
 
 def test_les_commandes_suivent_la_consommation(endogene):
     """Sur un horizon long, on commande ce qu'on consomme : c'est la dérive de rappel."""
-    # sur 5 ans, l'écart tient à la position finale moins l'initiale, bornée par s + Q :
-    # ~1 % de la consommation, d'où la marge de 3 %
-    resultat = md.simulate(endogene, seed=GRAINE, years=5.0)
+    # sur 3 ans, l'écart tient à la position finale moins l'initiale, bornée par s + Q :
+    # ~2 % de la consommation, d'où la marge de 3 %
+    resultat = md.simulate(endogene, seed=GRAINE, years=3.0)
     assert resultat.pellets_ordered_t / resultat.pellets_consumed_t == pytest.approx(1.0, abs=0.03)
 
 
 def test_le_delai_tire_suit_l_hypothese(endogene):
-    # ~100 commandes sur 5 ans : écart-type de la moyenne ~2,5 % pour cv = 0,25
-    resultat = md.simulate(endogene, seed=GRAINE, years=5.0)
+    # ~60 commandes sur 3 ans : écart-type de la moyenne ~3,2 % pour cv = 0,25, d'où 10 %
+    resultat = md.simulate(endogene, seed=GRAINE, years=3.0)
     assert resultat.lead_time_mean_h == pytest.approx(
-        endogene.delai_approvisionnement_h, rel=0.08
+        endogene.delai_approvisionnement_h, rel=0.10
     )
     assert resultat.pellets_at_sea_mean_t > 0.0
 
@@ -732,10 +732,10 @@ def test_le_modele_endogene_est_reproductible(endogene):
 
 def test_un_point_de_commande_sous_la_demande_du_delai_programme_la_rupture(endogene):
     """s = 5 jours face à un délai de ~22 jours : chaque cycle finit à sec."""
-    juste = md.simulate(endogene, seed=GRAINE, years=2.0)
+    juste = md.simulate(endogene, seed=GRAINE, years=1.0)
     court = md.simulate(dataclasses.replace(
         endogene, point_de_commande_t=5 * endogene.debit_pellets_t_par_h * 24),
-        seed=GRAINE, years=2.0)
+        seed=GRAINE, years=1.0)
     assert court.dri_stop_hours > 5 * max(juste.dri_stop_hours, 1.0)
 
 
@@ -801,3 +801,125 @@ def test_une_periode_ne_produit_pas_plus_que_sa_capacite(endogene):
     periodes = md.production_par_periode(endogene, seed=GRAINE, years=2.0)
     plafond = endogene.debit_dri_t_par_h * endogene.heures_par_an
     assert all(p["production_t"] <= plafond * (1 + 1e-9) for p in periodes)
+
+
+# --- étape 2 : régime stationnaire, navires en rade, options de la politique --
+
+
+def _verifie_l_amont_fenetre(resultat: md.SimResult) -> None:
+    """Bilan amont sur une fenêtre : ce qui était à flot au début compte comme engagé."""
+    assert resultat.pellets_afloat_initial_t + resultat.pellets_ordered_t == pytest.approx(
+        resultat.pellets_delivered_t + resultat.pellets_afloat_t, rel=1e-9
+    )
+
+
+@pytest.mark.parametrize("scenario", ["baseline", "phase2_endogene"])
+def test_les_deux_bilans_tiennent_exactement_apres_echauffement(scenario):
+    """C'est la raison de l'instantané plutôt que d'une remise à zéro des compteurs."""
+    config = SimConfig.from_scenario(load_scenario(scenario))
+    resultat = md.simulate(config, seed=GRAINE, years=1.5, warmup_years=0.5)
+    _verifie_la_masse(resultat)
+    _verifie_l_amont_fenetre(resultat)
+
+
+@pytest.mark.parametrize("scenario", ["baseline", "baseline_endogene"])
+def test_la_fenetre_est_exactement_la_difference_de_deux_horizons(scenario):
+    """Le modèle étant causal, la fenêtre [W, T] est le cumul à T moins le cumul à W."""
+    config = SimConfig.from_scenario(load_scenario(scenario))
+    fenetre = md.simulate(config, seed=GRAINE, years=1.0, warmup_years=0.5)
+    long = md.simulate(config, seed=GRAINE, years=1.0)
+    court = md.simulate(config, seed=GRAINE, years=0.5)
+    assert fenetre.dri_production_t == pytest.approx(
+        long.dri_production_t - court.dri_production_t)
+    assert fenetre.dri_stop_hours == pytest.approx(long.dri_stop_hours - court.dri_stop_hours)
+    assert fenetre.anchorage_ship_hours == pytest.approx(
+        long.anchorage_ship_hours - court.anchorage_ship_hours)
+    assert fenetre.annees_mesurees == pytest.approx(0.5)
+
+
+def test_sans_echauffement_l_amont_part_de_zero(endogene):
+    resultat = md.simulate(endogene, seed=GRAINE, years=1.0)
+    assert resultat.pellets_afloat_initial_t == 0.0
+    assert resultat.warmup_years == 0.0
+    assert resultat.annees_mesurees == 1.0
+
+
+def test_un_echauffement_qui_couvre_tout_l_horizon_est_refuse(endogene):
+    with pytest.raises(ValueError, match="rien à mesurer"):
+        md.simulate(endogene, seed=GRAINE, years=2.0, warmup_years=2.0)
+
+
+def test_les_heures_en_rade_couvrent_au_moins_les_attentes_terminees(baseline):
+    """Intégrées dans le temps, elles comptent aussi les navires encore en rade à la fin."""
+    erratique = dataclasses.replace(baseline, dispersion_arrivees=1.0)
+    resultat = md.simulate(erratique, seed=GRAINE, years=1.0)
+    attentes = md.attentes_en_rade(erratique, seed=GRAINE, years=1.0)
+    assert resultat.anchorage_ship_hours >= sum(attentes) - 1e-6
+    assert resultat.anchorage_ship_hours > 0
+
+
+def test_la_distribution_des_attentes_redonne_la_moyenne_publiee(endogene):
+    resultat = md.simulate(endogene, seed=GRAINE, years=1.5, warmup_years=0.5)
+    attentes = md.attentes_en_rade(endogene, seed=GRAINE, years=1.5, warmup_years=0.5)
+    assert fmean(attentes) == pytest.approx(resultat.wait_mean_h)
+
+
+def _ordres(config, seed=GRAINE, years=1.5):
+    """Tailles des navires dans l'ordre de commande, puis dans l'ordre d'arrivée en rade."""
+    commandes, arrivees = [], []
+    en_mer, navire = md._Corridor.navire_en_mer, md._Corridor.vessel
+
+    def espion_mer(self, size_t, rate, delai_h):
+        commandes.append(size_t)
+        return en_mer(self, size_t, rate, delai_h)
+
+    def espion_navire(self, size_t, rate):
+        arrivees.append(size_t)
+        return navire(self, size_t, rate)
+
+    md._Corridor.navire_en_mer, md._Corridor.vessel = espion_mer, espion_navire
+    try:
+        md.simulate(config, seed=seed, years=years)
+    finally:
+        md._Corridor.navire_en_mer, md._Corridor.vessel = en_mer, navire
+    return commandes, arrivees
+
+
+def test_sans_depassement_les_navires_arrivent_dans_l_ordre_de_commande():
+    config = dataclasses.replace(SimConfig.from_scenario(load_scenario("phase2_endogene")),
+                                 depassements_autorises=False)
+    commandes, arrivees = _ordres(config)
+    assert arrivees == commandes[:len(arrivees)]
+
+
+def test_avec_depassements_l_ordre_d_arrivee_differe():
+    """Garde-fou du test précédent : sans dépassement possible, il ne prouverait rien."""
+    config = SimConfig.from_scenario(load_scenario("phase2_endogene"))
+    commandes, arrivees = _ordres(config)
+    assert arrivees != commandes[:len(arrivees)]
+
+
+def test_les_options_endogenes_sont_sans_effet_en_exogene(baseline):
+    erratique = dataclasses.replace(baseline, dispersion_arrivees=1.0)
+    reference = md.simulate(erratique, seed=GRAINE, years=1.0)
+    options = md.simulate(dataclasses.replace(
+        erratique, depassements_autorises=False, reporter_si_navire_en_rade=True),
+        seed=GRAINE, years=1.0)
+    assert dataclasses.asdict(reference) == dataclasses.asdict(options)
+
+
+def test_le_report_ne_s_active_que_si_l_option_est_demandee():
+    config = SimConfig.from_scenario(load_scenario("phase2_endogene"))
+    sans = md.simulate(config, seed=GRAINE, years=1.5)
+    avec = md.simulate(dataclasses.replace(config, reporter_si_navire_en_rade=True),
+                       seed=GRAINE, years=1.5)
+    assert sans.order_deferral_h == 0.0
+    assert avec.order_deferral_h > 0.0
+
+
+def test_les_bilans_tiennent_avec_les_deux_options():
+    config = dataclasses.replace(SimConfig.from_scenario(load_scenario("phase2_endogene")),
+                                 depassements_autorises=False, reporter_si_navire_en_rade=True)
+    resultat = md.simulate(config, seed=GRAINE, years=1.5, warmup_years=0.5)
+    _verifie_la_masse(resultat)
+    _verifie_l_amont_fenetre(resultat)

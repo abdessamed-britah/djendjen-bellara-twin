@@ -199,6 +199,8 @@ class SimConfig:
     delai_approvisionnement_h: float
     cv_delai_approvisionnement: float
     point_de_commande_j: float
+    depassements_autorises: bool  # un navire commandé après un autre peut-il arriver avant ?
+    reporter_si_navire_en_rade: bool  # ne pas commander tant qu'un navire attend en rade
     pas_h: float
     pas_echantillonnage_h: float
     graine_par_defaut: int
@@ -294,6 +296,10 @@ class SimConfig:
             ),
             cv_delai_approvisionnement=value_of(v, "approvisionnement.cv_delai"),
             point_de_commande_j=point_de_commande_j,
+            depassements_autorises=bool(value_of(v, "simulation.depassements_autorises")),
+            reporter_si_navire_en_rade=bool(
+                value_of(v, "simulation.reporter_si_navire_en_rade")
+            ),
             pas_h=value_of(v, "simulation.pas_de_temps"),
             pas_echantillonnage_h=value_of(v, "simulation.pas_echantillonnage_stocks"),
             graine_par_defaut=int(value_of(v, "simulation.graine_par_defaut")),

@@ -365,3 +365,34 @@ def test_un_point_de_commande_nul_est_tolere_en_politique_exogene():
     valeurs["approvisionnement.point_de_commande_j"] = 0.0
     scenario = cfg.Scenario(name="x", description="", values=valeurs)
     assert cfg.SimConfig.from_scenario(scenario).point_de_commande_t == 0.0
+
+
+# --- étape 2 : coûts et options -----------------------------------------------
+
+
+def test_les_surestaries_ont_une_seule_cle_en_usd_par_heure():
+    """Deux clés pour un même fait finiraient par diverger : l'ancienne a été déplacée."""
+    assert "taux_surestaries" not in ASSUMPTIONS["navires_minerai"]
+    entree = ASSUMPTIONS["couts"]["surestaries_usd_par_heure"]
+    assert entree["status"] == "estimé"
+    bas, haut = entree["range"]
+    assert bas < entree["value"] < haut
+    assert haut / bas >= 5, "fourchette large demandée"
+
+
+def test_le_portage_a_ses_deux_facteurs_dans_les_couts():
+    for cle in ("prix_pellets", "taux_de_portage"):
+        assert ASSUMPTIONS["couts"][cle]["status"] == "estimé"
+
+
+def test_les_options_par_defaut_sont_celles_du_modele_de_l_etape_1(baseline):
+    """Dépassements permis, pas de report : sinon l'étape 1 ne serait plus reproductible."""
+    assert baseline.depassements_autorises is True
+    assert baseline.reporter_si_navire_en_rade is False
+
+
+def test_une_option_booleenne_se_change_par_scenario():
+    valeurs = cfg.apply_overrides(cfg.assumption_values(ASSUMPTIONS),
+                                  {"simulation.depassements_autorises": {"value": False}})
+    scenario = cfg.Scenario(name="x", description="", values=valeurs)
+    assert cfg.SimConfig.from_scenario(scenario).depassements_autorises is False

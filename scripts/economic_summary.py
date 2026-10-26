@@ -30,7 +30,12 @@ import sys
 from pathlib import Path
 
 from corridor.sim.config import ASSUMPTIONS_PATH, SimConfig, load_scenario, load_yaml
-from corridor.sim.run import replicate
+from corridor.sim.run import (
+    ECHAUFFEMENT_STATIONNAIRE_ANS,
+    FENETRE_STATIONNAIRE_ANS,
+    replicate,
+    replicate_stationnaire,
+)
 from corridor.sim.stats import estimate
 
 
@@ -52,6 +57,14 @@ SCENARIOS = ("baseline", "phase2", "phase2_plus_stockage", "phase2_plus_poste")
 #: Scénario du chiffre appliqué : irrégularité mesurée sur les bilans de trafic.
 SCENARIO_MESURE = "phase2_mesure"
 ARRIVEES = ((0.0, "régulières"), (1.0, "Poisson"))
+#: Les seuls scénarios qui ont un régime stationnaire, donc un coût annuel qui ne dépend
+#: pas de l'horizon de lecture (voir scripts/convergence_horizon.py).
+SCENARIOS_STATIONNAIRES = ("baseline_endogene", "phase2_endogene")
+#: Toute comparaison entre scénarios endogènes se publie sous les deux hypothèses : elles
+#: pèsent jusqu'à 1,7 point de taux de service (limite 20 de CLAUDE.md).
+HYPOTHESES_DEPASSEMENT = ((True, "dépassements permis"), (False, "dépassements interdits"))
+#: Les trois termes du coût total, dans l'ordre où ils sont publiés.
+TERMES = ("arrets_dri", "surestaries", "portage")
 HEURES_PAR_JOUR = 24.0
 MILLION = 1e6
 
@@ -141,6 +154,102 @@ def plage_de_cout(pertes, quantiles_t, marge_bas: float, marge_centre: float,
     }
 
 
+def couts_unitaires(raw, niveau: str = "value") -> dict[str, float]:
+    """Les trois prix unitaires du coût total, à la valeur centrale ou à une borne.
+
+    `niveau` vaut `"value"`, `"bas"` ou `"haut"`. Chaque prix est lu dans
+    `assumptions.yaml` et nulle part ailleurs :
+
+    - **arrêt du DRI**, en USD par tonne de DRI non produite : la marge implicite de
+      `cout_journee_arret_dri`, ramenée au débit journalier de la baseline ;
+    - **surestaries**, en USD par heure d'attente en rade et par navire ;
+    - **portage**, en USD par tonne de stock physique et par an : prix des pellets × taux
+      de portage.
+    """
+    def lire(cle):
+        entree = raw["couts"][cle]
+        if niveau == "value":
+            return float(entree["value"])
+        return float(entree["range"][0 if niveau == "bas" else 1])
+
+    baseline = SimConfig.from_scenario(load_scenario("baseline"))
+    debit_jour = baseline.debit_dri_t_par_h * HEURES_PAR_JOUR
+    return {
+        "marge_usd_t": marge_par_tonne(lire("cout_journee_arret_dri"), debit_jour),
+        "surestaries_usd_h": lire("surestaries_usd_par_heure"),
+        "portage_usd_t_an": lire("prix_pellets") * lire("taux_de_portage"),
+    }
+
+
+def cout_total(resultat, config: SimConfig, unitaires: dict[str, float]) -> dict[str, float]:
+    """Coût annuel d'une réplication, en USD/an : trois termes séparés et leur somme.
+
+    - **arrêts du DRI** : production manquante sur la fenêtre mesurée × marge par tonne.
+      Ramenée à zéro si négative — produire au-delà de la cible n'est pas un gain ;
+    - **surestaries** : navire-heures passées en rade × taux horaire. Intégrées dans le
+      temps, elles comptent aussi les navires encore en rade à la fin ;
+    - **portage** : stock physique moyen (stockyard + usine) × prix × taux de portage. Le
+      minerai en mer et en rade n'est pas porté ici : qui le porte dépend de l'Incoterm.
+
+    Tout est ramené à **une année de la fenêtre mesurée** (`annees_mesurees`), pas à
+    l'horizon total : l'échauffement ne compte ni dans la production ni dans les coûts.
+    """
+    annees = resultat.annees_mesurees
+    cible = config.debit_dri_t_par_h * config.heures_ouvrees_par_an * annees
+    perte_t_an = max(cible - resultat.dri_production_t, 0.0) / annees
+    stock_moyen_t = resultat.stockyard_mean_t + resultat.plant_stock_mean_t
+    termes = {
+        "arrets_dri": perte_t_an * unitaires["marge_usd_t"],
+        "surestaries": resultat.anchorage_ship_hours / annees * unitaires["surestaries_usd_h"],
+        "portage": stock_moyen_t * unitaires["portage_usd_t_an"],
+    }
+    termes["total"] = sum(termes[t] for t in TERMES)
+    return termes
+
+
+def estimer_couts(resultats, config: SimConfig, unitaires) -> dict[str, object]:
+    """Une `Estimate` par terme et pour le total, sur les réplications.
+
+    Les termes sont estimés réplication par réplication puis moyennés, et non l'inverse :
+    c'est ce qui donne au total un IC qui tient compte de la corrélation entre termes (une
+    année à ruptures est aussi une année à stock bas, donc à portage faible).
+    """
+    lignes = [cout_total(r, config, unitaires) for r in resultats]
+    return {cle: estimate([ligne[cle] for ligne in lignes]) for cle in (*TERMES, "total")}
+
+
+def configuration_stationnaire(scenario: str, depassements: bool, **ecarts) -> SimConfig:
+    """Le scénario endogène sous une hypothèse de dépassement, avec d'éventuels écarts."""
+    config = SimConfig.from_scenario(load_scenario(scenario))
+    return dataclasses.replace(config, depassements_autorises=depassements, **ecarts)
+
+
+def print_stationnaire(unitaires, reps: int, seed: int) -> None:
+    """Le coût total par scénario endogène, en régime stationnaire, sous les deux hypothèses."""
+    print(f"\n{'=' * 104}")
+    print("Coût annuel en régime stationnaire : arrêts du DRI + surestaries + portage")
+    print(f"{'=' * 104}")
+    print(f"  {reps} réplications appariées, {ECHAUFFEMENT_STATIONNAIRE_ANS:.0f} ans "
+          f"d'échauffement écartés, {FENETRE_STATIONNAIRE_ANS:.0f} ans mesurés.")
+    print(f"  Prix unitaires centraux : marge {unitaires['marge_usd_t']:.1f} USD/t de DRI, "
+          f"surestaries {unitaires['surestaries_usd_h']:,.0f} USD/h, portage "
+          f"{unitaires['portage_usd_t_an']:.1f} USD/t/an. IC à 95 % sur la simulation seule.")
+    print(f"\n  {'scénario':20} {'hypothèse':24} " + " ".join(
+        f"{t:>21}" for t in ("arrêts DRI", "surestaries", "portage", "total")) + "   (M USD/an)")
+    for scenario in SCENARIOS_STATIONNAIRES:
+        for depassements, nom in HYPOTHESES_DEPASSEMENT:
+            config = configuration_stationnaire(scenario, depassements)
+            couts = estimer_couts(replicate_stationnaire(config, reps, seed, scenario),
+                                  config, unitaires)
+            cellules = " ".join(
+                f"{couts[t].mean / MILLION:>13.2f} ± {couts[t].half_width / MILLION:<5.2f}"
+                for t in (*TERMES, "total"))
+            print(f"  {scenario:20} {nom:24} {cellules}")
+    print("\n  Les prix unitaires sont tous de statut estimé et sans source locale : les montants")
+    print("  servent à comparer les termes entre eux et les configurations entre elles. L'IC ne")
+    print("  porte que l'aléa de la simulation, pas l'incertitude sur les prix.")
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--reps", type=int, default=30)
@@ -151,9 +260,15 @@ def main(argv=None) -> int:
                              "irrégularité mesurée et stockage tiré dans sa fourchette")
     parser.add_argument("--tirages", type=int, default=200,
                         help="tirages de paramètres du mode --mesure")
+    parser.add_argument("--stationnaire", action="store_true",
+                        help="seulement le coût total en régime stationnaire, scénarios "
+                             "endogènes, sous les deux hypothèses de dépassement")
     args = parser.parse_args(argv)
 
     raw = load_yaml(ASSUMPTIONS_PATH)
+    if args.stationnaire:
+        print_stationnaire(couts_unitaires(raw), args.reps, args.seed)
+        return 0
     jour_bas, jour_centre, jour_haut = cout_journee(raw)
     baseline = SimConfig.from_scenario(load_scenario("baseline"))
     debit_jour = baseline.debit_dri_t_par_h * HEURES_PAR_JOUR

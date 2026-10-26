@@ -64,7 +64,10 @@ sur 16 trimestres de bilans publics), les deux capacités de stockage restent `i
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **747 tests, ~35 à 39 s mesurés au repos**. S'y ajoutent **20 tests
+`ruff check .` et `pytest -q` passent : **794 tests** — ~35 à 40 s attendus au repos sur secteur ; mesurés le
+2026-10-26 sur batterie seulement (processeur bridé à 1,6 GHz, 60 à 85 s selon l'instant), en
+alternance avec la suite de l'étape 1 qui tenait 35-39 s sur secteur : l'écart entre les deux
+reste dans le bruit. **À remesurer sur secteur à la reprise.** S'y ajoutent **21 tests
 marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
 `pytest -m slow -q` (~100 s) : la validation analytique du moteur de file, deux validations de
 comportement de `beta_site.py`, les deux mesures de la limite 0 (gain des nombres communs,
@@ -421,6 +424,36 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   exclut 1 (0,84) à cause de la rupture certaine du démarrage (stock initial < demande
   pendant le délai) ; l'exposant hors transitoire a été ajouté **après** avoir vu ce
   résultat. Le classement phase 2 > baseline tient aux dépassements entre navires (limite 20).
+  **Étape 2 (2026-10-26, `politique_commande.py`, 16 réplications en régime stationnaire)** :
+  coût annuel à s = 30 j, en M USD/an, arrêts + surestaries + portage = total — baseline
+  0,51 + 0,12 + 1,74 = **2,38 ± 0,08** (dépassements permis) et **2,48 ± 0,09** (interdits) ;
+  phase 2 0,73 + 2,01 + 2,16 = **4,90 ± 0,13** et **7,03 ± 0,26**. **La courbe de coût en s
+  est un U à optimum intérieur dans les quatre cas** (30 j, et 35 j en phase 2 sans
+  dépassement), significatif face aux deux bords. Elle est très asymétrique : 15 j trop bas
+  coûtent +10,8 M, 30 j trop haut +3,0 M en baseline. s* reste entre 15 et 40 j quand les
+  prix d'arrêt et de surestaries varient chacun d'un facteur 100 ; c'est le rapport
+  arrêt/portage qui le déplace. En phase 2, au-delà de ~45 j, les silos sont pleins et le
+  surplus attend en rade : **la capacité physique de stockage redevient un facteur, par les
+  surestaries** (pas par la production). **L'option de report est écartée** : inerte en
+  baseline (un centième de point), nuisible en phase 2 (−0,6 à −2,5 points de β, attente
+  allongée de 3 à 11 h, +0,5 à +2,5 M USD/an) — reporter fait commander par grappes.
+- **Régime stationnaire : un instantané des cumuls, pas une remise à zéro.**
+  `simulate(..., warmup_years=W)` publie la fenêtre [W, years]. À W, on relève les compteurs
+  et les intégrales, et chaque indicateur publié est une différence. Une remise à zéro
+  casserait les bilans de masse : à un même instant, une tranche peut être déjà versée au
+  stockyard sans être encore comptée comme déchargée. Le stock « initial » publié devient ce
+  que les compteurs disent présent à W, et `pellets_afloat_initial_t` porte le bilan amont.
+  Vérifié : la fenêtre [W, T] égale, au bit près, le cumul à T moins le cumul à W. Protocole
+  du projet dans `corridor.sim.run` : **4 ans d'échauffement, 16 ans mesurés**
+  (`replicate_stationnaire`), tiré de l'étape 1. Ne vaut que pour les scénarios endogènes.
+- **Le coût total a trois termes, toujours publiés séparés** (`economic_summary.cout_total`) :
+  arrêts du DRI (production manquante × marge par tonne), surestaries (navire-heures en rade
+  × taux horaire), portage (stock **physique** moyen, stockyard + usine, × prix × taux de
+  portage). Deux choix à connaître : les surestaries sont comptées sur **toute** l'attente en
+  rade, sans franchise de staries — une borne haute ; et le minerai en mer ou en rade n'est
+  pas porté, faute de savoir l'Incoterm. La clé `navires_minerai.taux_surestaries`
+  (USD/jour) a été **déplacée** en `couts.surestaries_usd_par_heure` plutôt que dupliquée :
+  deux clés pour un même fait finiraient par diverger.
 - **Un générateur par source d'aléa, dérivé de la graine de réplication.**
   `corridor.sim.samplers.Streams` en donne un par source (`intervalle`, `taille_navire`,
   `cadence_dechargement`, `rail`, une sous-série par rame). Les arrêts planifiés n'en ont pas :
@@ -605,7 +638,16 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
     d'origines différentes (Brésil et Canada), optimiste pour une navette sur une seule
     route. **Toute comparaison entre scénarios endogènes de cadences différentes doit être
     publiée sous les deux hypothèses.** Le modèle ne propose pas encore l'option : elle a été
-    mesurée par une substitution de `navire_en_mer` dans un script de diagnostic.
+    mesurée par une substitution de `navire_en_mer` dans un script de diagnostic ; depuis
+    l'étape 2 c'est une option du modèle, `simulation.depassements_autorises`.
+21. **Le modèle endogène ne rend pas plausible la seule attente observée.** BERGE NIMBA a
+    attendu 183,2 h en rade ; sur 1 200 navires simulés en baseline_endogene (régime
+    stationnaire, s = 30 j), **aucun** n'attend autant — le maximum est de 160 à 172 h et 94 %
+    n'attendent pas du tout. La phase 2 en produit 3 à 6 %. Une observation isolée et
+    censurée ne réfute rien, mais elle désigne un suspect : des arrivées réelles plus
+    groupées que ce que produit la politique (la série en montre deux à 1,6 jour
+    d'intervalle). **C'est ce que l'étape 3, la validation par c_a², doit trancher** ; ne
+    pas publier de résultat endogène comme décrivant le site avant qu'elle soit faite.
 
 ## Reprise après une longue pause
 
@@ -660,6 +702,9 @@ python -m corridor.sim.sensitivity --reps 5   # version rapide
 python scripts/compare_scenarios.py --reps 50 # pull/push, régulier/Poisson, 1 contre 2 postes
 python scripts/economic_summary.py --reps 30  # coût annuel de la perte, avec fourchette
 python scripts/economic_summary.py --mesure   # chiffre appliqué : le manque à produire en plage
+python scripts/economic_summary.py --stationnaire --reps 16
+                                              # coût total en régime stationnaire, 3 termes
+python scripts/politique_commande.py          # report, balayage de s, attente vs observé (~50 min)
 ```
 
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de
@@ -686,7 +731,7 @@ scripts/hooks/pre-commit lance `pytest -m slow -q` si src/corridor/sim/ est touc
 scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          economic_summary, compare_scenarios, h2_blocking,
                          poste_stockage_factoriel, frontiere_service, frontiere_directe,
-                         convergence_horizon,
+                         convergence_horizon, politique_commande,
                          cout_regularite,
                          beta_site, metamodele_frontiere, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés

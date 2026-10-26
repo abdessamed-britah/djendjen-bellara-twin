@@ -382,6 +382,103 @@ les deux hypothèses.**
 Reproductible par `python scripts/convergence_horizon.py --scenario phase2_endogene
 --lots-annees 400` (~15 min par scénario).
 
+### Ce que coûte un point de commande : un optimum intérieur, et il est robuste
+
+*Sert l'**importance** : c'est la question de dimensionnement qu'un approvisionneur se pose —
+combien de jours de stock faut-il avoir engagés pour commander ? Sert aussi la **généralité** :
+la forme du coût et la position de l'optimum s'expriment en jours de consommation, donc se
+transposent.*
+
+Tout est mesuré **en régime stationnaire** (4 ans d'échauffement écartés, 16 ans mesurés,
+16 réplications appariées), sur les deux scénarios endogènes, et **sous les deux hypothèses de
+dépassement** — délais indépendants, ou navette où chaque navire arrive après le précédent. Le
+coût annuel a trois termes, toujours publiés séparés : **arrêts du DRI** (production manquante ×
+marge par tonne), **surestaries** (navire-heures en rade × 1 250 USD/h) et **portage** (stock
+physique moyen × 140 USD/t × 10 %/an). Les trois prix sont de statut *estimé*, sans source
+locale : **seule la forme se lit, pas les montants**.
+
+**Coût au point de commande central (s = 30 jours)**, M USD/an, IC 95 % sur la simulation :
+
+| scénario | dépassements | arrêts DRI | surestaries | portage | **total** |
+| --- | --- | ---: | ---: | ---: | ---: |
+| baseline_endogene | permis | 0,51 ± 0,07 | 0,12 ± 0,01 | 1,74 ± 0,01 | **2,38 ± 0,08** |
+| baseline_endogene | interdits | 0,59 ± 0,08 | 0,14 ± 0,02 | 1,74 ± 0,01 | **2,48 ± 0,09** |
+| phase2_endogene | permis | 0,73 ± 0,10 | 2,01 ± 0,07 | 2,16 ± 0,02 | **4,90 ± 0,13** |
+| phase2_endogene | interdits | 2,24 ± 0,22 | 2,79 ± 0,08 | 2,00 ± 0,02 | **7,03 ± 0,26** |
+
+En baseline, le portage domine : on paie surtout le stock de sécurité. En phase 2, les
+surestaries pèsent autant que lui, parce qu'un navire tous les 8 jours pour ~6 jours de
+déchargement fait souvent attendre le suivant. Et l'hypothèse de dépassement y vaut **2,1 M
+USD/an** : sans dépassement, les arrêts du DRI triplent.
+
+**L'option de report n'apporte rien, et en phase 2 elle nuit.** Différences appariées option −
+base, à s = 30 jours :
+
+| scénario | dépassements | β (points) | attente en rade | coût total (M USD/an) |
+| --- | --- | ---: | ---: | ---: |
+| baseline_endogene | permis | −0,009 ± 0,008 | +0,0 ± 0,1 h | −0,002 ± 0,004 |
+| baseline_endogene | interdits | −0,017 ± 0,013 | +0,1 ± 0,1 h | +0,001 ± 0,006 |
+| phase2_endogene | permis | **−0,56 ± 0,14** | **+3,4 ± 1,3 h** | **+0,51 ± 0,17** |
+| phase2_endogene | interdits | **−2,49 ± 0,40** | **+11,4 ± 2,5 h** | **+2,46 ± 0,43** |
+
+En baseline, l'effet sur β est statistiquement détectable mais vaut un centième de point : la
+position de stock compte déjà le navire en rade, et l'option est redondante. En phase 2 elle
+fait perdre jusqu'à 2,5 points de taux de service et **allonge** l'attente qu'elle devait
+réduire : reporter une commande pendant qu'un navire attend, c'est commander plusieurs navires
+d'un coup quand il accoste, et ils arrivent groupés. **L'option est donc écartée**, et c'est un
+résultat : la politique sur position de stock fait déjà ce que le report prétendait faire, et
+mieux.
+
+![Coût annuel selon le point de commande](docs/politique_commande.png)
+
+**La courbe de coût en s est un U, avec un optimum intérieur dans les quatre cas** — à
+**30 jours** en baseline et en phase 2 avec dépassements, à **35 jours** en phase 2 sans
+dépassement. Il est significatif au sens fort : en données appariées, le coût en s* est
+plus bas qu'aux deux bords du domaine (15 et 60 jours) dans chacun des quatre cas. Trois
+lectures :
+
+- **La courbe est très asymétrique : manquer coûte bien plus que trop stocker.** En baseline,
+  15 jours trop bas coûtent +10,8 M USD/an, 30 jours trop haut +3,0 M. À s = 15 jours le
+  corridor ne tient plus que 72 % de sa cible. Dans le doute, il faut se tromper vers le haut.
+- **Les deux branches n'ont pas la même cause selon le scénario.** En baseline, la branche
+  droite est le portage, linéaire. En phase 2, ce sont les surestaries, qui **explosent**
+  au-delà de 45 jours : le stock physique plafonne à ~445 kt (les deux silos sont pleins) et le
+  surplus engagé attend en rade, 103 h en moyenne à s = 50 jours, 327 h à s = 60. **La capacité
+  physique de stockage redevient donc un facteur**, non plus par la production comme le croyait
+  le modèle exogène, mais par les surestaries. C'est ce que l'étape suivante devra chiffrer.
+- **L'optimum bouge peu avec les prix.** En multipliant le prix de l'arrêt et celui des
+  surestaries par 0,1 à 10 chacun — deux ordres de grandeur, portage fixé —, s* reste entre
+  **15 et 40 jours** dans les quatre cas, sans jamais atteindre la moitié haute du domaine.
+  Dès que l'arrêt coûte au moins le tiers de sa valeur centrale, il reste entre **25 et 40
+  jours**, à une exception près : en phase 2, quand les surestaries sont en plus décuplées, il
+  tombe à 15 jours. C'est le rapport **arrêt / portage** qui le déplace le plus : de 25 à 40
+  jours en baseline quand il est multiplié par 30. Le prix des surestaries ne le déplace que
+  lorsque l'arrêt est bon marché — un peu en baseline, nettement en phase 2.
+
+**L'attente simulée face à la seule observée : un écart net, qui pointe vers l'étape 3.**
+L'unique attente minerai mesurable de la série de situations portuaires est celle de BERGE
+NIMBA, **183,2 h** (lue dans `data/clean/observations.csv`, censurée à gauche). Distribution
+simulée sur 60 ans en régime stationnaire, s = 30 jours :
+
+| configuration | navires | moyenne | médiane | p90 | p99 | max | part sans attente | ≥ 183 h |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline_endogene, permis | 1 210 | 4,2 h | 0 h | 0 h | 123 h | 160 h | 94 % | **0,0 %** |
+| baseline_endogene, interdits | 1 207 | 4,8 h | 0 h | 0 h | 136 h | 172 h | 94 % | **0,0 %** |
+| phase2_endogene, permis | 2 428 | 40,4 h | 0 h | 129 h | 221 h | 324 h | 54 % | 2,7 % |
+| phase2_endogene, interdits | 2 388 | 57,5 h | 3,6 h | 161 h | 307 h | 452 h | 49 % | 6,4 % |
+
+**Sur 1 200 navires simulés au rythme actuel, aucun n'attend autant que BERGE NIMBA** : 183 h
+dépasse le maximum de la distribution baseline. Une observation isolée ne réfute rien, mais
+elle dit où regarder. Trois explications candidates, aucune tranchée : les arrivées réelles
+sont plus irrégulières que ce que produit la politique de commande — la série en montre deux
+à 1,6 jour d'intervalle —, ce que l'**étape 3** testera en comparant le c_a² simulé au c_a²
+mesuré ; AQS ne commande pas selon une politique de point de commande ; ou l'attente observée
+a des causes hors modèle. **C'est un recoupement, pas une validation**, et il est défavorable
+au modèle endogène en baseline.
+
+Reproductible par `python scripts/politique_commande.py` (~50 min) et
+`python scripts/economic_summary.py --stationnaire --reps 16`.
+
 > **Ces chiffres ne sont pas des prévisions.** Les deux paramètres qui les pilotent ne sont
 > pas sourcés : la **régularité des arrivées** de minéraliers (statut *estimé*, jamais
 > mesurée) et les **capacités de stockage** du port et de l'usine (statut *inconnu*). Le

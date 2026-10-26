@@ -56,25 +56,49 @@ SUMMARY_FIELDS = (
 )
 
 
+#: Protocole de mesure en régime stationnaire, retenu à l'étape 1
+#: (`scripts/convergence_horizon.py`) : β est à 0,1 point de sa limite dès 4 ans et ne bouge
+#: plus significativement au-delà de 8. On écarte donc 4 ans d'échauffement et on mesure sur
+#: 16 ans. Ne vaut que pour les scénarios endogènes : les exogènes n'ont pas de régime
+#: stationnaire, et un échauffement n'y change rien à la dépendance en l'horizon.
+ECHAUFFEMENT_STATIONNAIRE_ANS = 4.0
+FENETRE_STATIONNAIRE_ANS = 16.0
+
+
 def replicate(
     config: SimConfig,
     years: float,
     reps: int,
     seed: int,
     scenario: str,
+    warmup_years: float = 0.0,
 ) -> list[SimResult]:
     """Rejoue le même scénario `reps` fois, chaque réplication avec sa propre graine.
 
     Les graines sont tirées d'un générateur maître : une seule graine en entrée suffit
     à rejouer l'ensemble à l'identique, et deux réplications ne partagent jamais leur
-    séquence aléatoire.
+    séquence aléatoire. `years` est l'horizon total, échauffement compris.
     """
     master = random.Random(seed)
     graines = [master.randrange(2**32) for _ in range(reps)]
     return [
-        simulate(config, seed=graine, years=years, scenario=scenario, rep=rep)
+        simulate(config, seed=graine, years=years, scenario=scenario, rep=rep,
+                 warmup_years=warmup_years)
         for rep, graine in enumerate(graines)
     ]
+
+
+def replicate_stationnaire(config: SimConfig, reps: int, seed: int,
+                           scenario: str = "") -> list[SimResult]:
+    """`reps` réplications mesurées en régime stationnaire, selon le protocole du projet."""
+    return replicate(
+        config,
+        years=ECHAUFFEMENT_STATIONNAIRE_ANS + FENETRE_STATIONNAIRE_ANS,
+        reps=reps,
+        seed=seed,
+        scenario=scenario,
+        warmup_years=ECHAUFFEMENT_STATIONNAIRE_ANS,
+    )
 
 
 def results_to_table(results: Sequence[SimResult]) -> pa.Table:

@@ -60,6 +60,16 @@ les postes : avec deux postes, deux navires peuvent être bloqués en même temp
 avance alors de deux heures par heure écoulée. Comparer deux configurations qui n'ont pas le
 même nombre de postes demande donc de diviser par `postes_minerai`.
 
+**Régime stationnaire : l'échauffement.** `simulate(..., warmup_years=W)` simule `years`
+années mais ne publie que la fenêtre [W, years]. Les compteurs ne sont pas remis à zéro à W :
+on y prend un **instantané des cumuls**, et chaque indicateur publié est une différence
+entre l'horizon et cet instantané. Une remise à zéro casserait les bilans de masse : à
+l'instant W, une tranche peut être déjà versée au stockyard sans être encore comptée comme
+déchargée, puisque le conteneur et le compteur ne bougent pas au même événement. Les
+différences de cumuls, elles, gardent les deux bilans exacts — le stock « initial » publié
+devient ce que les compteurs disent présent à W. À W = 0, aucun instantané n'est pris et le
+calcul est identique, au bit près, à celui d'avant l'option.
+
 Les exports sont hors périmètre v1, comme la houle (`seuil_houle_arret` reste inutilisé)
 et les temps morts à quai (amarrage, ouverture des cales) : l'occupation du poste est
 donc une borne basse.
@@ -176,6 +186,16 @@ class SimResult:
     lead_time_mean_h: float  # délai moyen tiré ; nul en exogène
     inventory_position_min_t: float
     inventory_position_mean_t: float
+    # étape 2 : régime stationnaire, coûts, options de la politique
+    warmup_years: float  # années d'échauffement écartées ; la fenêtre publiée est le reste
+    pellets_afloat_initial_t: float  # à flot au début de la fenêtre : bilan amont
+    anchorage_ship_hours: float  # navire-heures en rade, intégrées : base des surestaries
+    order_deferral_h: float  # heures pendant lesquelles une commande a été reportée
+
+    @property
+    def annees_mesurees(self) -> float:
+        """Longueur de la fenêtre publiée, en années : c'est elle qui fixe la cible."""
+        return self.years - self.warmup_years
 
 
 @dataclass(slots=True)
@@ -197,6 +217,8 @@ class _Metrics:
     rame_blocked: TimeIntegral = field(default_factory=TimeIntegral)
     anchorage_tonnage: TimeIntegral = field(default_factory=TimeIntegral)
     at_sea_tonnage: TimeIntegral = field(default_factory=TimeIntegral)
+    anchorage_ships: TimeIntegral = field(default_factory=TimeIntegral)
+    order_deferral_h: float = 0.0
     pellets_ordered_t: float = 0.0
     pellets_afloat_t: float = 0.0
     orders_placed: int = 0
@@ -229,6 +251,11 @@ class _Corridor:
         # minerai sans en retirer. Le four réveille donc la politique, et elle seule ; une
         # revue à pas fixe ajouterait un retard qui se confondrait avec le délai.
         self.reveil: simpy.Event | None = None
+        # Dépassements interdits : date d'arrivée du dernier navire commandé, que le
+        # suivant ne peut pas devancer.
+        self._derniere_arrivee = 0.0
+        # Instantané des cumuls à la fin de l'échauffement ; None sans échauffement.
+        self.instantane: dict | None = None
         self.stops = config.arrets_planifies_fenetres(years)
         self.berths = simpy.Resource(env, capacity=config.postes_minerai)
         self.stockyard = simpy.Container(
@@ -284,8 +311,14 @@ class _Corridor:
         cadences = self.streams.stream("cadence_dechargement")
         delais = self.streams.stream("delai_approvisionnement")
         seuil = self.config.point_de_commande_t
+        reporter = self.config.reporter_si_navire_en_rade
         while True:
             while self.position_de_stock() < seuil:
+                if reporter and self.metrics.anchorage_ships.level > 0:
+                    # un navire attend déjà : on reporte, et on le compte. Le réveil suivant
+                    # vient de la consommation ou de l'accostage de ce navire.
+                    self.metrics.order_deferral_h += self.config.pas_h
+                    break
                 size_t = self.samplers.vessel_size_t.sample(tailles)
                 rate = self.samplers.discharge_rate_t_par_h.sample(cadences)
                 delai_h = self.samplers.lead_time_h.sample(delais)
@@ -301,6 +334,11 @@ class _Corridor:
         Le minerai compte dans la position de stock dès la commande : c'est ce qui empêche
         la politique de commander un navire par heure jusqu'à l'arrivée du premier.
         """
+        if not self.config.depassements_autorises:
+            # navette sur une seule route : ce navire n'arrive pas avant le précédent
+            arrivee = max(self.env.now + delai_h, self._derniere_arrivee)
+            self._derniere_arrivee = arrivee
+            delai_h = arrivee - self.env.now
         self.metrics.at_sea_tonnage.change(self.env.now, +size_t)
         yield self.env.timeout(delai_h)
         self.metrics.at_sea_tonnage.change(self.env.now, -size_t)
@@ -339,9 +377,14 @@ class _Corridor:
         self.metrics.vessels_arrived += 1
         # le navire attend en rade avec sa cargaison : stock flottant, pas encore au port
         self.metrics.anchorage_tonnage.change(arrived_at, +size_t)
+        self.metrics.anchorage_ships.change(arrived_at, +1)
         with self.berths.request() as berth:
             yield berth
             self.metrics.anchorage_tonnage.change(self.env.now, -size_t)
+            self.metrics.anchorage_ships.change(self.env.now, -1)
+            if self.config.reporter_si_navire_en_rade:
+                # une commande a pu être reportée à cause de ce navire : réévaluer
+                self._reveiller()
             self.metrics.waits_h.append(self.env.now - arrived_at)
             self.metrics.berth.change(self.env.now, +1)
             remaining = size_t
@@ -437,14 +480,58 @@ class _Corridor:
 
     # --- restitution ------------------------------------------------------
 
-    def result(self, scenario: str, rep: int, seed: int, years: float) -> SimResult:
-        """Agrège les compteurs en une ligne de résultat."""
+    #: Compteurs cumulés et intégrales relevés dans l'instantané d'échauffement.
+    _CUMULS = (
+        "pellets_delivered_t", "pellets_railed_t", "pellets_consumed_t", "dri_production_t",
+        "dri_stop_hours", "dri_planned_stop_hours", "vessels_arrived", "vessels_served",
+        "pellets_ordered_t", "orders_placed", "order_deferral_h",
+    )
+    _INTEGRALES = (
+        "berth", "berth_blocked", "rame_rolling", "rame_blocked", "anchorage_tonnage",
+        "at_sea_tonnage", "anchorage_ships",
+    )
+    _LISTES = ("waits_h", "stockyard_samples", "plant_samples", "inventory_samples",
+               "lead_times_h")
+
+    def prendre_instantane(self) -> None:
+        """Fin de l'échauffement : relève les cumuls, sans rien remettre à zéro."""
+        m, now = self.metrics, self.env.now
+        self.instantane = {
+            **{nom: getattr(m, nom) for nom in self._CUMULS},
+            **{nom: getattr(m, nom).read(now) for nom in self._INTEGRALES},
+            **{nom: len(getattr(m, nom)) for nom in self._LISTES},
+        }
+
+    def result(self, scenario: str, rep: int, seed: int, years: float,
+               warmup_years: float = 0.0) -> SimResult:
+        """Agrège les compteurs en une ligne de résultat, sur la fenêtre publiée."""
         m = self.metrics
         config = self.config
         now = self.env.now
-        horizon_h = years * config.heures_par_an
+        w = self.instantane
+        horizon_h = (years - warmup_years) * config.heures_par_an
         berth_hours = horizon_h * config.postes_minerai
         rame_hours = horizon_h * config.nombre_de_rames
+
+        def cumul(nom):
+            return getattr(m, nom) - w[nom] if w else getattr(m, nom)
+
+        def aire(nom):
+            return getattr(m, nom).read(now) - w[nom] if w else getattr(m, nom).read(now)
+
+        def liste(nom):
+            return getattr(m, nom)[w[nom]:] if w else getattr(m, nom)
+
+        waits = liste("waits_h")
+        stockyard_samples = liste("stockyard_samples")
+        plant_samples = liste("plant_samples")
+        inventory_samples = liste("inventory_samples")
+        lead_times = liste("lead_times_h")
+        initial_t = config.stock_initial_stockyard_t + config.stock_initial_usine_t
+        if w:
+            # ce que les compteurs disent présent à W, stocks et rail compris
+            initial_t += w["pellets_delivered_t"] - w["pellets_consumed_t"]
+        afloat_initial = w["pellets_ordered_t"] - w["pellets_delivered_t"] if w else 0.0
         return SimResult(
             scenario=scenario,
             rep=rep,
@@ -452,38 +539,40 @@ class _Corridor:
             years=years,
             horizon_h=horizon_h,
             dispersion_arrivees=config.dispersion_arrivees,
-            initial_stock_t=config.stock_initial_stockyard_t + config.stock_initial_usine_t,
-            pellets_delivered_t=m.pellets_delivered_t,
-            pellets_railed_t=m.pellets_railed_t,
-            pellets_consumed_t=m.pellets_consumed_t,
+            initial_stock_t=initial_t,
+            pellets_delivered_t=cumul("pellets_delivered_t"),
+            pellets_railed_t=cumul("pellets_railed_t"),
+            pellets_consumed_t=cumul("pellets_consumed_t"),
             pellets_in_transit_t=m.pellets_in_transit_t,
-            dri_production_t=m.dri_production_t,
-            dri_stop_hours=m.dri_stop_hours,
-            dri_planned_stop_hours=m.dri_planned_stop_hours,
-            vessels_arrived=m.vessels_arrived,
-            vessels_served=m.vessels_served,
-            wait_mean_h=fmean(m.waits_h) if m.waits_h else 0.0,
-            wait_p90_h=percentile(m.waits_h, 0.90),
-            berth_occupancy=m.berth.read(now) / berth_hours if berth_hours else 0.0,
-            berth_blocked_h=m.berth_blocked.read(now),
-            stockyard_min_t=min(m.stockyard_samples) if m.stockyard_samples else 0.0,
-            stockyard_mean_t=fmean(m.stockyard_samples) if m.stockyard_samples else 0.0,
+            dri_production_t=cumul("dri_production_t"),
+            dri_stop_hours=cumul("dri_stop_hours"),
+            dri_planned_stop_hours=cumul("dri_planned_stop_hours"),
+            vessels_arrived=cumul("vessels_arrived"),
+            vessels_served=cumul("vessels_served"),
+            wait_mean_h=fmean(waits) if waits else 0.0,
+            wait_p90_h=percentile(waits, 0.90),
+            berth_occupancy=aire("berth") / berth_hours if berth_hours else 0.0,
+            berth_blocked_h=aire("berth_blocked"),
+            stockyard_min_t=min(stockyard_samples) if stockyard_samples else 0.0,
+            stockyard_mean_t=fmean(stockyard_samples) if stockyard_samples else 0.0,
             stockyard_final_t=self.stockyard.level,
-            plant_stock_min_t=min(m.plant_samples) if m.plant_samples else 0.0,
-            plant_stock_mean_t=fmean(m.plant_samples) if m.plant_samples else 0.0,
+            plant_stock_min_t=min(plant_samples) if plant_samples else 0.0,
+            plant_stock_mean_t=fmean(plant_samples) if plant_samples else 0.0,
             plant_stock_final_t=self.plant.level,
-            rame_utilisation=m.rame_rolling.read(now) / rame_hours if rame_hours else 0.0,
-            rame_blocked_h=m.rame_blocked.read(now),
-            waiting_tonnage_mean_t=m.anchorage_tonnage.mean(now, horizon_h),
-            pellets_ordered_t=m.pellets_ordered_t,
+            rame_utilisation=aire("rame_rolling") / rame_hours if rame_hours else 0.0,
+            rame_blocked_h=aire("rame_blocked"),
+            waiting_tonnage_mean_t=aire("anchorage_tonnage") / horizon_h if horizon_h else 0.0,
+            pellets_ordered_t=cumul("pellets_ordered_t"),
             pellets_afloat_t=m.pellets_afloat_t,
-            pellets_at_sea_mean_t=m.at_sea_tonnage.mean(now, horizon_h),
-            orders_placed=m.orders_placed,
-            lead_time_mean_h=fmean(m.lead_times_h) if m.lead_times_h else 0.0,
-            inventory_position_min_t=min(m.inventory_samples) if m.inventory_samples else 0.0,
-            inventory_position_mean_t=(
-                fmean(m.inventory_samples) if m.inventory_samples else 0.0
-            ),
+            pellets_at_sea_mean_t=aire("at_sea_tonnage") / horizon_h if horizon_h else 0.0,
+            orders_placed=cumul("orders_placed"),
+            lead_time_mean_h=fmean(lead_times) if lead_times else 0.0,
+            inventory_position_min_t=min(inventory_samples) if inventory_samples else 0.0,
+            inventory_position_mean_t=fmean(inventory_samples) if inventory_samples else 0.0,
+            warmup_years=warmup_years,
+            pellets_afloat_initial_t=afloat_initial,
+            anchorage_ship_hours=aire("anchorage_ships"),
+            order_deferral_h=cumul("order_deferral_h"),
         )
 
 
@@ -494,6 +583,7 @@ def simulate(
     samplers: Samplers | None = None,
     scenario: str = "",
     rep: int = 0,
+    warmup_years: float = 0.0,
 ) -> SimResult:
     """Simule `years` années de corridor et renvoie les indicateurs de la réplication.
 
@@ -505,13 +595,31 @@ def simulate(
 
     Passer un jeu de `samplers` permet de substituer des lois empiriques sans rien
     changer au modèle.
+
+    `warmup_years` écarte le début de la trajectoire des indicateurs publiés : c'est la
+    mesure en régime stationnaire. Voir la docstring du module pour la méthode.
     """
-    env, corridor = _construire(config, seed, years, samplers)
+    env, corridor = _construire(config, seed, years, samplers, warmup_years)
     env.run(until=years * config.heures_par_an)
-    return corridor.result(scenario=scenario, rep=rep, seed=seed, years=years)
+    return corridor.result(scenario=scenario, rep=rep, seed=seed, years=years,
+                           warmup_years=warmup_years)
 
 
-def _construire(config, seed, years, samplers=None) -> tuple[simpy.Environment, _Corridor]:
+def attentes_en_rade(config: SimConfig, seed: int, years: float,
+                     warmup_years: float = 0.0) -> list[float]:
+    """L'attente en rade, en heures, de chaque navire accosté dans la fenêtre publiée.
+
+    La distribution complète, et non sa moyenne : c'est elle qu'on place face à une
+    attente observée isolée, pour dire où celle-ci tombe.
+    """
+    env, corridor = _construire(config, seed, years, None, warmup_years)
+    env.run(until=years * config.heures_par_an)
+    debut = corridor.instantane["waits_h"] if corridor.instantane else 0
+    return list(corridor.metrics.waits_h[debut:])
+
+
+def _construire(config, seed, years, samplers=None,
+                warmup_years: float = 0.0) -> tuple[simpy.Environment, _Corridor]:
     """L'environnement et le corridor, processus lancés : le seul endroit qui les assemble.
 
     L'origine des navires est choisie ici et nulle part ailleurs dans le modèle.
@@ -532,6 +640,16 @@ def _construire(config, seed, years, samplers=None) -> tuple[simpy.Environment, 
     env.process(corridor.monitor())
     for index in range(config.nombre_de_rames):
         env.process(corridor.rame(index))
+    if warmup_years > 0:
+        if warmup_years >= years:
+            raise ValueError(f"échauffement de {warmup_years} an(s) pour un horizon de "
+                             f"{years} : il ne resterait rien à mesurer")
+
+        def echauffement() -> Generator:
+            yield env.timeout(warmup_years * config.heures_par_an)
+            corridor.prendre_instantane()
+
+        env.process(echauffement())
     return env, corridor
 
 
