@@ -779,6 +779,185 @@ inchangés.
 Reproductible par `python scripts/validation_arrets.py` (~40 min sur secteur) puis
 `python scripts/effet_arrets.py` (~40 min).
 
+### Le plan factoriel et le chiffre du site, refaits sur le modèle corrigé
+
+**Cadre commun.** Phase 2 en approvisionnement endogène (`phase2_endogene`), point de
+commande à son optimum de coût (30 j en continu avec dépassements, 35 j ailleurs, étapes 2
+et 5), régime stationnaire (4 ans d'échauffement écartés, 16 ans mesurés). Tout est publié
+sous **quatre variantes** : consommation continue ou arrêts discrets × dépassements permis ou
+interdits. Le continu et le discret encadrent la réalité — le discret est la lecture la plus
+irrégulière du taux d'utilisation, et le continu est celle que l'étape 3 a réfutée — et
+**seul ce qui tient dans les quatre est conclu**. β approvisionnement ne compte que la
+production perdue faute de pellets ; le coût total a trois termes (arrêts du DRI,
+surestaries, portage).
+
+> Ces chiffres héritent de toutes les hypothèses non sourcées du modèle : capacités de
+> stockage (*inconnu*), délai d'approvisionnement et sa dispersion, durée des arrêts du four,
+> marge unitaire et taux de surestaries (*estimé*). Les surestaries sont comptées sur toute
+> l'attente en rade, sans franchise de staries : une **borne haute**.
+
+#### Plan factoriel poste × stockage : le poste est le levier du coût, le stockage d'aucun
+
+*Sert l'**importance** : c'est la décision d'investissement — second poste ou silos — posée
+sur un modèle qui a enfin un régime stationnaire, donc où le stock initial ne pèse plus
+rien. C'est le premier plan factoriel du projet qui ne dépende pas de lui.*
+
+Un ou deux postes × stockage de base (300 kt + 150 kt) ou haut (haut des deux fourchettes,
+600 kt + 300 kt), 200 réplications appariées par case (`scripts/factoriel_endogene.py`).
+Différences « avec le levier − sans » ; * = intervalle à 95 % excluant zéro. Colonnes : C =
+continu, D = discret ; p = dépassements permis, i = interdits.
+
+**Production : β approvisionnement, en points**
+
+| effet | C, p | C, i | D, p | D, i |
+| --- | ---: | ---: | ---: | ---: |
+| second poste, stockage de base | +0,005 ± 0,002 * | +0,007 ± 0,002 * | +0,021 ± 0,005 * | +0,058 ± 0,014 * |
+| second poste, stockage haut | +0,003 ± 0,002 * | +0,008 ± 0,002 * | +0,024 ± 0,005 * | +0,063 ± 0,016 * |
+| stockage haut, 1 poste | −0,007 ± 0,011 | −0,007 ± 0,006 * | −0,020 ± 0,013 * | −0,022 ± 0,024 |
+| stockage haut, 2 postes | −0,008 ± 0,011 | −0,007 ± 0,007 | −0,017 ± 0,013 * | −0,017 ± 0,022 |
+| les deux leviers | −0,003 ± 0,010 | +0,001 ± 0,006 | +0,003 ± 0,013 | +0,041 ± 0,023 * |
+| interaction | −0,002 ± 0,003 | +0,000 ± 0,003 | +0,003 ± 0,005 | +0,005 ± 0,017 |
+
+**File : surestaries, en M USD/an**
+
+| effet | C, p | C, i | D, p | D, i |
+| --- | ---: | ---: | ---: | ---: |
+| second poste, stockage de base | −1,96 ± 0,02 * | −2,88 ± 0,02 * | −2,77 ± 0,02 * | −3,56 ± 0,03 * |
+| second poste, stockage haut | −1,96 ± 0,02 * | −2,88 ± 0,02 * | −2,56 ± 0,03 * | −3,41 ± 0,03 * |
+| stockage haut, 1 poste | +0,00 ± 0,01 | +0,00 ± 0,01 | −0,25 ± 0,02 * | −0,22 ± 0,02 * |
+| stockage haut, 2 postes | +0,00 ± 0,00 | −0,00 ± 0,00 | −0,05 ± 0,01 * | −0,06 ± 0,01 * |
+| les deux leviers | −1,96 ± 0,02 * | −2,88 ± 0,02 * | −2,82 ± 0,03 * | −3,63 ± 0,03 * |
+| interaction | −0,00 ± 0,01 | −0,00 ± 0,01 | +0,21 ± 0,02 * | +0,15 ± 0,02 * |
+
+**Coût total (arrêts + surestaries + portage), en M USD/an**
+
+| effet | C, p | C, i | D, p | D, i |
+| --- | ---: | ---: | ---: | ---: |
+| *niveau de la case de base (1 poste, stockage de base)* | *4,96* | *6,53* | *6,46* | *8,43* |
+| second poste, stockage de base | −1,61 ± 0,01 * | −2,37 ± 0,02 * | −2,35 ± 0,02 * | −3,03 ± 0,03 * |
+| second poste, stockage haut | −1,61 ± 0,01 * | −2,36 ± 0,02 * | −2,12 ± 0,02 * | −2,85 ± 0,03 * |
+| stockage haut, 1 poste | −0,00 ± 0,01 | −0,01 ± 0,01 | −0,16 ± 0,02 * | −0,13 ± 0,03 * |
+| stockage haut, 2 postes | −0,00 ± 0,01 | +0,00 ± 0,01 | +0,07 ± 0,01 * | +0,06 ± 0,02 * |
+| les deux leviers | −1,61 ± 0,02 * | −2,37 ± 0,02 * | −2,28 ± 0,03 * | −2,98 ± 0,03 * |
+| interaction | +0,00 ± 0,01 | +0,01 ± 0,01 * | +0,23 ± 0,02 * | +0,18 ± 0,02 * |
+
+![Plan factoriel poste × stockage, modèle endogène](docs/factoriel_endogene.png)
+
+*(version anglaise : `docs/factoriel_endogene_en.png`)*
+
+Ce qui tient dans les quatre variantes :
+
+- **Le second poste raccourcit la file, et c'est de là que vient tout son effet.** L'attente
+  moyenne en rade tombe de 39 à 71 h par navire. Le blocage à quai réapparaît à stockage de
+  base (+11 à +584 poste-heures par an), mais il ne reprend qu'une petite part des
+  navire-heures retirées de la rade (de moins de 1 % à ~25 %) ; à stockage haut, il n'y a plus
+  de blocage du tout. Les surestaries baissent de 2,0 à 3,6 M USD/an et le coût total de 1,6
+  à 3,0 M USD/an, malgré un portage qui monte de 0,36 à 0,62 M (le minerai arrive plus tôt
+  dans les silos).
+- **Son effet sur la production est significatif mais négligeable** : +0,003 à +0,063 point
+  de β. Mécanisme : l'attente en rade fait partie du délai d'approvisionnement, et l'écourter
+  de deux à trois jours sur vingt-deux réduit un peu les ruptures.
+- **Le stockage ne sert pas la production** : son effet sur β est nul ou légèrement négatif
+  (au plus −0,02 point) partout. Il supprime le blocage à quai (−0,5 à −366 poste-heures par
+  an à un poste), mais le blocage n'est pas un coût dans ce modèle.
+- **Aucune interaction sur la production.** Il y en a une sur les surestaries et le coût en
+  discret (+0,15 à +0,23 M USD/an) : le stockage ne retire des surestaries que là où il reste
+  une file, donc presque rien à deux postes.
+
+Ce qui dépend de la variante — donc **pas conclu** : l'effet du stockage sur les surestaries et
+le coût. Nul en continu, il vaut −0,13 à −0,16 M USD/an à un poste en discret, et devient un
+léger surcoût (+0,06 à +0,07 M) à deux postes. **L'intuition de l'étape 2, « le stockage agit
+désormais surtout sur les surestaries », ne tient donc pas à l'optimum** : elle venait des
+points de commande élevés (≥ 45 j), où les silos se remplissent ; au point de commande
+optimal ils ne saturent pas, et le levier des surestaries est le poste.
+
+**Deux réserves.** Le gain du second poste est **brut** : ni l'investissement ni
+l'exploitation d'un quai ne sont comptés, et il repose sur des surestaries en borne haute.
+Il dit au plus ce qu'un second poste pourrait rembourser chaque année. Et `postes_minerai = 2`
+n'est pas une situation observée (limite 10).
+
+Reproductible par `python scripts/factoriel_endogene.py` (~80 min, 10 processus, sur
+batterie) ; `--depuis-json` retrace la figure depuis `data/sim/factoriel_endogene.json`.
+
+#### Le chiffre du site, en plage
+
+*Sert l'**importance** : c'est le chiffre appliqué, une distribution et jamais un point. Sert
+la **généralité** : la décomposition dit **quelle inconnue** pilote le résultat — la
+dispersion du délai d'approvisionnement, pas la taille des silos —, et cela se transpose à
+tout corridor approvisionné sur point de commande.*
+
+500 tirages, les mêmes pour les quatre variantes, **chaque paramètre uniforme dans sa
+fourchette publiée** : stockyard [150 ; 600] kt et stock usine [50 ; 300] kt, tirés
+indépendamment ; durée moyenne d'un arrêt du four [2 ; 30] j (sans effet en continu) ;
+`cv_delai` [0,10 ; 0,60]. Par tirage, une trajectoire de 16 ans mesurés (**long terme** : ce
+que le projet ignore, pour dimensionner) et une **année isolée** après le même échauffement
+(ce qu'un exploitant affronte une année donnée, pour budgéter). Médiane [5 % ; 95 %]
+(`scripts/chiffre_site_endogene.py`).
+
+| variante | β appro, long terme | β appro, une année | coût total, long terme (M USD/an) | coût, une année | P(β ≥ 0,95), long terme |
+| --- | --- | --- | --- | --- | ---: |
+| continu, dépassements permis | 98,4 % [96,0 ; 100,0] | 98,9 % [93,9 ; 100,0] | 6,0 [3,2 ; 8,5] | 5,6 [3,1 ; 10,3] | 1,00 |
+| continu, dépassements interdits | 97,7 % [89,3 ; 100,0] | 98,9 % [86,7 ; 100,0] | 9,3 [4,3 ; 18,2] | 7,9 [4,4 ; 20,4] | 0,66 |
+| discret, dépassements permis | 98,9 % [97,2 ; 100,0] | 99,5 % [95,9 ; 100,0] | 7,7 [5,0 ; 10,0] | 7,4 [4,8 ; 11,4] | 1,00 |
+| discret, dépassements interdits | 94,9 % [85,8 ; 100,0] | 96,1 % [82,5 ; 100,0] | 12,5 [5,1 ; 22,1] | 11,4 [5,0 ; 25,3] | 0,50 |
+
+**Enveloppe des quatre variantes : β approvisionnement de long terme entre 85,8 % et
+100,0 %, coût total entre 3,2 et 22,1 M USD/an** (quantiles 5 % et 95 %, toutes variantes).
+
+**D'où vient la dispersion.**
+
+| variante | part de l'aléa, long terme (β / coût) | part de l'aléa, une année (β / coût) | ρ² de `cv_delai` (β / coût) | ρ² des deux stockages | ρ² de la durée d'arrêt |
+| --- | --- | --- | --- | --- | --- |
+| continu, permis | 3 % / 2 % | 21 % / 21 % | 0,93 / 0,95 | ≤ 0,01 | 0,00 |
+| continu, interdits | 0 % / 0 % | 4 % / 6 % | 0,97 / 0,98 | 0,00 | 0,00 |
+| discret, permis | 4 % / 2 % | 22 % / 27 % | 0,85 / 0,74 | ≤ 0,07 | 0,03 / 0,07 |
+| discret, interdits | 1 % / 1 % | 10 % / 11 % | 0,96 / 0,95 | ≤ 0,01 | 0,01 / 0,02 |
+
+La part de l'aléa est la variance de 100 réplications à paramètres centraux rapportée à la
+variance des 500 tirages (approximation : l'aléa est mesuré au centre). ρ² est le carré de la
+corrélation de rang entre un paramètre et le résultat de long terme.
+
+- **Une seule inconnue pilote le chiffre : la dispersion du délai d'approvisionnement.** Elle
+  explique de 74 % à 98 % de la variance de β et du coût selon la variante ; les deux capacités
+  de stockage, au plus 7 %, et la durée des arrêts du four autant. Sourcer les silos
+  (tâche 2 du projet) ne resserrerait presque pas la plage ; connaître la régularité des
+  traversées la resserrerait presque entièrement.
+- **Le long terme et l'année isolée diffèrent peu**, et l'année isolée a une médiane *plus
+  haute* : la plupart des années ne connaissent aucune rupture, et les ruptures se concentrent
+  dans quelques mauvaises années, que la moyenne sur 16 ans répartit. L'aléa d'une année ne
+  pèse que 4 à 27 % de la dispersion annuelle. C'est l'inverse du modèle exogène (86 %, voir
+  ci-dessous) : le chiffre est maintenant dominé par ce que le projet ignore, pas par la chance.
+- **Restreint à `cv_delai` ≤ 0,40** — au-delà, l'étape 3 a jugé l'écart-type du délai peu
+  plausible pour une traversée (301 tirages sur 500) —, β de long terme passe à 98,4 %
+  [93,5 ; 100,0] dans la variante la plus défavorable (discret, interdits) et ≥ 99,4 % en
+  médiane dans les trois autres ; le coût total, à 4,7 à 8,5 M USD/an en médiane.
+- **Le point de commande est figé à son optimum central.** Un exploitant qui saurait ses délais
+  très dispersés remonterait son stock de sécurité : aux grandes valeurs de `cv_delai`, la
+  perte publiée est celle d'une politique non réajustée, donc une borne pessimiste.
+
+![Chiffre du site : distribution de β approvisionnement et du coût total](docs/chiffre_site_endogene.png)
+
+*(version anglaise : `docs/chiffre_site_endogene_en.png`)*
+
+Reproductible par `python scripts/chiffre_site_endogene.py` (~80 min, 10 processus) ;
+`--depuis-csv` relit `data/sim/chiffre_site_endogene.csv` pour la figure et le chiffre
+restreint.
+
+#### Les conclusions du modèle exogène : ce qui tient, change ou tombe
+
+*Sert l'**importance** : dit lesquelles des recommandations publiées plus bas survivent au
+modèle corrigé, et donc lesquelles l'article peut porter.*
+
+| ancienne conclusion (modèle exogène) | verdict | ce que dit le modèle corrigé (dans les quatre variantes) |
+| --- | --- | --- |
+| **Le stockage ne sert pas la production** (limite 0 : la capacité ne change rien à stock initial figé) | **tient** | Effet sur β nul ou légèrement négatif (au plus −0,02 point) ; ρ² des capacités ≤ 0,01 sur β dans les 500 tirages. Établi désormais en régime stationnaire, sans artefact de stock initial. Le stockage supprime le blocage à quai, sans valeur économique dans ce modèle ; son effet sur le coût dépend de la variante (0 à −0,16 M USD/an). |
+| **Le second poste déplace la file, il ne la supprime pas** | **change** | Il la **supprime en grande partie** : −39 à −71 h d'attente par navire, et le blocage qui réapparaît à quai (stockage de base seulement) ne reprend que < 1 à ~25 % des navire-heures retirées de la rade ; à stockage haut, rien n'est déplacé. Il reste sans effet utile sur la production (≤ +0,06 point), mais devient **le seul levier du coût** : −1,6 à −3,0 M USD/an, bruts, en surestaries comptées en borne haute. « Le poste n'est pas le levier » ne vaut donc plus que pour la production. |
+| **La régularité domine au-delà de 95 %** (frontière : β = 0,99 n'est atteignable qu'à c_a² = 0, le stockage est un mauvais placement contre l'irrégularité) | **tient sur le fond, tombe dans sa forme** | Ce qui pilote β est bien la régularité, et plus nettement qu'avant : `cv_delai` explique 85 à 97 % de la variance de β, le stockage ≤ 1 %. Mais la régularité qui compte est celle des **délais**, et c_a² n'est plus une donnée d'entrée : il naît de la politique de commande. Et le seuil tombe : β ≥ 0,99 est atteint dans 24 à 48 % des tirages de long terme, sans arrivées régulières. |
+| *Une année isolée : 86 % de la dispersion vient de l'aléa* (`beta_site.py`) | **tombe** | 4 à 27 % : le chiffre d'une année est désormais dominé par l'incertitude des paramètres, surtout `cv_delai`. |
+
+Les sections qui suivent (modèle exogène) restent publiées telles qu'elles ont été produites ;
+ce tableau dit ce qu'il en reste.
+
 > **Ces chiffres ne sont pas des prévisions.** Les deux paramètres qui les pilotent ne sont
 > pas sourcés : la **régularité des arrivées** de minéraliers (statut *estimé*, jamais
 > mesurée) et les **capacités de stockage** du port et de l'usine (statut *inconnu*). Le

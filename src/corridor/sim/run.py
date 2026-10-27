@@ -21,6 +21,7 @@ import dataclasses
 import random
 import sys
 from collections.abc import Sequence
+from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -72,24 +73,50 @@ def replicate(
     seed: int,
     scenario: str,
     warmup_years: float = 0.0,
+    processus: int = 1,
 ) -> list[SimResult]:
     """Rejoue le même scénario `reps` fois, chaque réplication avec sa propre graine.
 
     Les graines sont tirées d'un générateur maître : une seule graine en entrée suffit
     à rejouer l'ensemble à l'identique, et deux réplications ne partagent jamais leur
     séquence aléatoire. `years` est l'horizon total, échauffement compris.
+
+    `processus` > 1 répartit les réplications sur plusieurs processus. Chacune ne dépend
+    que de sa graine, et les résultats reviennent dans l'ordre des graines : la sortie est
+    **identique** à celle du calcul en série, seule la durée change. Le script appelant doit
+    protéger son point d'entrée par `if __name__ == "__main__"` (exigence de Windows).
     """
     master = random.Random(seed)
     graines = [master.randrange(2**32) for _ in range(reps)]
-    return [
-        simulate(config, seed=graine, years=years, scenario=scenario, rep=rep,
-                 warmup_years=warmup_years)
-        for rep, graine in enumerate(graines)
-    ]
+    taches = [(config, graine, years, scenario, rep, warmup_years)
+              for rep, graine in enumerate(graines)]
+    return simuler_en_parallele(taches, processus)
+
+
+def simuler_en_parallele(taches, processus: int = 1) -> list[SimResult]:
+    """Une simulation par tâche, éventuellement sur plusieurs processus, dans l'ordre reçu.
+
+    Une tâche est un tuple `(config, graine, années, scénario, rep, échauffement)`. Les
+    configurations peuvent différer d'une tâche à l'autre : c'est ce qui sert aux tirages de
+    paramètres, où chaque tirage a la sienne. Résultat identique au calcul en série.
+    """
+    taches = list(taches)
+    if processus <= 1 or len(taches) <= 1:
+        return [_une_replication(t) for t in taches]
+    with ProcessPoolExecutor(max_workers=min(processus, len(taches))) as executeur:
+        paquet = max(1, len(taches) // (4 * processus))
+        return list(executeur.map(_une_replication, taches, chunksize=paquet))
+
+
+def _une_replication(tache) -> SimResult:
+    """Une réplication, sous une forme que `ProcessPoolExecutor` sait transmettre."""
+    config, graine, years, scenario, rep, warmup_years = tache
+    return simulate(config, seed=graine, years=years, scenario=scenario, rep=rep,
+                    warmup_years=warmup_years)
 
 
 def replicate_stationnaire(config: SimConfig, reps: int, seed: int,
-                           scenario: str = "") -> list[SimResult]:
+                           scenario: str = "", processus: int = 1) -> list[SimResult]:
     """`reps` réplications mesurées en régime stationnaire, selon le protocole du projet."""
     return replicate(
         config,
@@ -98,6 +125,7 @@ def replicate_stationnaire(config: SimConfig, reps: int, seed: int,
         seed=seed,
         scenario=scenario,
         warmup_years=ECHAUFFEMENT_STATIONNAIRE_ANS,
+        processus=processus,
     )
 
 

@@ -78,10 +78,11 @@ ANNEES_ATTENTES = 60.0
 # --- mesures ------------------------------------------------------------------
 
 
-def mesurer(config, reps: int, seed: int, unitaires, scenario: str = "") -> dict:
+def mesurer(config, reps: int, seed: int, unitaires, scenario: str = "",
+            processus: int = 1) -> dict:
     """Une configuration en régime stationnaire : indicateurs et coûts, réplication par
     réplication (pour les différences appariées) et en `Estimate` (pour la publication)."""
-    resultats = replicate_stationnaire(config, reps, seed, scenario)
+    resultats = replicate_stationnaire(config, reps, seed, scenario, processus=processus)
     lignes = []
     for r in resultats:
         annees = r.annees_mesurees
@@ -94,6 +95,9 @@ def mesurer(config, reps: int, seed: int, unitaires, scenario: str = "") -> dict
             "beta_appro": 1.0 - eco.perte_faute_de_pellets_t(r, config) / cible,
             "rupture_h_an": r.dri_stop_hours / annees,
             "attente_h": r.wait_mean_h,
+            # poste-heures, sommées sur les postes : avec deux postes, deux navires peuvent
+            # être bloqués à la fois
+            "blocage_h_an": r.berth_blocked_h / annees,
             "stock_t": r.stockyard_mean_t + r.plant_stock_mean_t,
             "report_h_an": r.order_deferral_h / annees,
             **couts,

@@ -1,0 +1,80 @@
+"""Libellés des figures, en français et en anglais.
+
+Les figures du projet servent deux publics : le dépôt, en français, et l'article visé par
+*Computers & Industrial Engineering*, en anglais. Plutôt que de dupliquer les scripts de
+tracé ou d'écrire les libellés en dur, chaque figure demande ses textes ici, par clé, dans la
+langue voulue, et chaque script écrit une version par langue (`chemin_langue`).
+
+Règle : **une clé absente dans une langue fait lever**, au lieu de retomber en silence sur
+l'autre langue. Une figure anglaise avec un libellé resté en français passerait inaperçue
+jusqu'à la relecture de l'article.
+
+Les figures antérieures à l'étape 6 n'ont qu'une version française ; elles passeront ici au
+fil des révisions.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+LANGUES = ("fr", "en")
+
+LIBELLES: dict[str, dict[str, str]] = {
+    # indicateurs
+    "beta_appro": {"fr": "β approvisionnement (points)", "en": "supply service level β (points)"},
+    "rupture_h_an": {"fr": "ruptures (h/an)", "en": "stock-out hours per year"},
+    "attente_h": {"fr": "attente en rade (h)", "en": "anchorage wait (h)"},
+    "blocage_h_an": {"fr": "blocage à quai (h/an)", "en": "berth blocked (h/yr)"},
+    "arrets_dri": {"fr": "coût des arrêts DRI (M USD/an)", "en": "DRI stoppage cost (M USD/yr)"},
+    "surestaries": {"fr": "surestaries (M USD/an)", "en": "demurrage (M USD/yr)"},
+    "portage": {"fr": "portage du stock (M USD/an)", "en": "inventory carrying (M USD/yr)"},
+    "total": {"fr": "coût total (M USD/an)", "en": "total cost (M USD/yr)"},
+    # variantes du modèle
+    "continu": {"fr": "consommation continue", "en": "continuous consumption"},
+    "discret": {"fr": "arrêts discrets", "en": "discrete outages"},
+    "permis": {"fr": "dépassements permis", "en": "overtaking allowed"},
+    "interdits": {"fr": "dépassements interdits", "en": "no overtaking"},
+    # leviers du plan factoriel
+    "poste_base": {"fr": "second poste, stockage de base", "en": "second berth, base storage"},
+    "poste_haut": {"fr": "second poste, stockage haut", "en": "second berth, high storage"},
+    "stockage_1": {"fr": "stockage haut, 1 poste", "en": "high storage, 1 berth"},
+    "stockage_2": {"fr": "stockage haut, 2 postes", "en": "high storage, 2 berths"},
+    "les_deux": {"fr": "les deux leviers", "en": "both levers"},
+    "interaction": {"fr": "interaction", "en": "interaction"},
+    # titres et axes
+    "titre_factoriel": {
+        "fr": "Plan factoriel poste × stockage, phase 2, approvisionnement endogène",
+        "en": "Berth × storage factorial design, phase 2, endogenous supply",
+    },
+    "sous_titre_factoriel": {
+        "fr": "Différences appariées (avec le levier − sans), IC 95 %, régime stationnaire",
+        "en": "Paired differences (with lever − without), 95% CI, steady state",
+    },
+    "effet": {"fr": "effet du levier", "en": "lever effect"},
+    "titre_site": {
+        "fr": "Chiffre du site, phase 2 : distribution sur l'incertitude des paramètres",
+        "en": "Site figure, phase 2: distribution over parameter uncertainty",
+    },
+    "long_terme": {"fr": "long terme (16 ans)", "en": "long run (16 years)"},
+    "une_annee": {"fr": "une année isolée", "en": "a single year"},
+    "frequence": {"fr": "part des tirages", "en": "share of draws"},
+}
+
+
+def libelle(cle: str, langue: str = "fr") -> str:
+    """Le texte d'une clé dans une langue ; lève si la clé ou la langue manque."""
+    if langue not in LANGUES:
+        raise ValueError(f"langue inconnue : {langue!r} (connues : {LANGUES})")
+    if cle not in LIBELLES:
+        raise KeyError(f"libellé inconnu : {cle!r}")
+    if langue not in LIBELLES[cle]:
+        raise KeyError(f"libellé {cle!r} sans version {langue!r}")
+    return LIBELLES[cle][langue]
+
+
+def chemin_langue(chemin: str | Path, langue: str) -> Path:
+    """`docs/x.png` en français, `docs/x_en.png` en anglais : une figure par langue."""
+    chemin = Path(chemin)
+    if langue == "fr":
+        return chemin
+    return chemin.with_name(f"{chemin.stem}_{langue}{chemin.suffix}")

@@ -1,7 +1,7 @@
 ﻿# CLAUDE.md
 
 Contexte permanent du projet, écrit pour une **reprise après plusieurs semaines sans aucun
-contexte**. Dernière mise à jour : 2026-10-25. Lis-le en entier avant toute tâche : état réel de
+contexte**. Dernière mise à jour : 2026-10-27. Lis-le en entier avant toute tâche : état réel de
 chaque étape, décisions prises et leurs raisons, limites connues, commandes, puis les trois
 prochaines tâches avec des critères de réussite vérifiables.
 
@@ -54,6 +54,14 @@ argent, quelques millions à quelques dizaines de millions d'USD par an, sur une
 marge étrangère au site (voir README). L'irrégularité est désormais **estimée** (c_a² = 0,83
 sur 16 trimestres de bilans publics), les deux capacités de stockage restent `inconnu`.
 
+**Sur le modèle corrigé (étape 6, approvisionnement endogène, régime stationnaire, quatre
+variantes)** : β approvisionnement de long terme entre **85,8 % et 100,0 %** et coût total
+entre **3,2 et 22,1 M USD/an** (enveloppe des quantiles 5-95 % des quatre variantes), piloté à
+74-98 % par la dispersion du délai d'approvisionnement, à moins de 7 % par le stockage. Le
+stockage ne sert pas la production ; le second poste non plus, mais il est le seul levier du
+coût (−1,6 à −3,0 M USD/an bruts, par les surestaries). Ce qui précède cette phrase est le
+modèle exogène : voir le tableau « tient / change / tombe » du README.
+
 ## État des étapes
 
 | Étape | État | Où |
@@ -64,11 +72,12 @@ sur 16 trimestres de bilans publics), les deux capacités de stockage restent `i
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **904 tests, ~37 s sur batterie le 2026-10-27, soit
+`ruff check .` et `pytest -q` passent : **1 001 tests, ~38 s sur batterie le 2026-10-27, soit
 ~20-25 s attendus sur secteur**
-(2026-10-26 ; sur batterie, processeur bridé, comptez trois à quatre fois plus). S'y ajoutent **26 tests
+(sur batterie, processeur bridé, comptez trois à quatre fois plus ; juste après trois heures de
+simulation, la même suite a pris 111 s, puis 38 s au repos). S'y ajoutent **28 tests
 marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
-`pytest -m slow -q` (~100 s) : la validation analytique du moteur de file, deux validations de
+`pytest -m slow -q` (~100 s au repos, 225 s machine chaude) : la validation analytique du moteur de file, deux validations de
 comportement de `beta_site.py`, les deux mesures de la limite 0 (gain des nombres communs,
 inertie de la capacité) et **tous les rendus de figures**. Obligatoires avant tout
 commit qui touche à `corridor.sim` ; la CI lance les deux suites, dans deux étapes séparées.
@@ -477,6 +486,38 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   désormais sur les heures de rupture × cadence de marche** (`perte_faute_de_pellets_t`),
   pas sur cible − production : en mode discret, l'aléa des pannes y serait devenu un coût
   fictif. Identique en mode continu, tous les chiffres antérieurs sont inchangés.
+  **Étape 6 (2026-10-27) : plan factoriel et chiffre du site refaits sur le modèle
+  corrigé** (`phase2_endogene`, s à l'optimum de chaque variante, 4 + 16 ans, quatre
+  variantes continu/discret × dépassements permis/interdits ; **on ne conclut que sur ce qui
+  tient dans les quatre**). *Plan factoriel* (`factoriel_endogene.py`, 200 réplications
+  appariées) : le **second poste** fait +0,003 à +0,063 point de β (significatif, négligeable :
+  l'attente en rade fait partie du délai), −39 à −71 h d'attente, −2,0 à −3,6 M USD/an de
+  surestaries, **−1,6 à −3,0 M USD/an de coût total**, brut d'investissement ; le blocage ne
+  réapparaît qu'à stockage de base et ne reprend que < 1 à ~25 % des navire-heures retirées de
+  la rade. Le **stockage** ne fait rien à β (au plus −0,02 point), supprime le blocage à quai,
+  et son effet sur le coût dépend de la variante (0 en continu, ±0,16 M en discret) : **pas
+  conclu**. Pas d'interaction sur la production. L'idée de l'étape 2 (« le stockage agit sur
+  les surestaries ») ne vaut qu'aux s ≥ 45 j, pas à l'optimum. *Chiffre du site*
+  (`chiffre_site_endogene.py`, 500 tirages uniformes dans les fourchettes : stockyard,
+  stock usine, durée d'arrêt, cv_delai) : β de long terme de 94,9 % [85,8 ; 100,0] (discret,
+  interdits) à 98,9 % [97,2 ; 100,0] (discret, permis), coût de 6,0 à 12,5 M USD/an en
+  médiane. **`cv_delai` explique 74 à 98 % de la variance**, le stockage ≤ 7 %, la durée
+  d'arrêt ≤ 7 %. L'aléa d'une année ne pèse que 4 à 27 % de la dispersion annuelle (contre
+  86 % dans le modèle exogène). Restreint à cv_delai ≤ 0,40 (301 tirages) : β médian ≥ 98,4 %
+  partout. Le point de commande est figé à son optimum central : aux grands cv_delai, borne
+  pessimiste. *Tient / change / tombe* : « le stockage ne sert pas la production » **tient** ;
+  « le second poste déplace la file » **change** (il la supprime surtout, et devient le levier
+  du coût) ; « la régularité domine au-delà de 95 % » **tient sur le fond** (c'est la
+  régularité des délais) **mais tombe dans sa forme** (β ≥ 0,99 atteint dans 24 à 48 % des
+  tirages, c_a² n'est plus une entrée) ; « 86 % de l'aléa » **tombe**.
+- **Libellés des figures en deux langues** (`corridor.labels`). Toute figure nouvelle demande
+  ses textes par clé et s'écrit en français (`x.png`) et en anglais (`x_en.png`) ; une clé
+  sans traduction **lève** au lieu de retomber sur l'autre langue. Les figures antérieures à
+  l'étape 6 restent en français seulement.
+- **Les tirages de paramètres se calculent en parallèle** (`run.simuler_en_parallele`,
+  `processus` dans `replicate` et `replicate_stationnaire`) : résultat identique au bit près
+  au calcul en série, testé ; ~4,7× plus rapide à 10 processus. Tout script qui s'en sert doit
+  protéger son point d'entrée par `if __name__ == "__main__"` (Windows).
 - **Régime stationnaire : un instantané des cumuls, pas une remise à zéro.**
   `simulate(..., warmup_years=W)` publie la fenêtre [W, years]. À W, on relève les compteurs
   et les intégrales, et chaque indicateur publié est une différence. Une remise à zéro
@@ -758,11 +799,17 @@ python -m corridor.ingest.port_stats --serie embarquement  # exportations (ponct
 python scripts/diagnostic_dispersion.py       # tendance, taille, production (~15 min)
 python scripts/validation_arrets.py           # arrêts discrets : carte de compatibilité (~40 min)
 python scripts/effet_arrets.py               # continu contre discret : β et coût (~40 min)
+python scripts/factoriel_endogene.py          # plan poste x stockage, 4 variantes (~80 min)
+python scripts/factoriel_endogene.py --depuis-json   # retrace la figure sans simuler
+python scripts/chiffre_site_endogene.py       # chiffre du site, 500 tirages (~80 min)
+python scripts/chiffre_site_endogene.py --depuis-csv # figure et chiffre restreint, sans simuler
 ```
 
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de
 `docs/` : `sensibilite_dri.png`, `h2_blocage.png`, `frontiere_service.png`,
-`cout_regularite.png`, `metamodele_frontiere.png` et `metamodele_frontiere_directe.png`.
+`cout_regularite.png`, `metamodele_frontiere.png` et `metamodele_frontiere_directe.png`,
+puis, en français et en anglais (`_en`), `factoriel_endogene.png` et
+`chiffre_site_endogene.png`.
 
 ## Structure du dépôt
 
@@ -773,6 +820,7 @@ src/corridor/transform/  parse_status.py, observations_csv.py, build_escales.py,
                          parse_port_stats.py (tableaux « Marchandises Débarquées »)
 src/corridor/sim/        config.py, samplers.py, model.py, run.py, sensitivity.py, stats.py,
                          analytic.py (files d'attente : le repère hors simulation)
+src/corridor/labels.py   libellés des figures, français et anglais
 config/assumptions.yaml  toutes les valeurs numériques du domaine
 config/scenarios/        baseline, phase2, phase2_plus_stockage, phase2_plus_poste,
                          phase2_plus_poste_plus_stockage (plan factoriel 2x2),
@@ -786,6 +834,7 @@ scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          poste_stockage_factoriel, frontiere_service, frontiere_directe,
                          convergence_horizon, politique_commande, validation_ca2,
                          diagnostic_dispersion, validation_arrets, effet_arrets,
+                         factoriel_endogene, chiffre_site_endogene,
                          cout_regularite,
                          beta_site, metamodele_frontiere, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés
@@ -808,6 +857,8 @@ tests/                   pytest, fixtures PDF réelles
   plus dès que le commit touche à `corridor.sim`.
 - **Tout résultat publié dans le README porte une étiquette** disant lequel des trois critères
   CIE il sert (originalité, généralité, importance). Voir « Objectif permanent » en tête.
+- **Toute figure nouvelle sort en français et en anglais**, libellés pris dans
+  `corridor.labels`, jamais écrits en dur dans le script de tracé.
 - **Un test qui rend une vraie figure est marqué `slow`.** La boucle courte teste les données
   qui alimentent la figure (`donnees_figure`), jamais le tracé. Un test qui vérifie qu'une
   fonction de tracé *lève* avant de tracer peut rester rapide : il ne rend rien.

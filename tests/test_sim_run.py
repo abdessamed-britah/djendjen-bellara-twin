@@ -197,3 +197,22 @@ def test_main_accepte_une_politique_imposee(tmp_path, capsys):
         ]
     )
     assert code == 0
+
+
+# --- réplications en parallèle --------------------------------------------------
+
+
+def test_le_calcul_en_parallele_rend_exactement_le_calcul_en_serie():
+    """Chaque réplication ne dépend que de sa graine : seule la durée doit changer."""
+    config = SimConfig.from_scenario(load_scenario("baseline_endogene"))
+    serie = rn.replicate(config, years=1.0, reps=4, seed=7, scenario="x", warmup_years=0.5)
+    parallele = rn.replicate(config, years=1.0, reps=4, seed=7, scenario="x", warmup_years=0.5,
+                          processus=2)
+    assert [dataclasses.asdict(r) for r in serie] == [dataclasses.asdict(r) for r in parallele]
+
+
+def test_un_seul_processus_reste_le_calcul_en_serie():
+    config = SimConfig.from_scenario(load_scenario("baseline"))
+    a = rn.replicate(config, years=0.2, reps=2, seed=3, scenario="x", processus=1)
+    b = rn.replicate(config, years=0.2, reps=2, seed=3, scenario="x")
+    assert [dataclasses.asdict(r) for r in a] == [dataclasses.asdict(r) for r in b]
