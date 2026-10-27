@@ -9,7 +9,9 @@ Cinq processus, une unité de temps (l'heure), une unité de masse (la tonne) :
      arriver en rade après un délai tiré ;
 2. `vessel`    — attente en rade, poste de déchargement, déchargement par tranches ;
 3. `rame`      — navette port → usine → port, une par rame, en boucle ;
-4. `dri`       — consommation horaire continue, arrêts planifiés, arrêts faute de stock ;
+4. `dri`       — consommation horaire, arrêts planifiés, arrêts faute de stock, et en mode
+   discret (`simulation.mode_arrets_dri`) des arrêts non planifiés : le four tourne alors à
+   pleine cadence ou pas du tout, à disponibilité moyenne inchangée ;
 5. `monitor`   — échantillonne les niveaux des deux stocks et la position de stock.
 
 **Pourquoi deux origines.** Le modèle exogène cale le débit moyen d'arrivée exactement sur
@@ -191,6 +193,7 @@ class SimResult:
     pellets_afloat_initial_t: float  # à flot au début de la fenêtre : bilan amont
     anchorage_ship_hours: float  # navire-heures en rade, intégrées : base des surestaries
     order_deferral_h: float  # heures pendant lesquelles une commande a été reportée
+    dri_breakdown_hours: float  # arrêts non planifiés (mode discret) ; 0 en mode continu
 
     @property
     def annees_mesurees(self) -> float:
@@ -219,6 +222,7 @@ class _Metrics:
     at_sea_tonnage: TimeIntegral = field(default_factory=TimeIntegral)
     anchorage_ships: TimeIntegral = field(default_factory=TimeIntegral)
     order_deferral_h: float = 0.0
+    dri_breakdown_hours: float = 0.0
     pellets_ordered_t: float = 0.0
     pellets_afloat_t: float = 0.0
     orders_placed: int = 0
@@ -453,14 +457,55 @@ class _Corridor:
         self.metrics.rame_rolling.change(self.env.now, -1)
 
     def dri(self) -> Generator:
-        """Consommation horaire du DRI, arrêts planifiés, arrêts faute de pellets."""
+        """Consommation horaire du DRI, arrêts planifiés, arrêts faute de pellets.
+
+        **Mode continu** : le four tourne en permanence à cadence réduite, capacité × taux
+        d'utilisation. **Mode discret** : il tourne à pleine cadence, et alterne marche et
+        arrêt non planifié. La durée d'un arrêt suit sa loi (`usine.duree_arret_non_planifie
+        _j`), la durée de marche une exponentielle de moyenne telle que la disponibilité
+        égale le taux d'utilisation : la production moyenne est la même dans les deux modes,
+        seule change sa régularité.
+
+        Deux choix du mode discret, à connaître : l'horloge des pannes n'avance **que pendant
+        les heures ouvrées** — un arrêt planifié ne consomme pas de marche ni d'arrêt, sinon
+        les deux se recouvriraient et la disponibilité serait faussée ; et elle avance aussi
+        pendant une rupture de pellets, parce qu'une panne est une affaire de temps, pas de
+        tonnage. Les tirages viennent d'un flux dédié, `arrets_dri`.
+        """
         step_h = self.config.pas_h
-        besoin_t = self.config.debit_pellets_t_par_h * step_h
-        production_t = self.config.debit_dri_t_par_h * step_h
+        discret = self.config.mode_arrets_dri == "discret"
+        if discret:
+            besoin_t = self.config.debit_pellets_plein_t_par_h * step_h
+            production_t = self.config.debit_dri_plein_t_par_h * step_h
+            pannes = self.streams.stream("arrets_dri")
+            en_panne = False
+            reste_h = self.samplers.uptime_h.sample(pannes)
+        else:
+            besoin_t = self.config.debit_pellets_t_par_h * step_h
+            production_t = self.config.debit_dri_t_par_h * step_h
         while True:
             if self._planned_stop(self.env.now):
                 self.metrics.dri_planned_stop_hours += step_h
-            elif self.plant.level >= besoin_t:
+                yield self.env.timeout(step_h)
+                continue
+            if discret:
+                # L'heure prend l'état du processus à son premier instant, puis elle est
+                # décomptée de cet état-là : c'est un échantillonnage régulier de l'alternance,
+                # sans biais (disponibilité 0,8523 ± 0,0019 pour 0,85 visés, 20 graines × 20
+                # ans à 12 h d'arrêt). Dans l'ordre inverse, l'heure de bascule irait au nouvel
+                # état sans être prise sur sa durée : chaque période gagnerait une heure, soit
+                # 69/82 = 0,84 à 12 h d'arrêt. Le `while` traverse un intervalle plus court
+                # qu'une heure au lieu de lui en accorder une entière.
+                while reste_h <= 0:
+                    en_panne = not en_panne
+                    loi = self.samplers.breakdown_h if en_panne else self.samplers.uptime_h
+                    reste_h += loi.sample(pannes)
+                reste_h -= step_h
+                if en_panne:
+                    self.metrics.dri_breakdown_hours += step_h
+                    yield self.env.timeout(step_h)
+                    continue
+            if self.plant.level >= besoin_t:
                 yield self.plant.get(besoin_t)
                 if self.pull:
                     # la place libérée redevient réservable par une rame
@@ -490,7 +535,7 @@ class _Corridor:
     _CUMULS = (
         "pellets_delivered_t", "pellets_railed_t", "pellets_consumed_t", "dri_production_t",
         "dri_stop_hours", "dri_planned_stop_hours", "vessels_arrived", "vessels_served",
-        "pellets_ordered_t", "orders_placed", "order_deferral_h",
+        "pellets_ordered_t", "orders_placed", "order_deferral_h", "dri_breakdown_hours",
     )
     _INTEGRALES = (
         "berth", "berth_blocked", "rame_rolling", "rame_blocked", "anchorage_tonnage",
@@ -579,6 +624,7 @@ class _Corridor:
             pellets_afloat_initial_t=afloat_initial,
             anchorage_ship_hours=aire("anchorage_ships"),
             order_deferral_h=cumul("order_deferral_h"),
+            dri_breakdown_hours=cumul("dri_breakdown_hours"),
         )
 
 

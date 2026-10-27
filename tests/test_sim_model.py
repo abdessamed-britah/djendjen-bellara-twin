@@ -11,6 +11,7 @@ Les valeurs attendues sont recalculées depuis la configuration, jamais recopié
 
 import dataclasses
 import math
+import statistics
 import time
 from itertools import pairwise
 from statistics import fmean
@@ -956,3 +957,91 @@ def test_production_par_periode_reste_une_vue_de_la_chronique(endogene):
     brute = md.chronique(endogene, seed=GRAINE, years=1.0)["periodes"]
     assert [p["production_t"] for p in vue] == [p["production_t"] for p in brute]
     assert set(vue[0]) == {"debut_h", "fin_h", "production_t", "rupture_h"}
+
+
+# --- étape 5 : arrêts discrets du four ------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def discret(endogene) -> SimConfig:
+    return dataclasses.replace(endogene, mode_arrets_dri="discret")
+
+
+def _ample(config):
+    """Stock généreux : on isole la disponibilité du four, sans rupture de pellets."""
+    return dataclasses.replace(
+        config, point_de_commande_t=90 * config.debit_pellets_t_par_h * 24,
+        point_de_commande_j=90.0, capacite_stockyard_t=3e6, capacite_stock_usine_t=1.5e6)
+
+
+def test_en_mode_continu_il_n_y_a_aucun_arret_non_planifie(endogene):
+    assert md.simulate(endogene, seed=GRAINE, years=1.0).dri_breakdown_hours == 0.0
+
+
+def test_les_deux_bilans_tiennent_en_mode_discret(discret):
+    resultat = md.simulate(discret, seed=GRAINE, years=2.0, warmup_years=0.5)
+    _verifie_la_masse(resultat)
+    _verifie_l_amont_fenetre(resultat)
+
+
+def _disponibilite(config, graines, annees):
+    dispos = []
+    for g in graines:
+        r = md.simulate(config, seed=g, years=annees)
+        dispos.append(1 - r.dri_breakdown_hours / (config.heures_ouvrees_par_an * annees))
+    return dispos
+
+
+def test_la_disponibilite_realisee_rejoint_le_taux_d_utilisation(discret):
+    """Même disponibilité moyenne que le mode continu : c'est la condition de l'étape 5.
+
+    Avec des arrêts courts (12 h), il y a des centaines de cycles par an et la disponibilité
+    réalisée se resserre vite : sur 10 ans, son écart-type est de ~0,006, d'où une marge de
+    0,02 (plus de trois écarts-types). Sur 3 ans, elle aurait été de 0,011, et le test aurait
+    échoué par malchance une fois sur quinze.
+    """
+    config = dataclasses.replace(_ample(discret), duree_arret_h=12.0,
+                                 duree_marche_moyenne_h=12.0 * 0.85 / 0.15)
+    (dispo,) = _disponibilite(config, [GRAINE], 10.0)
+    assert dispo == pytest.approx(config.taux_utilisation_dri, abs=0.02)
+
+
+@pytest.mark.slow
+def test_la_disponibilite_tient_aussi_avec_des_arrets_de_sept_jours(discret):
+    """Valeur centrale de l'hypothèse : peu de cycles par an, donc 12 graines poolées.
+
+    Une réplication de 30 ans a un écart-type de ~0,013 sur la disponibilité : un test sur
+    une seule graine échouerait une fois sur cinquante par simple malchance.
+    """
+    dispos = _disponibilite(_ample(discret), range(12), 30.0)
+    assert fmean(dispos) == pytest.approx(discret.taux_utilisation_dri, abs=0.012)
+
+
+def test_en_marche_le_four_tourne_a_pleine_cadence(discret):
+    config = _ample(discret)
+    r = md.simulate(config, seed=GRAINE, years=3.0)
+    heures_en_marche = config.heures_ouvrees_par_an * 3 - r.dri_breakdown_hours - r.dri_stop_hours
+    assert r.dri_production_t / heures_en_marche == pytest.approx(
+        config.debit_dri_plein_t_par_h, rel=1e-3)
+
+
+def test_la_sequence_des_pannes_ne_depend_pas_du_stockage(discret):
+    """Flux dédié et horloge des heures ouvrées : deux stockages voient les mêmes pannes."""
+    petit = md.simulate(dataclasses.replace(discret, capacite_stockyard_t=150_000.0),
+                        seed=GRAINE, years=2.0)
+    grand = md.simulate(dataclasses.replace(discret, capacite_stockyard_t=900_000.0),
+                        seed=GRAINE, years=2.0)
+    assert petit.dri_breakdown_hours == grand.dri_breakdown_hours
+    assert petit.dri_breakdown_hours > 0
+
+
+@pytest.mark.slow
+def test_des_arrets_plus_longs_rendent_la_consommation_trimestrielle_plus_irreguliere(discret):
+    """Même disponibilité, arrêts plus longs et plus rares : les trimestres divergent davantage."""
+    def cv2_consommation(jours):
+        config = dataclasses.replace(_ample(discret), duree_arret_h=jours * 24.0,
+                                     duree_marche_moyenne_h=jours * 24.0 * 0.85 / 0.15)
+        c = md.chronique(config, seed=GRAINE, years=12.0, periode_h=config.heures_par_an / 4)
+        prod = [p["production_t"] for p in c["periodes"][4:]]
+        return statistics.variance(prod) / statistics.fmean(prod) ** 2
+    assert cv2_consommation(30) > 2 * cv2_consommation(2)

@@ -40,6 +40,9 @@ EXPEDITION_POLICIES = ("pull", "push")
 #: Origines des arrivées de minéraliers (voir simulation.politique_approvisionnement).
 SUPPLY_POLICIES = ("exogene", "point_de_commande")
 
+#: Façons dont le four perd ses heures non productives (voir simulation.mode_arrets_dri).
+BREAKDOWN_MODES = ("continu", "discret")
+
 #: Statuts épistémiques admis dans assumptions.yaml (l'en-tête du fichier les décrit).
 STATUSES = ("connu", "observé", "annoncé", "estimé", "inconnu", "technique")
 
@@ -201,6 +204,9 @@ class SimConfig:
     point_de_commande_j: float
     depassements_autorises: bool  # un navire commandé après un autre peut-il arriver avant ?
     reporter_si_navire_en_rade: bool  # ne pas commander tant qu'un navire attend en rade
+    mode_arrets_dri: str  # continu | discret
+    duree_arret_h: float  # durée moyenne d'un arrêt non planifié, mode discret
+    cv_duree_arret: float
     pas_h: float
     pas_echantillonnage_h: float
     graine_par_defaut: int
@@ -219,6 +225,10 @@ class SimConfig:
     stock_initial_stockyard_t: float
     stock_initial_usine_t: float
     point_de_commande_t: float
+    # mode discret : le four tourne à pleine cadence, et s'arrête le temps qu'il faut
+    debit_dri_plein_t_par_h: float
+    debit_pellets_plein_t_par_h: float
+    duree_marche_moyenne_h: float  # telle que marche / (marche + arrêt) = taux d'utilisation
 
     @classmethod
     def from_scenario(cls, scenario: Scenario) -> SimConfig:
@@ -257,6 +267,11 @@ class SimConfig:
             v, "simulation.politique_approvisionnement", SUPPLY_POLICIES
         )
         point_de_commande_j = value_of(v, "approvisionnement.point_de_commande_j")
+        mode_arrets = text_of(v, "simulation.mode_arrets_dri", BREAKDOWN_MODES)
+        duree_arret_h = value_of(v, "usine.duree_arret_non_planifie_j") * _HOURS_PER_DAY
+        if mode_arrets == "discret" and not 0 < taux_utilisation < 1:
+            # à 100 % il n'y aurait jamais d'arrêt, à 0 % jamais de marche
+            raise ValueError(f"mode discret : taux d'utilisation {taux_utilisation} hors ]0 ; 1[")
         if approvisionnement == "point_de_commande" and point_de_commande_j <= 0:
             # sans point de commande positif, aucune commande ne partirait jamais
             raise ValueError(
@@ -300,6 +315,9 @@ class SimConfig:
             reporter_si_navire_en_rade=bool(
                 value_of(v, "simulation.reporter_si_navire_en_rade")
             ),
+            mode_arrets_dri=mode_arrets,
+            duree_arret_h=duree_arret_h,
+            cv_duree_arret=value_of(v, "usine.cv_duree_arret"),
             pas_h=value_of(v, "simulation.pas_de_temps"),
             pas_echantillonnage_h=value_of(v, "simulation.pas_echantillonnage_stocks"),
             graine_par_defaut=int(value_of(v, "simulation.graine_par_defaut")),
@@ -320,6 +338,13 @@ class SimConfig:
             # s est publié en jours de consommation, comme la couverture τ : on le
             # convertit ici, une fois, pour que le modèle ne compare que des tonnes
             point_de_commande_t=point_de_commande_j * debit_pellets * _HOURS_PER_DAY,
+            debit_dri_plein_t_par_h=capacite_dri / heures_par_an,
+            debit_pellets_plein_t_par_h=capacite_dri / heures_par_an * pellets_par_t,
+            # disponibilité = marche / (marche + arrêt) = taux d'utilisation
+            duree_marche_moyenne_h=(
+                duree_arret_h * taux_utilisation / (1 - taux_utilisation)
+                if 0 < taux_utilisation < 1 else float("inf")
+            ),
         )
 
     def arrets_planifies_fenetres(self, years: float) -> list[tuple[float, float]]:

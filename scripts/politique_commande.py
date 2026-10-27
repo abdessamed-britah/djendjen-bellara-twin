@@ -89,6 +89,9 @@ def mesurer(config, reps: int, seed: int, unitaires, scenario: str = "") -> dict
         couts = eco.cout_total(r, config, unitaires)
         lignes.append({
             "beta": r.dri_production_t / cible,
+            # le taux de service propre au corridor : 1 − production perdue faute de pellets.
+            # Égal à β en mode continu ; en mode discret, β y ajoute l'aléa des pannes.
+            "beta_appro": 1.0 - eco.perte_faute_de_pellets_t(r, config) / cible,
             "rupture_h_an": r.dri_stop_hours / annees,
             "attente_h": r.wait_mean_h,
             "stock_t": r.stockyard_mean_t + r.plant_stock_mean_t,

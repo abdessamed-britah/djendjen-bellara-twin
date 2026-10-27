@@ -396,3 +396,48 @@ def test_une_option_booleenne_se_change_par_scenario():
                                   {"simulation.depassements_autorises": {"value": False}})
     scenario = cfg.Scenario(name="x", description="", values=valeurs)
     assert cfg.SimConfig.from_scenario(scenario).depassements_autorises is False
+
+
+# --- étape 5 : arrêts discrets du four -------------------------------------------
+
+
+def test_le_mode_continu_reste_celui_par_defaut(baseline):
+    """Le mode historique : basculer en silence changerait tous les résultats publiés."""
+    assert baseline.mode_arrets_dri == "continu"
+
+
+def test_la_duree_de_marche_rend_la_disponibilite_egale_au_taux_d_utilisation(baseline):
+    marche, arret = baseline.duree_marche_moyenne_h, baseline.duree_arret_h
+    assert marche / (marche + arret) == pytest.approx(baseline.taux_utilisation_dri)
+
+
+def test_la_pleine_cadence_est_la_capacite_sans_taux_d_utilisation(baseline):
+    assert baseline.debit_dri_plein_t_par_h * baseline.taux_utilisation_dri == pytest.approx(
+        baseline.debit_dri_t_par_h)
+    assert baseline.debit_pellets_plein_t_par_h == pytest.approx(
+        baseline.debit_dri_plein_t_par_h * baseline.pellets_par_t_dri)
+
+
+def test_les_hypotheses_d_arret_sont_estimees_avec_une_fourchette_large():
+    for cle in ("duree_arret_non_planifie_j", "cv_duree_arret"):
+        entree = ASSUMPTIONS["usine"][cle]
+        assert entree["status"] == "estimé"
+        bas, haut = entree["range"]
+        assert bas < entree["value"] < haut
+    bas, haut = ASSUMPTIONS["usine"]["duree_arret_non_planifie_j"]["range"]
+    assert haut / bas >= 10
+
+
+def test_le_mode_d_arret_est_un_choix_ferme():
+    valeurs = cfg.assumption_values(ASSUMPTIONS)
+    valeurs["simulation.mode_arrets_dri"] = "intermittent"
+    with pytest.raises(ValueError, match="mode_arrets_dri"):
+        cfg.SimConfig.from_scenario(cfg.Scenario(name="x", description="", values=valeurs))
+
+
+def test_le_mode_discret_refuse_un_four_toujours_disponible():
+    valeurs = cfg.assumption_values(ASSUMPTIONS)
+    valeurs["simulation.mode_arrets_dri"] = "discret"
+    valeurs["usine.taux_utilisation_dri"] = 1.0
+    with pytest.raises(ValueError, match="mode discret"):
+        cfg.SimConfig.from_scenario(cfg.Scenario(name="x", description="", values=valeurs))

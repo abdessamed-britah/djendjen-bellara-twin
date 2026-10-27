@@ -688,6 +688,97 @@ mécanisme reste ouvert.
 Reproductible par `python -m corridor.ingest.port_stats --serie embarquement` (collecte
 ponctuelle) puis `python scripts/diagnostic_dispersion.py` (~15 min sur secteur).
 
+### Des arrêts discrets du four : le modèle n'est plus réfuté sur 2023-2025
+
+*Sert l'**originalité** : la dispersion des débarquements est expliquée par un mécanisme
+physique, l'arrêt intermittent du four, et non par un réglage. Sert l'**importance** :
+l'irrégularité de la consommation coûte au corridor autant que celle de l'affrètement, et
+elle déplace le stock de sécurité optimal.*
+
+Le bilan de masse désignait la **variabilité de la consommation** comme la piste la plus
+directe. Le four a désormais un mode `discret` : il tourne à **pleine cadence** ou s'arrête,
+au lieu de tourner en permanence à 85 % de sa capacité. La **disponibilité moyenne est
+inchangée** — les arrêts non planifiés durent en moyenne `duree_arret_non_planifie_j` (7
+jours, fourchette [2 ; 30], statut *estimé*, sans source) et les marches qui les séparent
+s'en déduisent pour que le four tourne 85 % de ses heures ouvrées. Vérifié : production
+moyenne et bilans de masse inchangés, disponibilité réalisée 0,8523 ± 0,0019 pour 0,85
+visés, et le mode continu reste identique au bit près.
+
+**Une réserve de principe.** Verser *toute* la sous-utilisation du four dans des arrêts
+francs est l'interprétation la plus irrégulière possible : en réalité, une part est de la
+marche à cadence réduite. Le mode discret donne donc une **borne haute** de la variabilité
+de la consommation.
+
+**Les règles, écrites avant le calcul** (`scripts/validation_arrets.py`). Statistique : le
+CV² intra-annuel des tonnages, comme à l'étape 4. Verdict : l'observé est compatible s'il
+tombe entre les quantiles 5 % et 95 % du simulé, sur des fenêtres de même longueur. Aucun
+paramètre n'est réglé ; durée d'arrêt, stockage et `cv_delai` sont **balayés sur leurs
+fourchettes**. Période de référence : **2023-2025** — un choix **fait après l'étape 4**, au
+motif que 2022 contient une interruption suivie d'un rattrapage, signature d'une montée en
+cadence que le modèle ne représente pas. Le verdict sur 2022-2025 est publié à côté.
+
+| période | observé | combinaisons compatibles | au centre des hypothèses (7 j, 450 kt, cv 0,25) |
+| --- | ---: | ---: | --- |
+| **2023-2025** (référence) | **0,042** | **76 sur 84** | 0,032 [0,013 ; 0,066] → **compatible** |
+| 2022-2025 | 0,174 | 9 sur 84 | 0,035 [0,013 ; 0,061] → non compatible |
+| *rappel : mode continu* | | — | 0,016 [0,005 ; 0,027] → non compatible sur les deux |
+
+![Arrêts discrets : la dispersion simulée face à l'observé](docs/validation_arrets.png)
+
+- **Sur 2023-2025, des arrêts de 5 jours ou plus suffisent**, quels que soient le stockage
+  (200 à 900 kt) et `cv_delai` (0,10 à 0,60). La valeur centrale de l'hypothèse (7 jours)
+  est compatible, et l'observé tombe sur la médiane simulée pour des arrêts de 12 à
+  17 jours. Seuls des arrêts de 2 jours restent trop réguliers, sauf aux bords de la carte.
+- **Sur 2022-2025, il faut des arrêts de 30 jours**, le bord de la fourchette. C'est cohérent
+  avec une année 2022 de montée en cadence : un régime différent, qu'un seul paramètre
+  stationnaire ne décrit pas.
+- **Ces valeurs sont plausibles, mais rien ne les documente.** Un module DRI qui perd ~52
+  jours par an en arrêts d'une à deux semaines n'a rien d'invraisemblable — réfractaire,
+  compresseurs, alimentation en gaz —, mais aucune source publique ne renseigne les arrêts
+  d'AQS.
+- **Ce n'est pas une validation au sens fort.** Les bandes simulées couvrent presque un ordre
+  de grandeur sur 12 trimestres : le test a peu de puissance. Il établit que le modèle
+  **n'est plus réfuté** par les données de 2023-2025, pas que le mécanisme est le bon —
+  d'autres sources de regroupement (fenêtres contractuelles, plusieurs fournisseurs)
+  produiraient sans doute une dispersion voisine. Et la période de référence a été choisie
+  après avoir vu le rôle de 2022.
+
+**Ce que changent les arrêts discrets** (`scripts/effet_arrets.py`, 16 réplications appariées
+en régime stationnaire, même point de commande qu'à l'étape 2). Le taux de service publié
+est désormais **β approvisionnement**, la part de la cible perdue *faute de pellets*. En mode
+discret, β brut (production ÷ cible) y ajoute l'aléa des pannes, qui appartient à l'usine et
+non au corridor : à stock généreux il vaut 1,006 dans toutes les configurations, simple
+chance commune aux graines appariées. Le coût des arrêts du DRI est calculé de la même façon,
+heures de rupture × cadence : la définition « cible − production » en aurait fait un coût
+positif fictif, puisqu'elle comptait les années malchanceuses et ramenait les autres à zéro.
+En mode continu les deux définitions coïncident, et tous les chiffres antérieurs sont
+inchangés.
+
+| configuration | β appro, continu → discret | ruptures (h/an) | coût total (M USD/an) |
+| --- | --- | ---: | ---: |
+| baseline, dépassements permis | 98,86 → **97,05** (−1,81 ± 0,16) | 95 → 208 | 2,38 → **3,25** (+0,87 ± 0,07) |
+| baseline, dépassements interdits | 98,68 → **96,88** (−1,80 ± 0,15) | 109 → 219 | 2,48 → **3,35** (+0,88 ± 0,07) |
+| phase 2, dépassements permis | 99,18 → **97,05** (−2,14 ± 0,16) | 68 → 208 | 4,90 → **7,22** (+2,31 ± 0,16) |
+| phase 2, dépassements interdits (s = 35 j) | 99,49 → **98,23** (−1,26 ± 0,17) | 42 → 125 | 6,57 → **8,39** (+1,82 ± 0,18) |
+
+- **Le taux de service perd 1,3 à 2,1 points, et les ruptures doublent ou triplent.** Pendant
+  un long arrêt, la position de stock ne baisse pas et l'on ne commande plus ; à la reprise,
+  le four consomme à pleine cadence — 18 % plus vite que la cadence moyenne sur laquelle la
+  politique était réglée — et la flotte en route ne suffit plus.
+- **Presque tout le surcoût est dans les arrêts du DRI** ; en phase 2 s'y ajoutent des
+  surestaries (+0,4 à +0,9 M USD/an), parce que les navires engagés avant un arrêt arrivent
+  sur un stockyard qui ne se vide plus. Le portage ne bouge presque pas (au plus
+  −0,17 M USD/an).
+- **Le stock de sécurité optimal monte de 30 à 35 jours** en baseline et en phase 2 avec
+  dépassements ; il reste à 35 jours en phase 2 sans dépassement. L'optimum reste intérieur
+  et significatif dans les quatre cas, et la courbe garde sa forme asymétrique. À ce nouvel
+  optimum, le surcoût par rapport au mode continu tombe à ~0,5 M USD/an en baseline (2,84
+  contre 2,38) et ~1,5 M en phase 2 (6,39 contre 4,90) : **une consommation irrégulière se
+  paie, mais se paie moins si l'on remonte le point de commande.**
+
+Reproductible par `python scripts/validation_arrets.py` (~40 min sur secteur) puis
+`python scripts/effet_arrets.py` (~40 min).
+
 > **Ces chiffres ne sont pas des prévisions.** Les deux paramètres qui les pilotent ne sont
 > pas sourcés : la **régularité des arrivées** de minéraliers (statut *estimé*, jamais
 > mesurée) et les **capacités de stockage** du port et de l'usine (statut *inconnu*). Le

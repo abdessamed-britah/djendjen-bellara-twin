@@ -26,6 +26,7 @@ dépend de la seule graine de la réplication.
 
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
@@ -46,6 +47,7 @@ from corridor.sim.config import SimConfig
 #: commande y tire le n-ième délai, quel que soit le moment où elle part.
 SOURCES = (
     "intervalle", "taille_navire", "cadence_dechargement", "rail", "delai_approvisionnement",
+    "arrets_dri",
 )
 
 
@@ -137,6 +139,9 @@ class Samplers:
     #: Délai d'approvisionnement, de la commande à l'arrivée en rade. Inutilisé en
     #: politique exogène ; facultatif pour que les jeux construits à la main restent valides.
     lead_time_h: Sampler | None = None
+    #: Mode d'arrêts discrets du four : durée d'un arrêt, durée de marche entre deux arrêts.
+    breakdown_h: Sampler | None = None
+    uptime_h: Sampler | None = None
 
     @classmethod
     def from_config(cls, config: SimConfig) -> Samplers:
@@ -155,4 +160,8 @@ class Samplers:
             lead_time_h=from_mean_cv(
                 config.delai_approvisionnement_h, config.cv_delai_approvisionnement
             ),
+            breakdown_h=from_mean_cv(config.duree_arret_h, config.cv_duree_arret),
+            # une panne n'a pas de mémoire : marche exponentielle (cv = 1)
+            uptime_h=(from_mean_cv(config.duree_marche_moyenne_h, 1.0)
+                      if math.isfinite(config.duree_marche_moyenne_h) else None),
         )

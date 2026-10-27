@@ -178,9 +178,12 @@ def test_une_source_inconnue_est_refusee():
 
 
 def test_les_arrets_planifies_ne_sont_pas_une_source_d_alea():
-    """Ils sont déterministes : leur donner un flux laisserait croire qu'ils en consomment."""
-    assert not any("arret" in source for source in sp.SOURCES)
+    """Ils sont déterministes : leur donner un flux laisserait croire qu'ils en consomment.
+
+    Les arrêts **non planifiés** du mode discret, eux, en ont un : `arrets_dri`.
+    """
+    assert not any("planifi" in source for source in sp.SOURCES)
     assert set(sp.SOURCES) == {
         "intervalle", "taille_navire", "cadence_dechargement", "rail",
-        "delai_approvisionnement",
+        "delai_approvisionnement", "arrets_dri",
     }

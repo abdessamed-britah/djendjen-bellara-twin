@@ -1,5 +1,6 @@
 ﻿"""Tests de scripts/economic_summary.py : conversion perte → dollars, sans simulation."""
 
+import dataclasses
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
@@ -92,11 +93,16 @@ def test_le_scenario_du_chiffre_applique_est_celui_de_l_irregularite_mesuree():
 RAW = load_yaml(ASSUMPTIONS_PATH)
 
 
-def _resultat(production_t, heures_rade=0.0, stockyard=0.0, usine=0.0, annees=2.0):
-    """Le strict nécessaire de SimResult pour cout_total, sans simuler."""
+def _resultat(production_t, heures_rade=0.0, stockyard=0.0, usine=0.0, annees=2.0,
+              rupture_h=0.0):
+    """Le strict nécessaire de SimResult pour cout_total, sans simuler.
+
+    `rupture_h` : heures où le four a manqué de pellets. C'est d'elles, et non de l'écart à la
+    cible, que se déduit la perte : voir `perte_faute_de_pellets_t`.
+    """
     return SimpleNamespace(annees_mesurees=annees, dri_production_t=production_t,
                            anchorage_ship_hours=heures_rade, stockyard_mean_t=stockyard,
-                           plant_stock_mean_t=usine)
+                           plant_stock_mean_t=usine, dri_stop_hours=rupture_h)
 
 
 @pytest.fixture(scope="module")
@@ -127,11 +133,41 @@ def test_sans_perte_ni_attente_ni_stock_le_cout_est_nul(endogene):
     assert couts == {"arrets_dri": 0.0, "surestaries": 0.0, "portage": 0.0, "total": 0.0}
 
 
-def test_le_cout_d_arret_est_la_production_manquante_par_an_fois_la_marge(endogene):
+def test_le_cout_d_arret_est_la_production_perdue_faute_de_pellets(endogene):
+    """Heures de rupture × cadence = tonnes perdues ; ramenées à l'an, × la marge."""
     u = eco.couts_unitaires(RAW)
-    manque_t = 10_000.0
-    couts = eco.cout_total(_resultat(_cible(endogene, 2.0) - manque_t), endogene, u)
+    rupture_h = 40.0
+    manque_t = rupture_h * endogene.debit_dri_t_par_h
+    couts = eco.cout_total(_resultat(_cible(endogene, 2.0) - manque_t, rupture_h=rupture_h),
+                           endogene, u)
     assert couts["arrets_dri"] == pytest.approx(manque_t / 2.0 * u["marge_usd_t"])
+
+
+def test_en_mode_continu_la_perte_vaut_l_ecart_a_la_cible(endogene):
+    """Les deux définitions coïncident tant que le four ne connaît que la rupture."""
+    rupture_h = 40.0
+    r = _resultat(_cible(endogene, 2.0) - rupture_h * endogene.debit_dri_t_par_h,
+                  rupture_h=rupture_h)
+    assert eco.perte_faute_de_pellets_t(r, endogene) == pytest.approx(
+        _cible(endogene, 2.0) - r.dri_production_t)
+
+
+def test_en_mode_discret_une_heure_de_rupture_coute_la_pleine_cadence(endogene):
+    discret = dataclasses.replace(endogene, mode_arrets_dri="discret")
+    r = _resultat(0.0, rupture_h=10.0)
+    assert eco.perte_faute_de_pellets_t(r, discret) == pytest.approx(
+        10.0 * discret.debit_dri_plein_t_par_h)
+
+
+def test_les_pannes_du_four_ne_sont_pas_un_cout_du_corridor(endogene):
+    """Une année à pannes nombreuses produit moins sans manquer de pellets : coût nul.
+
+    Le compter ferait de l'aléa des pannes, nul en moyenne, un coût positif fictif : ramené
+    à zéro les bonnes années, compté les mauvaises.
+    """
+    discret = dataclasses.replace(endogene, mode_arrets_dri="discret")
+    mauvaise_annee = _resultat(_cible(discret, 2.0) * 0.95, rupture_h=0.0)
+    assert eco.cout_total(mauvaise_annee, discret, eco.couts_unitaires(RAW))["arrets_dri"] == 0.0
 
 
 def test_produire_au_dela_de_la_cible_ne_rapporte_rien(endogene):
@@ -156,14 +192,15 @@ def test_le_portage_porte_sur_le_stock_physique_moyen(endogene):
 
 def test_le_total_est_la_somme_des_trois_termes(endogene):
     couts = eco.cout_total(_resultat(_cible(endogene, 2.0) - 5_000.0, 300.0, 80_000.0,
-                                     40_000.0), endogene, eco.couts_unitaires(RAW))
+                                     40_000.0, rupture_h=20.0), endogene,
+                           eco.couts_unitaires(RAW))
     assert couts["total"] == pytest.approx(sum(couts[t] for t in eco.TERMES))
 
 
 def test_l_estimation_du_total_est_la_somme_des_estimations_des_termes(endogene):
     """Moyenne linéaire : la somme des moyennes est la moyenne des sommes."""
-    resultats = [_resultat(_cible(endogene, 2.0) - k * 1000, 10.0 * k, 1e5, 5e4)
-                 for k in range(1, 6)]
+    resultats = [_resultat(_cible(endogene, 2.0) - k * 1000, 10.0 * k, 1e5, 5e4,
+                           rupture_h=float(k)) for k in range(1, 6)]
     couts = eco.estimer_couts(resultats, endogene, eco.couts_unitaires(RAW))
     assert couts["total"].mean == pytest.approx(sum(couts[t].mean for t in eco.TERMES))
 

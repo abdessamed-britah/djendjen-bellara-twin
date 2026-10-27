@@ -40,6 +40,28 @@ usine:
     unit: jours/an
     status: estimé
     note: "Maintenance annuelle typique d'un module DRI."
+  duree_arret_non_planifie_j:
+    value: 7
+    range: [2, 30]
+    unit: jours
+    status: estimé
+    note: >
+      Durée moyenne d'un arrêt non planifié du module DRI, en mode d'arrêts discrets
+      (`simulation.mode_arrets_dri: discret`). **Valeur de travail sans source** : les
+      arrêts d'un réacteur Midrex vont de quelques heures (déclenchement, compresseur) à
+      plusieurs semaines (réfractaire, alimentation en gaz, campagne de montée en cadence).
+      La fourchette est volontairement large. La fréquence des arrêts n'est pas un paramètre
+      : elle se déduit de cette durée et de `taux_utilisation_dri`, pour que la disponibilité
+      moyenne reste exactement celle de l'hypothèse.
+  cv_duree_arret:
+    value: 1.0
+    range: [0.5, 1.5]
+    unit: coefficient de variation
+    status: estimé
+    note: >
+      Variabilité de la durée d'un arrêt non planifié (loi gamma). 1 = exponentielle. Les
+      durées de **marche** entre deux arrêts suivent, elles, une loi exponentielle : une
+      panne n'a pas de mémoire de la précédente.
   pellets_par_t_dri:
     value: 1.45
     range: [1.40, 1.50]
@@ -370,6 +392,20 @@ simulation:
       marche aléatoire sans dérive (scripts/convergence_horizon.py). « point_de_commande » :
       un navire est affrété quand la position de stock passe sous le point de commande
       (bloc `approvisionnement`). La rétroaction rend au système une dérive de rappel.
+  mode_arrets_dri:
+    value: continu
+    unit: continu | discret
+    status: technique
+    note: >
+      Comment le four perd les 1 − `taux_utilisation_dri` de ses heures ouvrées.
+      « continu » (historique) : il tourne en permanence à cadence réduite, capacité ×
+      taux d'utilisation. « discret » : il tourne à **pleine cadence** et s'arrête par
+      intermittence, arrêts non planifiés de durée `usine.duree_arret_non_planifie_j`. La
+      disponibilité moyenne et donc la production moyenne sont les mêmes dans les deux
+      modes ; seule change la régularité de la consommation. Verser toute la
+      sous-utilisation dans des arrêts francs est l'interprétation **la plus irrégulière
+      possible** : en réalité une part est de la marche à cadence réduite. Le mode discret
+      donne donc une borne haute de la variabilité de la consommation.
   depassements_autorises:
     value: true
     unit: booléen

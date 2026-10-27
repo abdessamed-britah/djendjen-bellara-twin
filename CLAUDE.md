@@ -64,8 +64,9 @@ sur 16 trimestres de bilans publics), les deux capacités de stockage restent `i
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **865 tests, ~19 s mesurés au repos sur secteur**
-(2026-10-26 ; sur batterie, processeur bridé, comptez trois à quatre fois plus). S'y ajoutent **23 tests
+`ruff check .` et `pytest -q` passent : **904 tests, ~37 s sur batterie le 2026-10-27, soit
+~20-25 s attendus sur secteur**
+(2026-10-26 ; sur batterie, processeur bridé, comptez trois à quatre fois plus). S'y ajoutent **26 tests
 marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
 `pytest -m slow -q` (~100 s) : la validation analytique du moteur de file, deux validations de
 comportement de `beta_site.py`, les deux mesures de la limite 0 (gain des nombres communs,
@@ -460,6 +461,22 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   trimestre, les ventes locales partent par la route) et aussi irrégulières que les
   importations : **elles ne disent rien de la variabilité de la consommation.** Le mécanisme
   reste à choisir avec le porteur du projet.
+  **Étape 5 (2026-10-27) : arrêts discrets du four, et le modèle n'est plus réfuté sur
+  2023-2025.** `simulation.mode_arrets_dri: discret` fait tourner le four à pleine cadence
+  ou à l'arrêt, à disponibilité inchangée (arrêts de 7 j [2 ; 30], marche exponentielle,
+  horloge des pannes sur les seules heures ouvrées, flux `arrets_dri`). C'est la lecture
+  **la plus irrégulière** du taux d'utilisation : une borne haute. Validation
+  (`validation_arrets.py`, règles écrites avant le calcul, période 2023-2025 choisie
+  **après** l'étape 4) : CV² intra observé 0,042, compatible pour 76 combinaisons sur 84,
+  dont le centre des hypothèses ; il suffit d'arrêts de 5 j ou plus. Sur 2022-2025, seuls
+  des arrêts de 30 j passent (montée en cadence). **Test de faible puissance** : non
+  réfuté n'est pas validé, d'autres mécanismes donneraient une dispersion voisine.
+  Effet (`effet_arrets.py`, appariés, s de l'étape 2) : β approvisionnement −1,3 à −2,1
+  points, ruptures ×2 à ×3, coût total +0,9 M USD/an en baseline et +1,8 à +2,3 M en
+  phase 2 ; le s optimal passe de 30 à 35 j. **Le coût des arrêts du DRI se calcule
+  désormais sur les heures de rupture × cadence de marche** (`perte_faute_de_pellets_t`),
+  pas sur cible − production : en mode discret, l'aléa des pannes y serait devenu un coût
+  fictif. Identique en mode continu, tous les chiffres antérieurs sont inchangés.
 - **Régime stationnaire : un instantané des cumuls, pas une remise à zéro.**
   `simulate(..., warmup_years=W)` publie la fenêtre [W, years]. À W, on relève les compteurs
   et les intégrales, et chaque indicateur publié est une différence. Une remise à zéro
@@ -739,6 +756,8 @@ python scripts/politique_commande.py          # report, balayage de s, attente v
 python scripts/validation_ca2.py              # validation par la dispersion (~1 h secteur)
 python -m corridor.ingest.port_stats --serie embarquement  # exportations (ponctuel)
 python scripts/diagnostic_dispersion.py       # tendance, taille, production (~15 min)
+python scripts/validation_arrets.py           # arrêts discrets : carte de compatibilité (~40 min)
+python scripts/effet_arrets.py               # continu contre discret : β et coût (~40 min)
 ```
 
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de
@@ -766,7 +785,7 @@ scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          economic_summary, compare_scenarios, h2_blocking,
                          poste_stockage_factoriel, frontiere_service, frontiere_directe,
                          convergence_horizon, politique_commande, validation_ca2,
-                         diagnostic_dispersion,
+                         diagnostic_dispersion, validation_arrets, effet_arrets,
                          cout_regularite,
                          beta_site, metamodele_frontiere, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés

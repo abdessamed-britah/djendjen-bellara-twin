@@ -181,11 +181,30 @@ def couts_unitaires(raw, niveau: str = "value") -> dict[str, float]:
     }
 
 
+def cadence_de_marche(config: SimConfig) -> float:
+    """Ce que produit le four en une heure où il tourne : pleine cadence en mode discret."""
+    if config.mode_arrets_dri == "discret":
+        return config.debit_dri_plein_t_par_h
+    return config.debit_dri_t_par_h
+
+
+def perte_faute_de_pellets_t(resultat, config: SimConfig) -> float:
+    """Production perdue **faute de pellets** sur la fenêtre : heures de rupture × cadence.
+
+    C'est ce que le corridor coûte à l'aciérie, et seulement cela. Mesurer « cible −
+    production » reviendrait au même en mode continu, mais pas en mode discret : la
+    production d'une année y dépend aussi du nombre de pannes tirées, un aléa de l'usine
+    nul en moyenne. Le ramener à zéro les bonnes années et le compter les mauvaises en
+    ferait un coût positif fictif, imputé au corridor.
+    """
+    return resultat.dri_stop_hours * cadence_de_marche(config)
+
+
 def cout_total(resultat, config: SimConfig, unitaires: dict[str, float]) -> dict[str, float]:
     """Coût annuel d'une réplication, en USD/an : trois termes séparés et leur somme.
 
-    - **arrêts du DRI** : production manquante sur la fenêtre mesurée × marge par tonne.
-      Ramenée à zéro si négative — produire au-delà de la cible n'est pas un gain ;
+    - **arrêts du DRI** : production perdue faute de pellets sur la fenêtre mesurée × marge
+      par tonne (`perte_faute_de_pellets_t`) ;
     - **surestaries** : navire-heures passées en rade × taux horaire. Intégrées dans le
       temps, elles comptent aussi les navires encore en rade à la fin ;
     - **portage** : stock physique moyen (stockyard + usine) × prix × taux de portage. Le
@@ -195,8 +214,7 @@ def cout_total(resultat, config: SimConfig, unitaires: dict[str, float]) -> dict
     l'horizon total : l'échauffement ne compte ni dans la production ni dans les coûts.
     """
     annees = resultat.annees_mesurees
-    cible = config.debit_dri_t_par_h * config.heures_ouvrees_par_an * annees
-    perte_t_an = max(cible - resultat.dri_production_t, 0.0) / annees
+    perte_t_an = perte_faute_de_pellets_t(resultat, config) / annees
     stock_moyen_t = resultat.stockyard_mean_t + resultat.plant_stock_mean_t
     termes = {
         "arrets_dri": perte_t_an * unitaires["marge_usd_t"],
