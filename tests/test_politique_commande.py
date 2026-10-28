@@ -208,3 +208,25 @@ def test_la_figure_est_un_png_non_vide(tmp_path):
                  for h, _ in pc.eco.HYPOTHESES_DEPASSEMENT}
     chemin = pc.write_figure(balayages, 5, tmp_path / "p.png")
     assert chemin.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+
+def test_mesurer_plusieurs_rend_exactement_des_appels_separes(monkeypatch):
+    """Un seul lot de processus, mêmes graines que `replicate` : rien ne doit changer.
+
+    Horizon raccourci (le protocole stationnaire coûterait 20 ans par réplication)."""
+    import dataclasses
+
+    from corridor.sim.run import replicate
+    monkeypatch.setattr(pc, "ECHAUFFEMENT_STATIONNAIRE_ANS", 0.25)
+    monkeypatch.setattr(pc, "FENETRE_STATIONNAIRE_ANS", 0.25)
+    raw = pc.load_yaml(pc.ASSUMPTIONS_PATH)
+    unitaires = pc.eco.couts_unitaires(raw)
+    base = pc.eco.configuration_stationnaire("baseline_endogene", True)
+    autre = dataclasses.replace(base, point_de_commande_t=base.point_de_commande_t * 0.5)
+    ensemble = pc.mesurer_plusieurs([base, autre], 2, 5, unitaires, processus=1)
+    for mesure, config in zip(ensemble, (base, autre), strict=True):
+        attendu = pc._mesure(replicate(config, 0.5, 2, 5, "", warmup_years=0.25), config,
+                             unitaires)
+        assert mesure["lignes"] == attendu["lignes"]
+    assert ensemble[0]["lignes"] != ensemble[1]["lignes"]

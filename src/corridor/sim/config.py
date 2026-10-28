@@ -43,6 +43,9 @@ SUPPLY_POLICIES = ("exogene", "point_de_commande")
 #: Façons dont le four perd ses heures non productives (voir simulation.mode_arrets_dri).
 BREAKDOWN_MODES = ("continu", "discret")
 
+#: Ce que la politique de commande sait des arrêts du four (voir simulation.politique_arrets).
+STOP_AWARE_POLICIES = ("aveugle", "rythme_moyen", "date_de_reprise")
+
 #: Statuts épistémiques admis dans assumptions.yaml (l'en-tête du fichier les décrit).
 STATUSES = ("connu", "observé", "annoncé", "estimé", "inconnu", "technique")
 
@@ -205,6 +208,7 @@ class SimConfig:
     depassements_autorises: bool  # un navire commandé après un autre peut-il arriver avant ?
     reporter_si_navire_en_rade: bool  # ne pas commander tant qu'un navire attend en rade
     mode_arrets_dri: str  # continu | discret
+    politique_arrets: str  # aveugle | rythme_moyen | date_de_reprise
     duree_arret_h: float  # durée moyenne d'un arrêt non planifié, mode discret
     cv_duree_arret: float
     pas_h: float
@@ -316,6 +320,7 @@ class SimConfig:
                 value_of(v, "simulation.reporter_si_navire_en_rade")
             ),
             mode_arrets_dri=mode_arrets,
+            politique_arrets=text_of(v, "simulation.politique_arrets", STOP_AWARE_POLICIES),
             duree_arret_h=duree_arret_h,
             cv_duree_arret=value_of(v, "usine.cv_duree_arret"),
             pas_h=value_of(v, "simulation.pas_de_temps"),

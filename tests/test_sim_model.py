@@ -1045,3 +1045,73 @@ def test_des_arrets_plus_longs_rendent_la_consommation_trimestrielle_plus_irregu
         prod = [p["production_t"] for p in c["periodes"][4:]]
         return statistics.variance(prod) / statistics.fmean(prod) ** 2
     assert cv2_consommation(30) > 2 * cv2_consommation(2)
+
+
+# --- étape 7 : politique de commande consciente des arrêts ------------------------
+
+
+def test_la_politique_des_arrets_est_aveugle_par_defaut(endogene):
+    assert endogene.politique_arrets == "aveugle"
+
+
+def _corridor(config):
+    _, corridor = md._construire(config, GRAINE, 1.0, None, 0.0)
+    return corridor
+
+
+def test_aveugle_ne_touche_pas_a_la_position(discret):
+    corridor = _corridor(discret)
+    corridor._pendant_un_arret(100.0)
+    assert corridor.consommation_fictive_t == 0.0
+
+
+def test_rythme_moyen_retranche_une_heure_de_consommation_moyenne_par_heure(discret):
+    config = dataclasses.replace(discret, politique_arrets="rythme_moyen")
+    corridor = _corridor(config)
+    corridor._pendant_un_arret(100.0)
+    corridor._pendant_un_arret(99.0)
+    assert corridor.consommation_fictive_t == pytest.approx(
+        2 * config.debit_pellets_t_par_h * config.pas_h)
+
+
+@pytest.mark.parametrize("fraction", [2.0, 1.0, 0.5, 0.0])
+def test_date_de_reprise_compte_la_consommation_qui_viendra_dans_le_delai(discret, fraction):
+    config = dataclasses.replace(discret, politique_arrets="date_de_reprise")
+    corridor = _corridor(config)
+    delai = config.delai_approvisionnement_h
+    corridor._pendant_un_arret(fraction * delai)
+    attendue = config.debit_pellets_plein_t_par_h * max(delai - fraction * delai, 0.0)
+    assert corridor.consommation_fictive_t == pytest.approx(
+        attendue - config.debit_pellets_t_par_h * delai)
+
+
+def test_date_de_reprise_ne_commande_rien_de_plus_tant_que_la_reprise_est_loin(discret):
+    """Arrêt plus long que le délai : la position vue est même relevée, rien à commander."""
+    config = dataclasses.replace(discret, politique_arrets="date_de_reprise")
+    corridor = _corridor(config)
+    corridor._pendant_un_arret(3 * config.delai_approvisionnement_h)
+    assert corridor.consommation_fictive_t < 0
+
+
+@pytest.mark.parametrize("politique", ["rythme_moyen", "date_de_reprise"])
+def test_les_deux_bilans_tiennent_avec_une_politique_consciente_des_arrets(discret, politique):
+    resultat = md.simulate(dataclasses.replace(discret, politique_arrets=politique),
+                           seed=GRAINE, years=1.0, warmup_years=0.25)
+    _verifie_la_masse(resultat)
+    _verifie_l_amont_fenetre(resultat)
+
+
+def test_commander_pendant_les_arrets_releve_le_stock_physique(discret):
+    """Les commandes passées pendant l'arrêt arrivent : le stock moyen monte."""
+    def stock(politique):
+        r = md.simulate(dataclasses.replace(discret, politique_arrets=politique),
+                        seed=GRAINE, years=2.5, warmup_years=0.5)
+        return r.stockyard_mean_t + r.plant_stock_mean_t
+    assert stock("rythme_moyen") > stock("aveugle")
+
+
+def test_les_pannes_restent_les_memes_quelle_que_soit_la_politique(discret):
+    heures = {p: md.simulate(dataclasses.replace(discret, politique_arrets=p), seed=GRAINE,
+                             years=1.0).dri_breakdown_hours
+              for p in ("aveugle", "rythme_moyen", "date_de_reprise")}
+    assert len(set(heures.values())) == 1

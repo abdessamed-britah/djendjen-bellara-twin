@@ -904,29 +904,42 @@ que le projet ignore, pour dimensionner) et une **année isolée** après le mê
 **Enveloppe des quatre variantes : β approvisionnement de long terme entre 85,8 % et
 100,0 %, coût total entre 3,2 et 22,1 M USD/an** (quantiles 5 % et 95 %, toutes variantes).
 
-**D'où vient la dispersion.**
+**D'où vient la dispersion.** *(Tableau corrigé à l'étape 7 : voir la note dessous.)*
 
-| variante | part de l'aléa, long terme (β / coût) | part de l'aléa, une année (β / coût) | ρ² de `cv_delai` (β / coût) | ρ² des deux stockages | ρ² de la durée d'arrêt |
-| --- | --- | --- | --- | --- | --- |
-| continu, permis | 3 % / 2 % | 21 % / 21 % | 0,93 / 0,95 | ≤ 0,01 | 0,00 |
-| continu, interdits | 0 % / 0 % | 4 % / 6 % | 0,97 / 0,98 | 0,00 | 0,00 |
-| discret, permis | 4 % / 2 % | 22 % / 27 % | 0,85 / 0,74 | ≤ 0,07 | 0,03 / 0,07 |
-| discret, interdits | 1 % / 1 % | 10 % / 11 % | 0,96 / 0,95 | ≤ 0,01 | 0,01 / 0,02 |
+| variante | part de l'aléa, long terme (β / coût) | part de l'aléa, une année (β / coût) | part de `cv_delai`, long terme (β / coût) | part de `cv_delai`, une année (β / coût) | part des deux stockages | part de la durée d'arrêt |
+| --- | --- | --- | --- | --- | --- | --- |
+| continu, permis | 11 % / 5 % | 65 % / 47 % | 0,91 / 0,95 | 0,38 / 0,54 | ≤ 0,02 | ≤ 0,03 |
+| continu, interdits | 3 % / 2 % | 33 % / 22 % | 0,95 / 0,97 | 0,59 / 0,71 | ≤ 0,02 | ≤ 0,03 |
+| discret, permis | 12 % / 5 % | 68 % / 46 % | 0,80 / 0,73 | 0,25 / 0,38 | ≤ 0,12 | ≤ 0,10 |
+| discret, interdits | 3 % / 2 % | 34 % / 26 % | 0,93 / 0,93 | 0,61 / 0,68 | ≤ 0,03 | ≤ 0,05 |
 
-La part de l'aléa est la variance de 100 réplications à paramètres centraux rapportée à la
-variance des 500 tirages (approximation : l'aléa est mesuré au centre). ρ² est le carré de la
-corrélation de rang entre un paramètre et le résultat de long terme.
+**Une seule définition de la part d'un paramètre** : Var(E[Y | X]) / Var(Y), la variance des
+moyennes du résultat par classe du paramètre (dix classes d'effectifs égaux) rapportée à sa
+variance totale — l'indice de Sobol du premier ordre, puisque les paramètres sont tirés
+indépendamment. **La part de l'aléa** vient de l'appariement des deux horizons : chaque tirage
+a une année isolée et une moyenne sur 16 ans aux mêmes paramètres, d'où l'aléa annuel moyen
+B = (Var Y₁ − Var Y₁₆)·16/15, rapporté à Var Y₁ (une année) ou B/16 à Var Y₁₆ (long terme).
 
-- **Une seule inconnue pilote le chiffre : la dispersion du délai d'approvisionnement.** Elle
-  explique de 74 % à 98 % de la variance de β et du coût selon la variante ; les deux capacités
-  de stockage, au plus 7 %, et la durée des arrêts du four autant. Sourcer les silos
-  (tâche 2 du projet) ne resserrerait presque pas la plage ; connaître la régularité des
-  traversées la resserrerait presque entièrement.
-- **Le long terme et l'année isolée diffèrent peu**, et l'année isolée a une médiane *plus
-  haute* : la plupart des années ne connaissent aucune rupture, et les ruptures se concentrent
-  dans quelques mauvaises années, que la moyenne sur 16 ans répartit. L'aléa d'une année ne
-  pèse que 4 à 27 % de la dispersion annuelle. C'est l'inverse du modèle exogène (86 %, voir
-  ci-dessous) : le chiffre est maintenant dominé par ce que le projet ignore, pas par la chance.
+> **Correction (étape 7).** La première version de ce tableau donnait l'aléa d'une année à
+> « 4 à 27 % », et la part de `cv_delai` à « 74 à 98 % » par un ρ² de rang mesuré sur le seul
+> long terme. Deux définitions, et la première était fausse : elle mesurait l'aléa **aux
+> paramètres centraux** (`cv_delai` = 0,35), alors que l'aléa annuel grandit avec `cv_delai`.
+> Avec l'estimation ci-dessus, qui utilise tous les tirages, la part de l'aléa et celle des
+> paramètres se complètent à ~1 sur les deux horizons. Les quantiles de β et du coût ne
+> changent pas : seule leur décomposition était fausse.
+
+- **Une seule inconnue pilote le chiffre de long terme : la dispersion du délai
+  d'approvisionnement.** Elle explique 73 à 97 % de la variance de β et du coût selon la
+  variante ; les deux capacités de stockage, au plus 12 %, et la durée des arrêts du four au
+  plus 10 %. Sourcer les silos (tâche 2 du projet) ne resserrerait presque pas la plage ;
+  connaître la régularité des traversées la resserrerait presque entièrement.
+- **Sur une année isolée, l'aléa pèse un tiers à deux tiers** de la dispersion de β (33 à
+  68 %), et `cv_delai` le reste ou presque. L'année isolée a pourtant une médiane *plus haute*
+  que le long terme : la plupart des années ne connaissent aucune rupture, et les ruptures se
+  concentrent dans quelques mauvaises années, que la moyenne sur 16 ans répartit. **Cette part
+  dépend de la largeur des fourchettes** : resserrer `cv_delai` à [0,10 ; 0,40] la fait monter
+  de 33-68 % à 43-75 %. Ce n'est pas une propriété du corridor, c'est le rapport entre ce qu'il
+  a d'aléatoire et ce que le projet ignore.
 - **Restreint à `cv_delai` ≤ 0,40** — au-delà, l'étape 3 a jugé l'écart-type du délai peu
   plausible pour une traversée (301 tirages sur 500) —, β de long terme passe à 98,4 %
   [93,5 ; 100,0] dans la variante la plus défavorable (discret, interdits) et ≥ 99,4 % en
@@ -950,13 +963,231 @@ modèle corrigé, et donc lesquelles l'article peut porter.*
 
 | ancienne conclusion (modèle exogène) | verdict | ce que dit le modèle corrigé (dans les quatre variantes) |
 | --- | --- | --- |
-| **Le stockage ne sert pas la production** (limite 0 : la capacité ne change rien à stock initial figé) | **tient** | Effet sur β nul ou légèrement négatif (au plus −0,02 point) ; ρ² des capacités ≤ 0,01 sur β dans les 500 tirages. Établi désormais en régime stationnaire, sans artefact de stock initial. Le stockage supprime le blocage à quai, sans valeur économique dans ce modèle ; son effet sur le coût dépend de la variante (0 à −0,16 M USD/an). |
+| **Le stockage ne sert pas la production** (limite 0 : la capacité ne change rien à stock initial figé) | **tient** | Effet sur β nul ou légèrement négatif (au plus −0,02 point) ; part des capacités ≤ 0,02 chacune sur β dans les 500 tirages. Établi désormais en régime stationnaire, sans artefact de stock initial. Le stockage supprime le blocage à quai, sans valeur économique dans ce modèle ; son effet sur le coût dépend de la variante (0 à −0,16 M USD/an). |
 | **Le second poste déplace la file, il ne la supprime pas** | **change** | Il la **supprime en grande partie** : −39 à −71 h d'attente par navire, et le blocage qui réapparaît à quai (stockage de base seulement) ne reprend que < 1 à ~25 % des navire-heures retirées de la rade ; à stockage haut, rien n'est déplacé. Il reste sans effet utile sur la production (≤ +0,06 point), mais devient **le seul levier du coût** : −1,6 à −3,0 M USD/an, bruts, en surestaries comptées en borne haute. « Le poste n'est pas le levier » ne vaut donc plus que pour la production. |
-| **La régularité domine au-delà de 95 %** (frontière : β = 0,99 n'est atteignable qu'à c_a² = 0, le stockage est un mauvais placement contre l'irrégularité) | **tient sur le fond, tombe dans sa forme** | Ce qui pilote β est bien la régularité, et plus nettement qu'avant : `cv_delai` explique 85 à 97 % de la variance de β, le stockage ≤ 1 %. Mais la régularité qui compte est celle des **délais**, et c_a² n'est plus une donnée d'entrée : il naît de la politique de commande. Et le seuil tombe : β ≥ 0,99 est atteint dans 24 à 48 % des tirages de long terme, sans arrivées régulières. |
-| *Une année isolée : 86 % de la dispersion vient de l'aléa* (`beta_site.py`) | **tombe** | 4 à 27 % : le chiffre d'une année est désormais dominé par l'incertitude des paramètres, surtout `cv_delai`. |
+| **La régularité domine au-delà de 95 %** (frontière : β = 0,99 n'est atteignable qu'à c_a² = 0, le stockage est un mauvais placement contre l'irrégularité) | **tient sur le fond, tombe dans sa forme** | Ce qui pilote β est bien la régularité, et plus nettement qu'avant : `cv_delai` explique 80 à 95 % de la variance de β de long terme, le stockage ≤ 3 %. Mais la régularité qui compte est celle des **délais**, et c_a² n'est plus une donnée d'entrée : il naît de la politique de commande. Et le seuil tombe : β ≥ 0,99 est atteint dans 24 à 48 % des tirages de long terme, sans arrivées régulières. |
+| *Une année isolée : 86 % de la dispersion vient de l'aléa* (`beta_site.py`) | **change** | 33 à 68 % (corrigé à l'étape 7 ; la première version disait « 4 à 27 % », voir la note du tableau de dispersion) : l'aléa d'une année reste important, mais l'incertitude des paramètres, surtout `cv_delai`, pèse désormais autant que lui. Et ce partage dépend de la largeur des fourchettes. |
 
 Les sections qui suivent (modèle exogène) restent publiées telles qu'elles ont été produites ;
 ce tableau dit ce qu'il en reste.
+
+### Leviers de gestion : adapter le point de commande, pas commander pendant les arrêts
+
+**Cadre.** Celui de l'étape 6 : `phase2_endogene`, régime stationnaire, quatre variantes
+(consommation continue C ou arrêts discrets D × dépassements permis p ou interdits i),
+comparaisons appariées. Les écarts de β sont en **points de pourcentage** dans tous les
+tableaux. Mêmes réserves : délai, dispersion du délai, durée des arrêts, capacités, marge et
+taux de surestaries sont sans source ; les surestaries sont une borne haute.
+
+#### La règle s*(cv_delai)
+
+*Sert l'**importance** : c'est un réglage que l'exploitant peut faire demain, sans investir.
+Sert la **généralité** : la règle s'énonce en jours de consommation contre un coefficient de
+variation, deux grandeurs sans dimension, et sa forme dépend d'un trait structurel du
+corridor — les navires peuvent-ils se dépasser — que n'importe quel site peut constater.*
+
+Pour six valeurs de `cv_delai` de 0,10 à 0,60 (sa fourchette publiée), le point de commande
+qui minimise le coût total (`scripts/point_de_commande_adaptatif.py`). Recherche locale sur la
+grille de s au pas de 5 jours, étendue jusqu'à ce que le minimum ait deux points de chaque
+côté ; **40 réplications appariées par point** (et non 200 : un balayage complet à 200 aurait
+coûté de l'ordre d'un million d'années simulées) ; s* = sommet de la parabole par le minimum et
+ses deux voisins. s* en jours, IC à 95 % par bootstrap sur les réplications :
+
+| cv_delai | C, p | C, i | D, p | D, i |
+| ---: | --- | --- | --- | --- |
+| 0,10 | 27,5 [27,5 ; 27,5] | 27,5 [27,5 ; 27,6] | 31,7 [31,6 ; 31,7] | 31,7 [31,7 ; 31,8] |
+| 0,20 | 31,2 [31,2 ; 31,3] | 32,0 [31,9 ; 32,1] | 33,7 [33,5 ; 33,9] | 35,0 [34,8 ; 35,2] |
+| 0,30 | 32,3 [32,2 ; 32,5] | 36,3 [36,1 ; 36,5] | 35,0 [34,7 ; 35,2] | 38,0 [37,4 ; 38,5] |
+| 0,40 | 33,7 [33,4 ; 34,0] | 39,8 [39,5 ; 40,0] | 35,5 [35,2 ; 35,7] | 40,8 [40,4 ; 41,2] |
+| 0,50 | 34,6 [34,4 ; 34,9] | 42,7 [42,1 ; 43,2] | 36,0 [35,7 ; 36,3] | 42,9 [42,0 ; 43,6] |
+| 0,60 | 35,2 [35,0 ; 35,4] | 44,4 [43,5 ; 45,1] | 36,1 [35,9 ; 36,4] | 44,8 [43,3 ; 45,8] |
+| **droite** | 27,4 + 14,4·cv | 25,1 + 34,4·cv | 31,7 + 8,4·cv | 29,7 + 26,3·cv |
+| *s de l'étape 6* | *30* | *35* | *35* | *35* |
+
+![Point de commande adaptatif : la règle et ce qu'elle rapporte](docs/point_de_commande_adaptatif.png)
+
+*(version anglaise : `docs/point_de_commande_adaptatif_en.png`)*
+
+- **Ce qui décide de la pente, ce sont les dépassements.** Sans dépassement, s* monte de 17
+  jours sur la fourchette (27,5 → 44,4 en continu, 31,7 → 44,8 en discret) : un navire en
+  retard retarde tous ceux qui le suivent, et la dispersion du délai se transmet aux arrivées.
+  Avec dépassements, s* ne monte que de 4 à 8 jours : le navire suivant comble le retard du
+  précédent. C'est la même mécanique que la limite 20, vue cette fois du côté de la politique.
+- **Les arrêts discrets relèvent s* aux faibles dispersions** (31,7 j contre 27,5 j à
+  cv = 0,10) : un four qui repart à pleine cadence consomme plus vite que le rythme moyen sur
+  lequel s est compté.
+- **L'adaptation rapporte surtout aux extrêmes.** À cv = 0,60 : 2,0 à 2,1 M USD/an sans
+  dépassement, 0,85 M en continu avec dépassements, rien en discret avec dépassements (le s de
+  l'étape 6 y reste optimal). À cv = 0,10, où il faut *baisser* s : 0,8 à 1,2 M USD/an dans
+  trois variantes sur quatre. Entre 0,2 et 0,3, au plus 0,4 M : le s de l'étape 6 est déjà
+  l'optimum ou presque. (Écart mesuré au meilleur point de la grille, pas au sommet
+  interpolé.)
+- **Ce que l'IC ne dit pas.** Il ne mesure que le bruit de simulation à grille et parabole
+  données. La grille au pas de 5 jours et la forme parabolique ajoutent une erreur de modèle
+  non chiffrée, et la courbe de coût est plate près de l'optimum : lire la règle à ± 2 jours,
+  pas au dixième.
+
+#### Le chiffre du site, avec un point de commande adapté à chaque tirage
+
+*Sert l'**importance** : le chiffre appliqué d'un exploitant qui règle son stock de sécurité
+sur la dispersion de ses délais — la seule inconnue qui compte selon l'étape 6.*
+
+Les **mêmes 500 tirages** que l'étape 6 (mêmes paramètres, mêmes graines, donc comparaison
+appariée tirage par tirage), s fixé pour chaque tirage par interpolation linéaire de la règle
+ci-dessus (`chiffre_site_endogene.py --adaptatif`). Médiane [5 % ; 95 %] :
+
+| variante | β appro, long terme | β appro, une année | coût total long terme (M USD/an) | coût, une année |
+| --- | --- | --- | --- | --- |
+| C, p | 99,5 % [98,8 ; 99,9] | 99,9 % [97,8 ; 100,0] | 5,8 [2,8 ; 7,5] | 5,7 [2,7 ; 8,6] |
+| C, i | 98,7 % [95,2 ; 99,9] | 99,5 % [92,6 ; 100,0] | 9,1 [2,9 ; 16,6] | 8,4 [2,8 ; 18,6] |
+| D, p | 99,0 % [97,7 ; 99,8] | 99,4 % [96,1 ; 100,0] | 7,6 [4,5 ; 9,9] | 7,4 [4,3 ; 11,2] |
+| D, i | 97,4 % [92,3 ; 99,7] | 98,4 % [90,3 ; 100,0] | 11,7 [4,7 ; 20,2] | 11,4 [4,6 ; 21,4] |
+
+**Enveloppe des quatre variantes, long terme : β approvisionnement entre 92,3 % et 99,9 %,
+coût total entre 2,8 et 20,2 M USD/an** — contre [85,8 ; 100,0] % et [3,2 ; 22,1] M à s fixe.
+
+| variante | borne basse de β (q05), long terme | idem, une année | coût médian, long terme | coût q95, long terme | Δ coût médian par tirage | tirages moins chers |
+| --- | --- | --- | --- | --- | ---: | ---: |
+| C, p | 96,0 → 98,8 (**+2,7 pt**) | 93,9 → 97,8 (+3,9 pt) | 6,0 → 5,8 | 8,5 → 7,5 | −0,26 M | 80 % |
+| C, i | 89,3 → 95,2 (**+5,8 pt**) | 86,7 → 92,6 (+5,9 pt) | 9,3 → 9,1 | 18,2 → 16,6 | −0,76 M | 88 % |
+| D, p | 97,2 → 97,7 (**+0,5 pt**) | 95,9 → 96,1 (+0,2 pt) | 7,7 → 7,6 | 10,0 → 9,9 | −0,07 M | 64 % |
+| D, i | 85,8 → 92,3 (**+6,5 pt**) | 82,5 → 90,3 (+7,8 pt) | 12,5 → 11,7 | 22,1 → 20,2 | −0,61 M | 82 % |
+
+- **La borne basse de β remonte de 0,5 à 6,5 points** sur le long terme, et jusqu'à 7,8 sur une
+  année ; le gain est concentré là où la règle s'écarte du s fixe, donc sans dépassement.
+- **Le coût ne monte pas, il baisse** : de 0,07 à 0,76 M USD/an en médiane par tirage, et de
+  0,1 à 1,9 M USD/an sur le quantile 95 %. Rien d'étonnant, puisque s* minimise le coût ; mais
+  cela veut dire que la meilleure protection de β sur ce corridor ne se paie pas, elle se règle.
+  Une minorité de tirages (12 à 36 %) coûte un peu plus : la règle ne voit que `cv_delai`, pas
+  les capacités ni la durée des arrêts.
+- **La décomposition de la variance change de forme**, avec les définitions uniques posées
+  plus haut :
+
+| variante | part de `cv_delai`, long terme (β / coût) | part de l'aléa, long terme (β) | part de l'aléa, une année (β) | idem, `cv_delai` ≤ 0,40 |
+| --- | --- | --- | --- | --- |
+| C, p | 0,66 / 0,95 | 37 % | 90 % | 94 % |
+| C, i | 0,86 / 0,96 | 10 % | 63 % | 84 % |
+| D, p | 0,65 / 0,76 | 22 % | 82 % | 88 % |
+| D, i | 0,84 / 0,91 | 6 % | 50 % | 72 % |
+
+  Adapter s absorbe une partie de l'effet de `cv_delai` sur β (sa part de long terme passe de
+  0,80-0,95 à 0,65-0,86) — mais pas sur le coût, qui reste à 76-96 % piloté par lui : on
+  achète la protection par du stock de sécurité. L'aléa annuel prend la place libérée (50 à
+  90 % de la dispersion d'une année). **Cette part de l'aléa dépend de la largeur des
+  fourchettes** : resserrer `cv_delai` à [0,10 ; 0,40] la porte à 72-94 %. Elle décrit le
+  rapport entre l'aléa du corridor et l'ignorance du projet, pas le corridor seul.
+
+Reproductible par `python scripts/point_de_commande_adaptatif.py` (~2 h 30, 12 processus, sur
+batterie) puis `python scripts/chiffre_site_endogene.py --adaptatif --comparer-a
+data/sim/chiffre_site_endogene.csv` (~1 h). `--depuis-json` et `--depuis-csv` relisent sans
+simuler.
+
+#### Commander pendant les arrêts du four : l'hypothèse est infirmée
+
+*Sert l'**importance** : une heuristique d'approvisionnement naturelle — « le four est arrêté,
+continuons de commander au rythme moyen » — est testée et écartée, avec son mécanisme. Sert la
+**généralité** : le résultat négatif tient à un rapport de durées (arrêt contre délai) que
+tout corridor sous politique de point de commande partage.*
+
+Trois politiques, appariées, aux deux variantes discrètes, au s de l'étape 6 (35 j), 200
+réplications (`scripts/politique_arrets.py`, option `simulation.politique_arrets`) :
+(a) **aveugle**, l'actuelle — la position se fige pendant l'arrêt ; (b) **rythme moyen** —
+une consommation fictive au rythme moyen fait baisser la position pendant l'arrêt, effacée à
+la reprise ; (c) **date de reprise connue** — la politique compare la position à la
+consommation qui viendra vraiment dans le délai moyen, pleine cadence × (délai − reste)⁺,
+borne haute de l'information. Les arrêts planifiés sont traités comme les autres.
+
+**Règle écrite avant le calcul** : l'hypothèse « (b) récupère l'essentiel de la perte à coût
+quasi nul » est confirmée si (b) récupère au moins 50 % des ruptures dues aux arrêts, borne
+basse de l'IC comprise, *et* si son coût total n'est pas significativement plus élevé. Les
+ruptures dues aux arrêts sont l'écart entre (a) et le même corridor en consommation continue,
+au même s.
+
+| D, p — s = 35 j | β appro (%) | ruptures (h/an) | attente (h) | stock (kt) | surestaries | portage | coût total |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| *continu, référence* | *99,96* | *3,7* | *41,9* | *233* | *2,14* | *3,26* | *5,44* |
+| (a) aveugle | 99,53 | 32,9 | 58,0 | 221 | 2,95 | 3,10 | 6,46 |
+| (b) − (a) | +0,08 ± 0,01 pt | −5,9 ± 0,8 | +19,4 ± 1,2 | +29,2 ± 0,5 | +0,98 ± 0,06 | +0,41 ± 0,01 | **+1,32 ± 0,07** |
+| (c) − (a) | +0,03 ± 0,01 pt | −2,4 ± 0,5 | −0,0 ± 0,2 | +5,4 ± 0,2 | +0,00 ± 0,01 | +0,08 ± 0,00 | +0,05 ± 0,01 |
+
+| D, i — s = 35 j | β appro (%) | ruptures (h/an) | attente (h) | stock (kt) | surestaries | portage | coût total |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| *continu, référence* | *99,50* | *41,1* | *61,0* | *214* | *3,10* | *2,99* | *6,53* |
+| (a) aveugle | 98,19 | 127,7 | 78,9 | 204 | 3,95 | 2,85 | 8,43 |
+| (b) − (a) | +0,31 ± 0,04 pt | −21,9 ± 2,6 | +17,7 ± 1,3 | +29,5 ± 0,6 | +0,90 ± 0,06 | +0,41 ± 0,01 | **+1,03 ± 0,08** |
+| (c) − (a) | +0,10 ± 0,02 pt | −7,3 ± 1,5 | −0,2 ± 0,3 | +5,2 ± 0,2 | −0,01 ± 0,01 | +0,07 ± 0,00 | −0,03 ± 0,03 |
+
+Coûts en M USD/an ; écarts appariés avec IC à 95 %.
+
+| part des ruptures dues aux arrêts récupérée | D, p | D, i |
+| --- | --- | --- |
+| (b) rythme moyen | 20 % [17 ; 23] | 25 % [23 ; 28] |
+| (c) date de reprise connue | 8 % [6 ; 10] | 8 % [7 ; 10] |
+| **verdict sur (b)** | **infirmée** (20 % < 50 %, et +1,3 M USD/an) | **infirmée** (25 % < 50 %, et +1,0 M USD/an) |
+
+![Trois politiques pendant les arrêts du four](docs/politique_arrets.png)
+
+*(version anglaise : `docs/politique_arrets_en.png`)*
+
+- **(b) ne récupère qu'un cinquième à un quart des ruptures, et coûte 1,0 à 1,3 M USD/an de
+  plus.** Les navires commandés pendant l'arrêt arrivent pendant qu'il dure encore ou peu
+  après : ~30 kt de plus en stock (portage +0,4 M), des silos qui saturent, et des navires qui
+  attendent en rade 18 à 19 h de plus (surestaries +0,9 à +1,0 M). Le gain sur les arrêts du
+  four (−0,08 à −0,28 M) est loin de compenser.
+- **Même connaître la date de reprise ne sert presque à rien** : (c) récupère 8 % des
+  ruptures, à coût quasi nul (± 0,05 M USD/an). Ce n'est donc pas l'arrêt de la commande pendant l'arrêt du four qui
+  fait les ruptures. Lecture la plus probable, non démontrée ici : elles viennent **après la
+  reprise**, quand le four tourne à pleine cadence (18 % au-dessus du rythme moyen) pendant
+  des marches qui durent en moyenne plus que le délai, alors que s est compté au rythme moyen.
+- **Le levier contre les ruptures dues aux arrêts est donc le point de commande lui-même**, et
+  la règle ci-dessus le règle déjà : à faible dispersion, s* est plus haut en discret (31,7 j)
+  qu'en continu (27,5 j). Une politique qui compterait s à pleine cadence pendant les marches
+  serait la suite logique ; elle n'a pas été testée.
+
+Reproductible par `python scripts/politique_arrets.py` (~40 min, 12 processus).
+
+#### Peut-on mesurer `cv_delai` à partir de la collecte ? État des lieux
+
+*Sert l'**originalité**, à titre de faisabilité seulement : c'est la donnée publique
+collectée par le projet qui devrait un jour mesurer l'inconnue dont dépend tout le chiffre.
+Aucun résultat de l'article n'en dépend aujourd'hui.*
+
+`scripts/etat_mesure_delai.py`, sur 1 393 observations, 99 instantanés, du 24/09 au
+28/10/2026, sans simulation. Pour chaque navire, l'ETA publiée dans « Expected Arrivals »
+(première et dernière) et l'heure d'arrivée publiée (entrée en rade, ou accostage) :
+
+| | toutes cargaisons | minerai |
+| --- | ---: | ---: |
+| navires annoncés puis arrivés | **34** | **1** |
+| arrivés sans annonce préalable (dont ceux déjà là au premier instantané) | 15 | — |
+| annoncés, pas encore arrivés à la fin de la série | 3 | — |
+| arrivée − première ETA : médiane / écart-type | +1,4 h / 14,6 h | −22,7 h (n = 1) |
+| arrivée − dernière ETA : écart-type | 3,9 h | +3,8 h (n = 1) |
+| horizon d'annonce (ETA − première annonce) : médiane [min ; max] | 31,7 h [1,9 ; 251] | 251 h |
+| ETA révisée au moins une fois | 10 sur 34 | 1 sur 1 |
+
+Le seul minéralier apparié est SOMNIUM AUSTRALIS : annoncé le 04/10, ETA au 14/10 22:00,
+arrivé le 13/10 23:20, une révision.
+
+**cv provisoire** : écart-type de l'erreur sur la première ETA ÷ délai moyen de l'hypothèse
+(22 j) = **0,028**, toutes cargaisons. Il ne mesure pas `cv_delai`, et il ne faut pas le lire
+comme une estimation :
+
+- **l'horizon d'annonce est d'un jour et demi**, contre 22 jours de délai : l'ETA ne capte que
+  l'aléa de fin de traversée. C'est une **borne basse**, dix fois sous la valeur de travail ;
+- le délai du modèle commence à la **décision d'affréter**, que rien de public ne date ; le
+  port de provenance est publié, pas la date de départ ;
+- **un seul minéralier** : le chiffre est celui des autres trafics (lignes régulières,
+  vraquiers divers), dont rien ne dit qu'ils se comportent comme les pellets ;
+- **sélection** : 15 navires arrivent sans avoir été annoncés, et seule la première ETA
+  *publiée* est vue — un navire annoncé avant d'entrer dans la liste échappe à la mesure ;
+- au rythme observé (une paire minerai en cinq semaines), une vingtaine demanderait de
+  l'ordre de deux ans de collecte, et ne mesurerait toujours que la fin du délai.
+
+**Conclusion de l'état des lieux** : la collecte ne mesurera pas `cv_delai`. Elle peut au
+mieux en donner une borne basse sur la fin de traversée. La mesure demande soit les dates
+d'affrètement (internes à AQS), soit les dates de départ des ports de chargement (AIS, hors
+données publiques gratuites).
 
 > **Ces chiffres ne sont pas des prévisions.** Les deux paramètres qui les pilotent ne sont
 > pas sourcés : la **régularité des arrivées** de minéraliers (statut *estimé*, jamais

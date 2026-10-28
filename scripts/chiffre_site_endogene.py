@@ -82,11 +82,16 @@ QUANTILES = (0.05, 0.50, 0.95)
 #: Au-delà, l'étape 3 a jugé `cv_delai` peu plausible pour un délai de transport (écart-type
 #: ~9 j sur 22 à 0,40). Le chiffre est publié sur toute la fourchette, puis restreint.
 CV_DELAI_PLAUSIBLE = 0.40
+#: Classes d'effectifs égaux pour estimer la part expliquée par un paramètre.
+CLASSES = 10
 DEFAULT_TIRAGES = 500
 DEFAULT_REPS_ALEA = 100
 DEFAULT_SEED = 20260924
 DEFAULT_FIGURE = Path("docs/chiffre_site_endogene.png")
 DEFAULT_CSV = Path("data/sim/chiffre_site_endogene.csv")
+#: Sorties du chiffre recalculé avec le point de commande adaptatif (étape 7).
+FIGURE_ADAPTATIVE = Path("docs/chiffre_site_adaptatif.png")
+CSV_ADAPTATIF = Path("data/sim/chiffre_site_adaptatif.csv")
 
 
 # --- tirages -------------------------------------------------------------------------
@@ -113,25 +118,33 @@ def tirer(raw, n: int, seed: int) -> list[dict]:
     return tirages
 
 
-def configuration(raw, mode: str, depassements: bool, parametres: dict) -> SimConfig:
-    """La case de base du plan factoriel, avec les quatre paramètres tirés."""
+def configuration(raw, mode: str, depassements: bool, parametres: dict,
+                  s_j: float | None = None) -> SimConfig:
+    """La case de base du plan factoriel, avec les quatre paramètres tirés.
+
+    `s_j` remplace le point de commande de la variante (étape 7 : s adapté au tirage).
+    """
     base = fe.configuration(raw, mode, depassements, postes=1, stockage="base")
     port, usine = parametres["stockyard_t"], parametres["usine_t"]
     arret_h = parametres["duree_arret_j"] * 24
     u = base.taux_utilisation_dri
+    ecarts = {}
+    if s_j is not None:
+        ecarts = {"point_de_commande_j": float(s_j),
+                  "point_de_commande_t": s_j * base.debit_pellets_t_par_h * 24}
     return dataclasses.replace(
         base, capacite_stockyard_t=port, capacite_stock_usine_t=usine,
         stock_initial_stockyard_t=port * base.fraction_stock_initial,
         stock_initial_usine_t=usine * base.fraction_stock_initial,
         duree_arret_h=arret_h, duree_marche_moyenne_h=arret_h * u / (1 - u),
-        cv_delai_approvisionnement=parametres["cv_delai"])
+        cv_delai_approvisionnement=parametres["cv_delai"], **ecarts)
 
 
 def indicateurs(resultat, config, unitaires) -> dict[str, float]:
     annees = resultat.annees_mesurees
     cible = config.debit_dri_t_par_h * config.heures_ouvrees_par_an * annees
     return {"beta_appro": 1.0 - eco.perte_faute_de_pellets_t(resultat, config) / cible,
-            **eco.cout_total(resultat, config, unitaires)}
+            **eco.cout_total(resultat, config, unitaires), "s_j": config.point_de_commande_j}
 
 
 def simuler(configs_graines, annees: float, unitaires, processus: int) -> list[dict]:
@@ -160,23 +173,66 @@ def resume(valeurs) -> dict[str, float]:
     return {f"q{round(q * 100):02d}": quantile(valeurs, q) for q in QUANTILES}
 
 
+def part_alea_appariee(une_annee, long_terme, annees_long: float = FENETRE_STATIONNAIRE_ANS
+                       ) -> dict[str, float]:
+    """Part de l'aléa dans la variance, sur tous les tirages, pour les deux horizons.
+
+    Chaque tirage a une année isolée Y₁ et une moyenne sur n années Yₙ, **aux mêmes
+    paramètres**. Avec A = Var(E[Y|θ]) (les paramètres) et B = E[Var(Y₁|θ)] (l'aléa
+    annuel), Var(Y₁) = A + B et Var(Yₙ) ≈ A + B/n si les années sont peu corrélées entre
+    elles, d'où B = (Var Y₁ − Var Yₙ)·n/(n − 1). La part de l'aléa vaut B / Var(Y₁) sur une
+    année et (B/n) / Var(Yₙ) sur le long terme.
+
+    Contrairement à `part_alea`, qui mesure l'aléa aux seuls paramètres centraux, cette
+    estimation tient compte de ce que l'aléa grandit avec `cv_delai`. **Elle dépend de la
+    largeur des fourchettes** : élargir une fourchette augmente A sans toucher à B, donc fait
+    baisser la part de l'aléa. Ce n'est pas une propriété du corridor, c'est un rapport entre
+    ce qu'il a d'aléatoire et ce que le projet ignore.
+    """
+    v1, vn = statistics.variance(une_annee), statistics.variance(long_terme)
+    if v1 == 0:
+        return {"une_annee": 0.0, "long_terme": 0.0}
+    b = max(0.0, (v1 - vn) * annees_long / (annees_long - 1))
+    return {"une_annee": min(1.0, b / v1),
+            "long_terme": min(1.0, b / annees_long / vn) if vn > 0 else 0.0}
+
+
 def part_alea(valeurs_tirages, valeurs_alea) -> float:
-    """Part de la variance totale qu'explique l'aléa seul, bornée à 1."""
+    """Part de la variance totale qu'explique l'aléa seul, mesuré **au centre**, bornée à 1.
+
+    Estimation de l'étape 6, conservée pour comparaison : elle sous-estime l'aléa quand il
+    grandit avec un paramètre (ici `cv_delai`). Voir `part_alea_appariee`.
+    """
     totale = statistics.variance(valeurs_tirages)
     if totale == 0:
         return 0.0
     return min(1.0, statistics.variance(valeurs_alea) / totale)
 
 
-def importance(tirages, valeurs) -> dict[str, float]:
-    """Carré de la corrélation de rang de chaque paramètre avec le résultat."""
+def part_expliquee(tirages, valeurs, classes: int = CLASSES) -> dict[str, float]:
+    """Part de la variance du résultat expliquée par chaque paramètre seul : Var(E[Y|X])/Var(Y).
+
+    **La seule définition publiée de « la part d'un paramètre »** (étape 7). Estimée en
+    rangeant les tirages par valeur du paramètre en `classes` classes d'effectifs égaux, puis
+    en rapportant la variance des moyennes de classe à la variance totale (rapport de
+    corrélation η², l'indice de Sobol du premier ordre quand les paramètres sont tirés
+    indépendamment). Contrairement au ρ² de rang de l'étape 6, elle ne suppose pas l'effet
+    monotone, et les parts de paramètres indépendants s'additionnent à moins de 1 : le reste
+    est l'aléa et les interactions. Légèrement surestimée par le bruit intra-classe.
+    """
+    total = statistics.pvariance(valeurs)
     sortie = {}
     for nom, _ in PARAMETRES:
-        x = [t[nom] for t in tirages]
-        if len(set(valeurs)) < 2:
+        if total == 0:
             sortie[nom] = 0.0
             continue
-        sortie[nom] = statistics.correlation(x, valeurs, method="ranked") ** 2
+        ordre = sorted(range(len(valeurs)), key=lambda k: tirages[k][nom])
+        taille = len(ordre) / classes
+        groupes = [[valeurs[k] for k in ordre[round(i * taille):round((i + 1) * taille)]]
+                   for i in range(classes)]
+        moyenne = statistics.fmean(valeurs)
+        entre = sum(len(g) * (statistics.fmean(g) - moyenne) ** 2 for g in groupes if g)
+        sortie[nom] = entre / len(valeurs) / total
     return sortie
 
 
@@ -199,7 +255,7 @@ def donnees_figure(resultats: dict) -> dict:
     return sortie
 
 
-def write_figure(resultats: dict, path=DEFAULT_FIGURE) -> list[Path]:
+def write_figure(resultats: dict, path=DEFAULT_FIGURE, titre: str = "titre_site") -> list[Path]:
     donnees = donnees_figure(resultats)
     styles = {"long_terme": "-", "une_annee": ":"}
     chemins = []
@@ -221,8 +277,8 @@ def write_figure(resultats: dict, path=DEFAULT_FIGURE) -> list[Path]:
         for seuil in SEUILS_BETA:
             axes[0].axvline(seuil * 100, color="0.5", linewidth=0.8, linestyle="--")
         poignees, etiquettes = axes[0].get_legend_handles_labels()
-        figure.legend(poignees, etiquettes, loc="outside lower center", ncol=4, fontsize=7)
-        figure.suptitle(libelle("titre_site", langue), fontsize=11)
+        figure.legend(poignees, etiquettes, loc="outside lower center", ncol=2, fontsize=7)
+        figure.suptitle(libelle(titre, langue), fontsize=11)
         chemin = chemin_langue(path, langue)
         chemin.parent.mkdir(parents=True, exist_ok=True)
         figure.savefig(chemin, dpi=150)
@@ -234,15 +290,23 @@ def write_figure(resultats: dict, path=DEFAULT_FIGURE) -> list[Path]:
 # --- calcul et rapport ---------------------------------------------------------------
 
 
-def calculer(raw, tirages: list[dict], reps_alea: int, seed: int, processus: int) -> dict:
+def calculer(raw, tirages: list[dict], reps_alea: int, seed: int, processus: int,
+             regle=None) -> dict:
+    """Les tirages des quatre variantes, et l'aléa seul aux paramètres centraux.
+
+    `regle` : {variante: fonction cv → s} pour adapter le point de commande à chaque tirage
+    (étape 7) ; sans elle, s est celui de la variante, pour tous les tirages.
+    """
     unitaires = eco.couts_unitaires(raw)
     centre = centres(raw)
     maitre = random.Random(seed + 1)
     graines_alea = [maitre.randrange(2**32) for _ in range(reps_alea)]
     sortie = {"tirages": {}, "alea": {}}
     for variante in VARIANTES:
-        configs = [configuration(raw, *variante, t) for t in tirages]
-        config_centre = configuration(raw, *variante, centre)
+        def s_de(parametres, variante=variante):
+            return None if regle is None else regle[variante](parametres["cv_delai"])
+        configs = [configuration(raw, *variante, t, s_de(t)) for t in tirages]
+        config_centre = configuration(raw, *variante, centre, s_de(centre))
         for horizon, annees in HORIZONS:
             cle_graine = "graine_long" if horizon == "long_terme" else "graine_annee"
             sortie["tirages"][(variante, horizon)] = simuler(
@@ -260,12 +324,12 @@ def ecrire_csv(tirages, resultats, chemin=DEFAULT_CSV) -> Path:
     with chemin.open("w", newline="", encoding="utf-8") as f:
         ecrivain = csv.writer(f)
         ecrivain.writerow(["mode", "depassements", "horizon", "tirage", *noms,
-                           *INDICATEURS, *eco.TERMES])
+                           *INDICATEURS, *eco.TERMES, "s_j"])
         for (variante, horizon), lignes in resultats["tirages"].items():
             for k, (t, ligne) in enumerate(zip(tirages, lignes, strict=True)):
                 ecrivain.writerow([variante[0], variante[1], horizon, k,
                                    *(t[n] for n in noms), *(ligne[c] for c in INDICATEURS),
-                                   *(ligne[c] for c in eco.TERMES)])
+                                   *(ligne[c] for c in eco.TERMES), ligne.get("s_j", "")])
     return chemin
 
 
@@ -278,8 +342,11 @@ def lire_csv(chemin=DEFAULT_CSV) -> tuple[list[dict], dict]:
             variante = (ligne["mode"], ligne["depassements"] == "True")
             k = int(ligne["tirage"])
             tirages[k] = {n: float(ligne[n]) for n in noms}
-            resultats["tirages"].setdefault((variante, ligne["horizon"]), []).append(
-                {c: float(ligne[c]) for c in (*INDICATEURS, *eco.TERMES)})
+            valeurs = {c: float(ligne[c]) for c in (*INDICATEURS, *eco.TERMES)}
+            if ligne.get("s_j"):
+                # absente des tirages de l'étape 6, écrits avant cette colonne
+                valeurs["s_j"] = float(ligne["s_j"])
+            resultats["tirages"].setdefault((variante, ligne["horizon"]), []).append(valeurs)
     return [tirages[k] for k in sorted(tirages)], resultats
 
 
@@ -304,11 +371,14 @@ def print_conditionnel(tirages, resultats, cle: str, plafond: float) -> None:
 def print_report(tirages, resultats) -> None:
     for variante in VARIANTES:
         mode, dep = variante
+        s_utilises = [ligne["s_j"] for ligne in resultats["tirages"][(variante, "long_terme")]
+                      if "s_j" in ligne]
+        politique = (f"s = {fe.S_OPTIMAL_J[variante]} j" if len(set(s_utilises)) <= 1 else
+                     f"s adaptatif, de {min(s_utilises):.1f} à {max(s_utilises):.1f} j")
         print(f"\n{'=' * 100}\n{libelle(mode)}, {libelle('permis' if dep else 'interdits')}, "
-              f"s = {fe.S_OPTIMAL_J[variante]} j\n{'=' * 100}")
+              f"{politique}\n{'=' * 100}")
         for horizon, _ in HORIZONS:
             lignes = resultats["tirages"][(variante, horizon)]
-            alea = resultats["alea"][(variante, horizon)]
             beta = [ligne["beta_appro"] for ligne in lignes]
             total = [ligne["total"] for ligne in lignes]
             rb, rc = resume(beta), resume(total)
@@ -319,14 +389,60 @@ def print_report(tirages, resultats) -> None:
                   f"{rc['q95'] / 1e6:.1f}] M USD/an   termes médians : " + ", ".join(
                       f"{t} {quantile([ligne[t] for ligne in lignes], 0.5) / 1e6:.1f}"
                       for t in eco.TERMES))
-            print(f"  {'':22} part de l'aléa dans la variance : β "
-                  f"{part_alea(beta, [a['beta_appro'] for a in alea]):.0%}, coût "
-                  f"{part_alea(total, [a['total'] for a in alea]):.0%}")
-        long_terme = resultats["tirages"][(variante, "long_terme")]
-        for cle in INDICATEURS:
-            imp = importance(tirages, [ligne[cle] for ligne in long_terme])
-            print(f"  importance (ρ² de rang, long terme) sur {cle:10} " + "  ".join(
-                f"{n} {v:.2f}" for n, v in imp.items()))
+            appariee = {cle: part_alea_appariee(
+                [ligne[cle] for ligne in resultats["tirages"][(variante, "une_annee")]],
+                [ligne[cle] for ligne in resultats["tirages"][(variante, "long_terme")]])
+                for cle in INDICATEURS}
+            texte = (f"  {'':22} part de l'aléa (horizons appariés) : β "
+                     f"{appariee['beta_appro'][horizon]:.0%}, coût "
+                     f"{appariee['total'][horizon]:.0%}")
+            if "alea" in resultats:
+                alea = resultats["alea"][(variante, horizon)]
+                texte += (f"   [au centre, comme l'étape 6 : β "
+                          f"{part_alea(beta, [a['beta_appro'] for a in alea]):.0%}, coût "
+                          f"{part_alea(total, [a['total'] for a in alea]):.0%}]")
+            print(texte)
+            for cle in INDICATEURS:
+                parts = part_expliquee(tirages, [ligne[cle] for ligne in lignes])
+                print(f"  {'':22} part expliquée (Var E[Y|X] / Var Y) sur {cle:10} "
+                      + "  ".join(f"{n} {v:.2f}" for n, v in parts.items()))
+
+
+def print_largeur_et_alea(tirages, resultats, cle: str, plafond: float) -> None:
+    """La part de l'aléa dépend de la largeur des fourchettes : on resserre celle de `cle`."""
+    garde = [t[cle] <= plafond for t in tirages]
+    print(f"\n{'=' * 100}\nPart de l'aléa annuel dans la variance de β (horizons appariés) : "
+          f"fourchette entière → {cle} ≤ {plafond}\n{'=' * 100}")
+    for variante in VARIANTES:
+        un_an, long = ([ligne["beta_appro"] for ligne in resultats["tirages"][(variante, h)]]
+                       for h in ("une_annee", "long_terme"))
+        restreint = [[v for v, g in zip(x, garde, strict=True) if g] for x in (un_an, long)]
+        avant, apres = part_alea_appariee(un_an, long), part_alea_appariee(*restreint)
+        print(f"  {variante[0]:8} {'permis' if variante[1] else 'interdits':9} une année "
+              f"{avant['une_annee']:.0%} → {apres['une_annee']:.0%}, long terme "
+              f"{avant['long_terme']:.0%} → {apres['long_terme']:.0%}")
+
+
+def print_comparaison(resultats, reference, tirages) -> None:
+    """Chiffre adaptatif contre chiffre de l'étape 6, mêmes tirages, donc apparié."""
+    print(f"\n{'=' * 100}\nContre l'étape 6 (s fixe), mêmes 500 tirages\n{'=' * 100}")
+    for variante in VARIANTES:
+        for horizon, _ in HORIZONS:
+            nouveau = resultats["tirages"][(variante, horizon)]
+            ancien = reference["tirages"][(variante, horizon)]
+            bn, ba = ([ligne["beta_appro"] for ligne in x] for x in (nouveau, ancien))
+            cn, ca = ([ligne["total"] / 1e6 for ligne in x] for x in (nouveau, ancien))
+            db = [a - b for a, b in zip(bn, ba, strict=True)]
+            dc = [a - b for a, b in zip(cn, ca, strict=True)]
+            print(f"  {variante[0]:8} {'permis' if variante[1] else 'interdits':9} {horizon:11}"
+                  f" β q05 {quantile(ba, 0.05):.4f} → {quantile(bn, 0.05):.4f}"
+                  f" ({(quantile(bn, 0.05) - quantile(ba, 0.05)) * 100:+.2f} pt)"
+                  f"  médiane {quantile(ba, 0.5):.4f} → {quantile(bn, 0.5):.4f}"
+                  f"  | coût médian {quantile(ca, 0.5):.1f} → {quantile(cn, 0.5):.1f},"
+                  f" q95 {quantile(ca, 0.95):.1f} → {quantile(cn, 0.95):.1f}"
+                  f"  | par tirage : Δβ médian {quantile(db, 0.5) * 100:+.2f} pt,"
+                  f" Δcoût médian {quantile(dc, 0.5):+.2f} M, part des tirages où le coût baisse"
+                  f" {sum(d < 0 for d in dc) / len(dc):.0%}")
 
 
 def main(argv=None) -> int:
@@ -335,29 +451,46 @@ def main(argv=None) -> int:
     parser.add_argument("--reps-alea", type=int, default=DEFAULT_REPS_ALEA)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--processus", type=int, default=max(1, (os.cpu_count() or 2) - 4))
-    parser.add_argument("--figure", type=Path, default=DEFAULT_FIGURE)
-    parser.add_argument("--csv", type=Path, default=DEFAULT_CSV)
+    parser.add_argument("--figure", type=Path, default=None)
+    parser.add_argument("--csv", type=Path, default=None)
     parser.add_argument("--depuis-csv", action="store_true",
-                        help="relit --csv au lieu de simuler : rapport restreint et figure")
+                        help="relit --csv au lieu de simuler : rapport et figure")
+    parser.add_argument("--adaptatif", action="store_true",
+                        help="s recalculé à chaque tirage par la règle s*(cv_delai) de "
+                             "point_de_commande_adaptatif.py (étape 7)")
+    parser.add_argument("--comparer-a", type=Path, default=None,
+                        help="CSV d'un autre calcul sur les mêmes tirages (étape 6)")
     args = parser.parse_args(argv)
+    figure = args.figure or (FIGURE_ADAPTATIVE if args.adaptatif else DEFAULT_FIGURE)
+    fichier = args.csv or (CSV_ADAPTATIF if args.adaptatif else DEFAULT_CSV)
+    titre = "titre_site_adaptatif" if args.adaptatif else "titre_site"
 
     if args.depuis_csv:
-        tirages, resultats = lire_csv(args.csv)
-        print_conditionnel(tirages, resultats, "cv_delai", CV_DELAI_PLAUSIBLE)
-        for chemin in write_figure(resultats, args.figure):
-            print(f"figure écrite : {chemin}")
-        return 0
-
-    raw = load_yaml(ASSUMPTIONS_PATH)
-    tirages = tirer(raw, args.tirages, args.seed)
-    print(f"{SCENARIO}, {args.tirages} tirages × 4 variantes, {args.reps_alea} réplications "
-          f"à paramètres centraux pour l'aléa, {args.processus} processus. Fourchettes : "
-          + ", ".join(f"{n} {b}" for n, b in fourchettes(raw).items()))
-    resultats = calculer(raw, tirages, args.reps_alea, args.seed, args.processus)
+        tirages, resultats = lire_csv(fichier)
+    else:
+        raw = load_yaml(ASSUMPTIONS_PATH)
+        tirages = tirer(raw, args.tirages, args.seed)
+        regle = None
+        if args.adaptatif:
+            pca = _charger("point_de_commande_adaptatif")
+            points = pca.lire_regle()
+            regle = {v: (lambda cv, p=points[v]: pca.interpoler(p, cv)) for v in VARIANTES}
+            print("règle s*(cv) : " + " ; ".join(
+                f"{v} " + ", ".join(f"{cv:.2f}→{s:.1f}" for cv, s in points[v])
+                for v in VARIANTES))
+        print(f"{SCENARIO}, {args.tirages} tirages × 4 variantes, {args.reps_alea} "
+              f"réplications à paramètres centraux pour l'aléa, {args.processus} processus. "
+              "Fourchettes : " + ", ".join(f"{n} {b}" for n, b in fourchettes(raw).items()),
+              flush=True)
+        resultats = calculer(raw, tirages, args.reps_alea, args.seed, args.processus, regle)
+        print(f"tirages écrits : {ecrire_csv(tirages, resultats, fichier)}")
     print_report(tirages, resultats)
     print_conditionnel(tirages, resultats, "cv_delai", CV_DELAI_PLAUSIBLE)
-    print(f"\ntirages écrits : {ecrire_csv(tirages, resultats, args.csv)}")
-    for chemin in write_figure(resultats, args.figure):
+    print_largeur_et_alea(tirages, resultats, "cv_delai", CV_DELAI_PLAUSIBLE)
+    if args.comparer_a is not None:
+        _, reference = lire_csv(args.comparer_a)
+        print_comparaison(resultats, reference, tirages)
+    for chemin in write_figure(resultats, figure, titre):
         print(f"figure écrite : {chemin}")
     return 0
 

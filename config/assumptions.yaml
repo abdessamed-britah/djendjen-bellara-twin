@@ -418,6 +418,21 @@ simulation:
       réaliste pour une navette sur une seule route. **Cette hypothèse pèse jusqu'à 1,7 point
       de taux de service en phase 2** (limite 20 de CLAUDE.md) : toute comparaison entre
       scénarios endogènes se publie sous les deux valeurs. Sans effet en exogène.
+  politique_arrets:
+    value: aveugle
+    unit: aveugle | rythme_moyen | date_de_reprise
+    status: technique
+    note: >
+      Ce que la politique de commande fait pendant un arrêt du four (planifié ou non).
+      « aveugle » (historique) : la position de stock ne baisse qu'aux consommations, donc
+      elle se fige pendant l'arrêt et l'on cesse de commander. « rythme_moyen » : pendant
+      l'arrêt, une consommation fictive au rythme moyen (`debit_pellets_t_par_h`) fait baisser
+      la position vue par la politique, qui continue donc de commander ; la consommation
+      fictive est effacée à la reprise. « date_de_reprise » : la durée restante R de l'arrêt
+      est supposée connue ; la politique compare la position à la consommation attendue sur
+      le délai moyen L, soit pleine cadence × (L − R)⁺ au lieu de rythme moyen × L, et commande
+      donc à temps pour la reprise. Borne haute de l'information. Étape 7,
+      scripts/politique_arrets.py.
   reporter_si_navire_en_rade:
     value: false
     unit: booléen

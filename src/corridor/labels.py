@@ -58,6 +58,39 @@ LIBELLES: dict[str, dict[str, str]] = {
     "long_terme": {"fr": "long terme (16 ans)", "en": "long run (16 years)"},
     "une_annee": {"fr": "une année isolée", "en": "a single year"},
     "frequence": {"fr": "part des tirages", "en": "share of draws"},
+    # étape 7 : point de commande adaptatif
+    "cv_delai": {"fr": "dispersion du délai d'approvisionnement (cv)",
+                 "en": "supply lead-time variability (cv)"},
+    "s_optimal": {"fr": "point de commande optimal s* (jours)",
+                  "en": "optimal reorder point s* (days)"},
+    "titre_regle": {"fr": "La règle s*(cv), IC 95 % par bootstrap",
+                    "en": "The rule s*(cv), 95% bootstrap CI"},
+    "gain_adaptation": {"fr": "coût à s fixe − coût au meilleur s de la grille (M USD/an)",
+                        "en": "cost at fixed s − cost at best grid s (M USD/yr)"},
+    "titre_gain_adaptation": {"fr": "Ce que rapporte l'adaptation",
+                              "en": "What adapting is worth"},
+    "titre_site_adaptatif": {
+        "fr": "Chiffre du site, phase 2, point de commande adapté à chaque tirage",
+        "en": "Site figure, phase 2, reorder point adapted to each draw",
+    },
+    # étape 7 : politique consciente des arrêts
+    "aveugle": {"fr": "(a) aveugle aux arrêts", "en": "(a) outage-blind"},
+    "rythme_moyen": {"fr": "(b) commande au rythme moyen", "en": "(b) order at mean rate"},
+    "date_de_reprise": {"fr": "(c) date de reprise connue", "en": "(c) restart date known"},
+    "part_recuperee": {"fr": "ruptures dues aux arrêts récupérées (%)",
+                       "en": "outage-driven stock-outs recovered (%)"},
+    "delta_stock": {"fr": "stock physique moyen, écart à (a) (kt)",
+                    "en": "mean physical stock, change vs (a) (kt)"},
+    "delta_cout": {"fr": "coût total, écart à (a) (M USD/an)",
+                   "en": "total cost, change vs (a) (M USD/yr)"},
+    "titre_politique_arrets": {
+        "fr": "Commander pendant les arrêts du four : trois politiques, arrêts discrets",
+        "en": "Ordering during furnace outages: three policies, discrete outages",
+    },
+    "titre_adaptatif": {
+        "fr": "Point de commande adaptatif au risque de délai, phase 2, régime stationnaire",
+        "en": "Reorder point adapted to lead-time risk, phase 2, steady state",
+    },
 }
 
 

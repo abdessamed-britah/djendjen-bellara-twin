@@ -1,7 +1,7 @@
 ﻿# CLAUDE.md
 
 Contexte permanent du projet, écrit pour une **reprise après plusieurs semaines sans aucun
-contexte**. Dernière mise à jour : 2026-10-27. Lis-le en entier avant toute tâche : état réel de
+contexte**. Dernière mise à jour : 2026-10-28. Lis-le en entier avant toute tâche : état réel de
 chaque étape, décisions prises et leurs raisons, limites connues, commandes, puis les trois
 prochaines tâches avec des critères de réussite vérifiables.
 
@@ -57,10 +57,13 @@ sur 16 trimestres de bilans publics), les deux capacités de stockage restent `i
 **Sur le modèle corrigé (étape 6, approvisionnement endogène, régime stationnaire, quatre
 variantes)** : β approvisionnement de long terme entre **85,8 % et 100,0 %** et coût total
 entre **3,2 et 22,1 M USD/an** (enveloppe des quantiles 5-95 % des quatre variantes), piloté à
-74-98 % par la dispersion du délai d'approvisionnement, à moins de 7 % par le stockage. Le
+73-97 % par la dispersion du délai d'approvisionnement, à 12 % au plus par le stockage. Le
 stockage ne sert pas la production ; le second poste non plus, mais il est le seul levier du
-coût (−1,6 à −3,0 M USD/an bruts, par les surestaries). Ce qui précède cette phrase est le
-modèle exogène : voir le tableau « tient / change / tombe » du README.
+coût (−1,6 à −3,0 M USD/an bruts, par les surestaries). **Avec un point de commande adapté à
+cette dispersion (étape 7)**, l'enveloppe se resserre à **92,3-99,9 %** et **2,8-20,2 M
+USD/an** : la borne basse de β remonte de 0,5 à 6,5 points et le coût *baisse*. Commander
+pendant les arrêts du four est écarté. Ce qui précède ce paragraphe est le modèle exogène :
+voir le tableau « tient / change / tombe » du README.
 
 ## État des étapes
 
@@ -72,10 +75,12 @@ modèle exogène : voir le tableau « tient / change / tombe » du README.
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **1 001 tests, ~38 s sur batterie le 2026-10-27, soit
-~20-25 s attendus sur secteur**
-(sur batterie, processeur bridé, comptez trois à quatre fois plus ; juste après trois heures de
-simulation, la même suite a pris 111 s, puis 38 s au repos). S'y ajoutent **28 tests
+`ruff check .` et `pytest -q` passent : **1 080 tests** (2026-10-28). Durée **non vérifiée sous
+la limite à cette date** : 106 s mesurées sur batterie, processeur bridé après six heures de
+calcul (le test le plus lent y prend 4,1 s contre 1,7 s la veille). La veille, 1 001 tests
+prenaient 38 s sur batterie au repos ; les tests ajoutés à l'étape 7 coûtent ~2 s à vitesse
+normale, d'où **~40 s attendus au repos sur batterie, ~20-25 s sur secteur — à re-mesurer**
+(juste après trois heures de simulation, la même suite a déjà pris 111 s, puis 38 s au repos). S'y ajoutent **28 tests
 marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
 `pytest -m slow -q` (~100 s au repos, 225 s machine chaude) : la validation analytique du moteur de file, deux validations de
 comportement de `beta_site.py`, les deux mesures de la limite 0 (gain des nombres communs,
@@ -501,15 +506,56 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   (`chiffre_site_endogene.py`, 500 tirages uniformes dans les fourchettes : stockyard,
   stock usine, durée d'arrêt, cv_delai) : β de long terme de 94,9 % [85,8 ; 100,0] (discret,
   interdits) à 98,9 % [97,2 ; 100,0] (discret, permis), coût de 6,0 à 12,5 M USD/an en
-  médiane. **`cv_delai` explique 74 à 98 % de la variance**, le stockage ≤ 7 %, la durée
-  d'arrêt ≤ 7 %. L'aléa d'une année ne pèse que 4 à 27 % de la dispersion annuelle (contre
-  86 % dans le modèle exogène). Restreint à cv_delai ≤ 0,40 (301 tirages) : β médian ≥ 98,4 %
+  médiane. **`cv_delai` explique 73 à 97 % de la variance de long terme**, le stockage
+  ≤ 12 %, la durée d'arrêt ≤ 10 % (définition unique de l'étape 7). L'aléa d'une année pèse
+  33 à 68 % de la dispersion annuelle de β (**corrigé à l'étape 7** : la première version
+  disait 4 à 27 %, mesurés aux seuls paramètres centraux). Restreint à cv_delai ≤ 0,40 (301 tirages) : β médian ≥ 98,4 %
   partout. Le point de commande est figé à son optimum central : aux grands cv_delai, borne
   pessimiste. *Tient / change / tombe* : « le stockage ne sert pas la production » **tient** ;
   « le second poste déplace la file » **change** (il la supprime surtout, et devient le levier
   du coût) ; « la régularité domine au-delà de 95 % » **tient sur le fond** (c'est la
   régularité des délais) **mais tombe dans sa forme** (β ≥ 0,99 atteint dans 24 à 48 % des
-  tirages, c_a² n'est plus une entrée) ; « 86 % de l'aléa » **tombe**.
+  tirages, c_a² n'est plus une entrée) ; « 86 % de l'aléa » **change** (33 à 68 %, après
+  correction ; publié d'abord comme « tombe »).
+  **Étape 7 (2026-10-28) : leviers de gestion.** *Règle s\*(cv_delai)*
+  (`point_de_commande_adaptatif.py`, recherche locale au pas de 5 j, 40 réplications par
+  point, sommet de parabole, IC bootstrap) : sans dépassement, s\* ≈ 25-30 + 26-34·cv
+  (27,5 → 44,4 j en continu, 31,7 → 44,8 j en discret) ; avec dépassements, s\* ne bouge
+  que de 4 à 8 j sur la fourchette. **C'est l'hypothèse de dépassement qui fait la pente.**
+  L'IC (± 0,1 à ± 1 j) ne mesure que le bruit de simulation : lire la règle à ± 2 j. Gain
+  mesuré au meilleur point de grille : jusqu'à 2,1 M USD/an à cv = 0,6 sans dépassement.
+  *Chiffre du site adaptatif* (`chiffre_site_endogene.py --adaptatif`, mêmes 500 tirages,
+  s interpolé sur la règle) : borne basse (q05) de β de long terme +0,5 à +6,5 points
+  (85,8 → 92,3 % dans la pire variante), coût médian par tirage −0,07 à −0,76 M USD/an,
+  moins cher dans 64 à 88 % des tirages. Part de `cv_delai` sur β de long terme 0,65-0,86
+  (contre 0,80-0,95 à s fixe), toujours 0,76-0,96 sur le coût ; aléa d'une année 50-90 %.
+  *Politique consciente des arrêts* (`politique_arrets.py`, option
+  `simulation.politique_arrets`, 200 réplications, variantes discrètes, s = 35 j) :
+  **hypothèse « (b) commander au rythme moyen pendant les arrêts récupère l'essentiel à
+  coût quasi nul » infirmée**, règle écrite avant le calcul : (b) récupère 20-25 % des
+  ruptures dues aux arrêts pour +1,0 à +1,3 M USD/an (silos pleins, +18 h d'attente, +30 kt
+  de stock) ; (c) date de reprise connue, 8 %, coût nul. Les ruptures dues aux arrêts ne
+  viennent donc pas de l'arrêt des commandes pendant l'arrêt ; lecture probable, non
+  démontrée : de la pleine cadence après la reprise. Le levier est s. *Mesure de cv_delai*
+  (`etat_mesure_delai.py`) : 34 navires annoncés puis arrivés (24/09-28/10), **un seul
+  minéralier**, horizon d'annonce médian 32 h ; cv provisoire 0,028, borne basse sans valeur
+  d'estimation (limite 22).
+- **Une seule définition de « la part d'un paramètre »** (étape 7) :
+  Var(E[Y | X]) / Var(Y), par dix classes d'effectifs égaux (`part_expliquee`), l'indice de
+  Sobol du premier ordre pour des tirages indépendants. Le ρ² de rang de la première version
+  de l'étape 6 est abandonné : il suppose l'effet monotone et ne s'additionne pas. **La part
+  de l'aléa** se mesure par l'appariement des deux horizons d'un même tirage
+  (`part_alea_appariee` : B = (Var Y₁ − Var Y₁₆)·16/15), jamais aux seuls paramètres
+  centraux, qui la sous-estiment quand l'aléa grandit avec un paramètre. Et elle **dépend de
+  la largeur des fourchettes** : la publier avec elles.
+- **`simulation.politique_arrets`** (aveugle | rythme_moyen | date_de_reprise) : ce que la
+  politique de commande voit pendant un arrêt du four, planifié ou non. Une consommation
+  fictive est retranchée de la position *vue par la politique* seulement (le stock et les
+  bilans ne la voient pas) et effacée à la reprise. « aveugle » est le défaut, identique au
+  bit près au modèle antérieur (vérifié sur 32 cas contre le commit précédent).
+- **Plusieurs configurations dans un seul lot de processus** (`pc.mesurer_plusieurs`) :
+  ouvrir un lot coûte plusieurs secondes, et la recherche de s\* en ouvrait un par point.
+  Mêmes graines que `replicate`, résultat identique, testé.
 - **Libellés des figures en deux langues** (`corridor.labels`). Toute figure nouvelle demande
   ses textes par clé et s'écrit en français (`x.png`) et en anglais (`x_en.png`) ; une clé
   sans traduction **lève** au lieu de retomber sur l'autre langue. Les figures antérieures à
@@ -737,6 +783,14 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
     **Faite le 2026-10-26 : elle échoue** (voir décisions, étape 3). La règle tient donc
     toujours : aucun résultat endogène ne décrit le site tant qu'un mécanisme de
     regroupement n'a pas été choisi et validé à son tour.
+22. **`cv_delai`, l'inconnue qui pilote le chiffre du site, n'est pas mesurable avec la
+    collecte.** État des lieux du 2026-10-28 (`etat_mesure_delai.py`) : les ETA publiées ne
+    précèdent l'arrivée que d'un jour et demi en médiane, contre 22 jours de délai supposé,
+    et la série ne contient qu'un minéralier annoncé puis arrivé. L'erreur d'annonce donne au
+    mieux une borne basse de l'aléa de fin de traversée (cv 0,028, dix fois sous la valeur de
+    travail). La mesure demande les dates d'affrètement (internes) ou de départ des ports de
+    chargement (AIS). La règle s\*(cv) de l'étape 7 vaut donc pour un exploitant qui connaît
+    ses délais, pas pour le projet.
 
 ## Reprise après une longue pause
 
@@ -803,13 +857,19 @@ python scripts/factoriel_endogene.py          # plan poste x stockage, 4 variant
 python scripts/factoriel_endogene.py --depuis-json   # retrace la figure sans simuler
 python scripts/chiffre_site_endogene.py       # chiffre du site, 500 tirages (~80 min)
 python scripts/chiffre_site_endogene.py --depuis-csv # figure et chiffre restreint, sans simuler
+python scripts/point_de_commande_adaptatif.py # règle s*(cv_delai), 40 rép./point (~2 h 30)
+python scripts/chiffre_site_endogene.py --adaptatif --comparer-a data/sim/chiffre_site_endogene.csv
+                                              # chiffre du site, s adapté à chaque tirage (~1 h)
+python scripts/politique_arrets.py            # commander pendant les arrêts : 3 politiques (~40 min)
+python scripts/etat_mesure_delai.py           # cv_delai mesurable par la collecte ? (instantané)
 ```
 
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de
 `docs/` : `sensibilite_dri.png`, `h2_blocage.png`, `frontiere_service.png`,
 `cout_regularite.png`, `metamodele_frontiere.png` et `metamodele_frontiere_directe.png`,
-puis, en français et en anglais (`_en`), `factoriel_endogene.png` et
-`chiffre_site_endogene.png`.
+puis, en français et en anglais (`_en`), `factoriel_endogene.png`,
+`chiffre_site_endogene.png`, `point_de_commande_adaptatif.png`, `chiffre_site_adaptatif.png`
+et `politique_arrets.png`.
 
 ## Structure du dépôt
 
@@ -835,6 +895,7 @@ scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          convergence_horizon, politique_commande, validation_ca2,
                          diagnostic_dispersion, validation_arrets, effet_arrets,
                          factoriel_endogene, chiffre_site_endogene,
+                         point_de_commande_adaptatif, politique_arrets, etat_mesure_delai,
                          cout_regularite,
                          beta_site, metamodele_frontiere, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés

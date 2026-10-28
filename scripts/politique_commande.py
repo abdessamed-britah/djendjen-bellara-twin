@@ -34,6 +34,7 @@ Usage : python scripts/politique_commande.py [--reps 16] [--seed 20260924]
 
 import argparse
 import importlib.util
+import random
 import statistics
 import sys
 from pathlib import Path
@@ -47,7 +48,8 @@ from corridor.sim.config import ASSUMPTIONS_PATH, load_yaml
 from corridor.sim.model import attentes_en_rade
 from corridor.sim.run import (
     ECHAUFFEMENT_STATIONNAIRE_ANS,
-    replicate_stationnaire,
+    FENETRE_STATIONNAIRE_ANS,
+    simuler_en_parallele,
 )
 from corridor.sim.stats import estimate, paired_difference, significant
 
@@ -82,7 +84,30 @@ def mesurer(config, reps: int, seed: int, unitaires, scenario: str = "",
             processus: int = 1) -> dict:
     """Une configuration en régime stationnaire : indicateurs et coûts, réplication par
     réplication (pour les différences appariées) et en `Estimate` (pour la publication)."""
-    resultats = replicate_stationnaire(config, reps, seed, scenario, processus=processus)
+    return mesurer_plusieurs([config], reps, seed, unitaires, scenario, processus)[0]
+
+
+def mesurer_plusieurs(configs, reps: int, seed: int, unitaires, scenario: str = "",
+                      processus: int = 1) -> list[dict]:
+    """`mesurer` pour plusieurs configurations, dans **un seul** lot de processus.
+
+    Mêmes graines que `replicate_stationnaire` pour chaque configuration — la réplication i
+    de chacune voit la même séquence aléatoire —, donc un résultat identique à des appels
+    séparés de `mesurer`. Ouvrir un lot de processus coûte plusieurs secondes : quand on
+    compare beaucoup de configurations, c'est ce coût qui domine.
+    """
+    configs = list(configs)
+    maitre = random.Random(seed)
+    graines = [maitre.randrange(2**32) for _ in range(reps)]
+    annees = ECHAUFFEMENT_STATIONNAIRE_ANS + FENETRE_STATIONNAIRE_ANS
+    taches = [(config, graine, annees, scenario, rep, ECHAUFFEMENT_STATIONNAIRE_ANS)
+              for config in configs for rep, graine in enumerate(graines)]
+    resultats = simuler_en_parallele(taches, processus)
+    return [_mesure(resultats[k * reps:(k + 1) * reps], config, unitaires)
+            for k, config in enumerate(configs)]
+
+
+def _mesure(resultats, config, unitaires) -> dict:
     lignes = []
     for r in resultats:
         annees = r.annees_mesurees

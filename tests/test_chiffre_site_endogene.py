@@ -77,12 +77,36 @@ def test_la_part_de_l_alea_est_bornee():
     assert cs.part_alea([1, 1], [0, 1]) == 0.0
 
 
-def test_l_importance_trouve_le_parametre_qui_pilote():
-    tirages = cs.tirer(RAW, 100, 5)
+def test_la_part_expliquee_trouve_le_parametre_qui_pilote():
+    tirages = cs.tirer(RAW, 500, 5)
     valeurs = [t["cv_delai"] * 2 for t in tirages]
-    imp = cs.importance(tirages, valeurs)
-    assert imp["cv_delai"] == pytest.approx(1.0)
-    assert max(v for n, v in imp.items() if n != "cv_delai") < 0.1
+    parts = cs.part_expliquee(tirages, valeurs)
+    assert parts["cv_delai"] > 0.98
+    assert max(v for n, v in parts.items() if n != "cv_delai") < 0.05
+
+
+def test_la_part_expliquee_voit_un_effet_non_monotone():
+    """Un effet en U échappe à une corrélation de rang, pas à Var(E[Y|X]) / Var(Y)."""
+    tirages = cs.tirer(RAW, 1000, 6)
+    valeurs = [(t["cv_delai"] - 0.35) ** 2 for t in tirages]
+    rho2 = cs.statistics.correlation([t["cv_delai"] for t in tirages], valeurs,
+                                     method="ranked") ** 2
+    assert rho2 < 0.1
+    assert cs.part_expliquee(tirages, valeurs)["cv_delai"] > 0.95
+
+
+def test_les_parts_de_deux_parametres_independants_s_additionnent():
+    tirages = cs.tirer(RAW, 2000, 7)
+    valeurs = [t["cv_delai"] / 0.5 + t["duree_arret_j"] / 28 for t in tirages]
+    parts = cs.part_expliquee(tirages, valeurs)
+    assert parts["cv_delai"] + parts["duree_arret_j"] == pytest.approx(1.0, abs=0.05)
+
+
+def test_un_s_impose_remplace_le_point_de_commande_de_la_variante():
+    t = {"stockyard_t": 400e3, "usine_t": 80e3, "duree_arret_j": 20.0, "cv_delai": 0.5}
+    config = cs.configuration(RAW, "discret", True, t, s_j=47.5)
+    assert config.point_de_commande_j == 47.5
+    assert config.point_de_commande_t == pytest.approx(47.5 * config.debit_pellets_t_par_h * 24)
 
 
 def test_part_au_dessus_du_seuil():
@@ -119,3 +143,39 @@ def test_les_tirages_se_relisent_depuis_le_csv(tmp_path):
     relus, relu = cs.lire_csv(chemin)
     assert relu == resultats
     assert relus == [{n: t[n] for n, _ in cs.PARAMETRES} for t in tirages]
+
+
+def test_la_colonne_du_point_de_commande_se_relit(tmp_path):
+    tirages = cs.tirer(RAW, 2, 2)
+    lignes = [{"beta_appro": 0.99, "total": 1e6, "arrets_dri": 1.0, "surestaries": 2.0,
+               "portage": 3.0, "s_j": 42.5}] * 2
+    resultats = {"tirages": {(v, h): lignes for v in cs.VARIANTES for h, _ in cs.HORIZONS}}
+    _, relu = cs.lire_csv(cs.ecrire_csv(tirages, resultats, tmp_path / "s.csv"))
+    assert relu == resultats
+
+
+def test_la_part_de_l_alea_appariee_retrouve_un_melange_connu():
+    """A = 1 (paramètres), B = 3 (aléa annuel), n = 16 : on retrouve 3/4 et 3/16 / (1 + 3/16)."""
+    rng = cs.random.Random(4)
+    un_an, long = [], []
+    for _ in range(20000):
+        moyenne = rng.gauss(0, 1)
+        un_an.append(moyenne + rng.gauss(0, 3 ** 0.5))
+        long.append(moyenne + rng.gauss(0, (3 / 16) ** 0.5))
+    parts = cs.part_alea_appariee(un_an, long, 16)
+    assert parts["une_annee"] == pytest.approx(0.75, abs=0.03)
+    assert parts["long_terme"] == pytest.approx((3 / 16) / (1 + 3 / 16), abs=0.03)
+
+
+def test_la_part_de_l_alea_baisse_quand_la_fourchette_s_elargit():
+    """Même aléa, paramètres plus dispersés : la part de l'aléa diminue."""
+    rng = cs.random.Random(5)
+
+    def parts(largeur):
+        un_an, long = [], []
+        for _ in range(20000):
+            moyenne = rng.uniform(-largeur, largeur)
+            un_an.append(moyenne + rng.gauss(0, 1))
+            long.append(moyenne + rng.gauss(0, 0.25))
+        return cs.part_alea_appariee(un_an, long, 16)["une_annee"]
+    assert parts(3.0) < parts(1.0)

@@ -259,6 +259,10 @@ class _Corridor:
         # minerai sans en retirer. Le four réveille donc la politique, et elle seule ; une
         # revue à pas fixe ajouterait un retard qui se confondrait avec le délai.
         self.reveil: simpy.Event | None = None
+        # Consommation fictive retranchée de la position vue par la politique de commande
+        # pendant un arrêt du four (`politique_arrets`) ; nulle hors arrêt, et toujours nulle
+        # en politique « aveugle ».
+        self.consommation_fictive_t = 0.0
         # Dépassements interdits : date d'arrivée du dernier navire commandé, que le
         # suivant ne peut pas devancer.
         self._derniere_arrivee = 0.0
@@ -321,7 +325,7 @@ class _Corridor:
         seuil = self.config.point_de_commande_t
         reporter = self.config.reporter_si_navire_en_rade
         while True:
-            while self.position_de_stock() < seuil:
+            while self.position_de_stock() - self.consommation_fictive_t < seuil:
                 if reporter and self.metrics.anchorage_ships.level > 0:
                     # un navire attend déjà : on reporte, et on le compte. Le réveil suivant
                     # vient de la consommation ou de l'accostage de ce navire.
@@ -484,8 +488,10 @@ class _Corridor:
             besoin_t = self.config.debit_pellets_t_par_h * step_h
             production_t = self.config.debit_dri_t_par_h * step_h
         while True:
-            if self._planned_stop(self.env.now):
+            fin_planifiee = self._planned_stop_end(self.env.now)
+            if fin_planifiee is not None:
                 self.metrics.dri_planned_stop_hours += step_h
+                self._pendant_un_arret(fin_planifiee - self.env.now)
                 yield self.env.timeout(step_h)
                 continue
             if discret:
@@ -503,8 +509,10 @@ class _Corridor:
                 reste_h -= step_h
                 if en_panne:
                     self.metrics.dri_breakdown_hours += step_h
+                    self._pendant_un_arret(reste_h + step_h)
                     yield self.env.timeout(step_h)
                     continue
+            self.consommation_fictive_t = 0.0
             if self.plant.level >= besoin_t:
                 yield self.plant.get(besoin_t)
                 if self.pull:
@@ -526,8 +534,38 @@ class _Corridor:
             self.metrics.inventory_samples.append(self.position_de_stock())
             yield self.env.timeout(self.config.pas_echantillonnage_h)
 
+    def _pendant_un_arret(self, reste_h: float) -> None:
+        """Une heure d'arrêt du four, vue par la politique de commande.
+
+        `reste_h` est la durée restante de l'arrêt, heure en cours comprise. « aveugle » ne
+        fait rien : la position se fige. « rythme_moyen » retranche une heure de consommation
+        moyenne. « date_de_reprise » remplace la consommation attendue sur le délai moyen L
+        (rythme moyen × L, celle pour laquelle s est réglé) par celle qu'on sait devoir
+        venir : pleine cadence × (L − R)⁺ en mode discret, cadence de marche sinon.
+        """
+        politique = self.config.politique_arrets
+        if politique == "aveugle":
+            return
+        if politique == "rythme_moyen":
+            self.consommation_fictive_t += self.config.debit_pellets_t_par_h * self.config.pas_h
+        else:
+            delai_h = self.config.delai_approvisionnement_h
+            cadence = (self.config.debit_pellets_plein_t_par_h
+                       if self.config.mode_arrets_dri == "discret"
+                       else self.config.debit_pellets_t_par_h)
+            attendue = cadence * max(delai_h - reste_h, 0.0)
+            self.consommation_fictive_t = attendue - self.config.debit_pellets_t_par_h * delai_h
+        self._reveiller()
+
     def _planned_stop(self, now: float) -> bool:
-        return any(start <= now < end for start, end in self.stops)
+        return self._planned_stop_end(now) is not None
+
+    def _planned_stop_end(self, now: float) -> float | None:
+        """Fin de l'arrêt planifié en cours, ou None hors arrêt planifié."""
+        for start, end in self.stops:
+            if start <= now < end:
+                return end
+        return None
 
     # --- restitution ------------------------------------------------------
 
