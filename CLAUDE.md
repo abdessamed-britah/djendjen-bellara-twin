@@ -1,7 +1,7 @@
 ﻿# CLAUDE.md
 
 Contexte permanent du projet, écrit pour une **reprise après plusieurs semaines sans aucun
-contexte**. Dernière mise à jour : 2026-10-28. Lis-le en entier avant toute tâche : état réel de
+contexte**. Dernière mise à jour : 2026-10-29. Lis-le en entier avant toute tâche : état réel de
 chaque étape, décisions prises et leurs raisons, limites connues, commandes, puis les trois
 prochaines tâches avec des critères de réussite vérifiables.
 
@@ -75,12 +75,8 @@ voir le tableau « tient / change / tombe » du README.
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **1 080 tests** (2026-10-28). Durée **non vérifiée sous
-la limite à cette date** : 106 s mesurées sur batterie, processeur bridé après six heures de
-calcul (le test le plus lent y prend 4,1 s contre 1,7 s la veille). La veille, 1 001 tests
-prenaient 38 s sur batterie au repos ; les tests ajoutés à l'étape 7 coûtent ~2 s à vitesse
-normale, d'où **~40 s attendus au repos sur batterie, ~20-25 s sur secteur — à re-mesurer**
-(juste après trois heures de simulation, la même suite a déjà pris 111 s, puis 38 s au repos). S'y ajoutent **28 tests
+`ruff check .` et `pytest -q` passent : **1 124 tests** (2026-10-29). **Limite de 45 s dépassée à la dernière mesure** : 57 s sur secteur, avec 31 % du processeur pris par d'autres applications (navigateur, éditeur) ; le même test de référence y prend 2,0 à 2,5 s contre 1,7 s le 2026-10-27, où 1 001 tests prenaient 38 s. Les tests ajoutés aux étapes 7 et 8 pèsent ~6 s ; les plus lourds sont passés en `slow`. **À re-mesurer machine au repos** avant d'en tirer une règle ; si le dépassement tient au repos, c'est la limite ou la suite qu'il faut revoir, pas la mesure.
+S'y ajoutent **34 tests
 marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
 `pytest -m slow -q` (~100 s au repos, 225 s machine chaude) : la validation analytique du moteur de file, deux validations de
 comportement de `beta_site.py`, les deux mesures de la limite 0 (gain des nombres communs,
@@ -535,11 +531,41 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   coût quasi nul » infirmée**, règle écrite avant le calcul : (b) récupère 20-25 % des
   ruptures dues aux arrêts pour +1,0 à +1,3 M USD/an (silos pleins, +18 h d'attente, +30 kt
   de stock) ; (c) date de reprise connue, 8 %, coût nul. Les ruptures dues aux arrêts ne
-  viennent donc pas de l'arrêt des commandes pendant l'arrêt ; lecture probable, non
-  démontrée : de la pleine cadence après la reprise. Le levier est s. *Mesure de cv_delai*
+  viennent donc pas de l'arrêt des commandes pendant l'arrêt ; lecture avancée alors, non
+  démontrée : de la pleine cadence après la reprise (**infirmée à l'étape 8**). Le levier
+  est s. *Mesure de cv_delai*
   (`etat_mesure_delai.py`) : 34 navires annoncés puis arrivés (24/09-28/10), **un seul
   minéralier**, horizon d'annonce médian 32 h ; cv provisoire 0,028, borne basse sans valeur
   d'estimation (limite 22).
+  **Étape 8 (2026-10-29) : attribution des ruptures, règle de service, validation relue.**
+  *Attribution* (`attribution_ruptures.py`, journal épisode par épisode, 200 réplications,
+  s = 35 j, deux références : heures de marche par âge depuis la reprise, retard récent
+  relevé tous les 5 j) : **« pleine cadence après la reprise » infirmée** par la règle
+  écrite avant le calcul — risque relatif des 22 jours qui suivent une reprise 0,20 et 0,30
+  en discret (0,17 et 0,34 au N le plus favorable, qui vaut 1 j : aucun âge ne
+  sur-représente les ruptures). Le risque *monte* avec l'âge de la marche. **Un retard au-delà
+  du 90e centile précède 85 à 98 % des épisodes contre 21 à 23 % des instants quelconques**
+  (risque relatif ≈ 4, quatre variantes) ; pondéré par les heures de rupture, 81 à 100 %. À
+  la rupture, ~41,5 des ~42 jours de position sont à flot. Les arrêts discrets multiplient
+  les occasions (2,5-5,4 épisodes/an contre 0,15-0,85). Politique (d) non testée, comme
+  prévu. *Règle de service* (`regle_service.py`, reprend les 121 points de l'étape 7, en
+  simule 21) : avec dépassements, s\* tient déjà 98 % partout ; sans dépassement, tenir 98 %
+  demande jusqu'à +14 j et +4,2 M USD/an au-delà de s\* (cv 0,6), 99 % sort du domaine à
+  cv 0,6. Prix ± 50 % : s\* balaie 1-3 j à cv 0,1, 10-11 j à cv 0,6 sans dépassement, soit
+  autant que l'écart des cibles 98/99 % (1-7 j). *Validation relue*
+  (`validation_arrets.py --depuis-json`) : **ne discrimine pas cv_delai** — 18/21, 19/21 et
+  21/21 combinaisons compatibles à cv 0,10, 0,25 et 0,60 (dépassements permis, 2023-2025) ;
+  seule la durée d'arrêt de 2 j est écartée. La carte de l'étape 5 avait été perdue ; elle a
+  été reconstruite depuis sa sortie imprimée (verdicts exacts, quantiles à 3 décimales).
+- **Journal des ruptures** (`model.journal_des_ruptures`) : reprises du four, épisodes de
+  rupture, commandes, heures de marche par âge. Écrit seulement, jamais relu par le modèle :
+  la trajectoire est identique au bit près (vérifié sur 32 cas). **Une attribution se juge
+  contre une référence** : sans les heures de marche par âge et le retard à un instant
+  quelconque, « 87 % des ruptures suivent un retard » ne dit rien, puisque plusieurs
+  commandes sont en jeu à tout instant (21-23 % des instants ont déjà un tel retard).
+- **Tout script de calcul long écrit ses résultats en JSON et sait les relire**
+  (`--depuis-json`) : la carte de l'étape 5 a dû être reconstruite depuis un journal de
+  session, faute de l'avoir sauvegardée.
 - **Une seule définition de « la part d'un paramètre »** (étape 7) :
   Var(E[Y | X]) / Var(Y), par dix classes d'effectifs égaux (`part_expliquee`), l'indice de
   Sobol du premier ordre pour des tirages indépendants. Le ρ² de rang de la première version
@@ -862,14 +888,17 @@ python scripts/chiffre_site_endogene.py --adaptatif --comparer-a data/sim/chiffr
                                               # chiffre du site, s adapté à chaque tirage (~1 h)
 python scripts/politique_arrets.py            # commander pendant les arrêts : 3 politiques (~40 min)
 python scripts/etat_mesure_delai.py           # cv_delai mesurable par la collecte ? (instantané)
+python scripts/attribution_ruptures.py        # d'où viennent les ruptures (~30 min)
+python scripts/regle_service.py               # s_β(cv) et sensibilité de s* aux prix (~45 min)
+python scripts/validation_arrets.py --depuis-json  # compatibilité par paramètre, sans simuler
 ```
 
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de
 `docs/` : `sensibilite_dri.png`, `h2_blocage.png`, `frontiere_service.png`,
 `cout_regularite.png`, `metamodele_frontiere.png` et `metamodele_frontiere_directe.png`,
 puis, en français et en anglais (`_en`), `factoriel_endogene.png`,
-`chiffre_site_endogene.png`, `point_de_commande_adaptatif.png`, `chiffre_site_adaptatif.png`
-et `politique_arrets.png`.
+`chiffre_site_endogene.png`, `point_de_commande_adaptatif.png`, `chiffre_site_adaptatif.png`,
+`politique_arrets.png`, `attribution_ruptures.png` et `regle_service.png`.
 
 ## Structure du dépôt
 
@@ -896,6 +925,7 @@ scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          diagnostic_dispersion, validation_arrets, effet_arrets,
                          factoriel_endogene, chiffre_site_endogene,
                          point_de_commande_adaptatif, politique_arrets, etat_mesure_delai,
+                         attribution_ruptures, regle_service,
                          cout_regularite,
                          beta_site, metamodele_frontiere, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés

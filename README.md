@@ -1139,6 +1139,8 @@ Coûts en M USD/an ; écarts appariés avec IC à 95 %.
   fait les ruptures. Lecture la plus probable, non démontrée ici : elles viennent **après la
   reprise**, quand le four tourne à pleine cadence (18 % au-dessus du rythme moyen) pendant
   des marches qui durent en moyenne plus que le délai, alors que s est compté au rythme moyen.
+  **Infirmée à l'étape 8** (section suivante) : les ruptures sont sous-représentées après une
+  reprise, et ce qui les précède est un navire en retard.
 - **Le levier contre les ruptures dues aux arrêts est donc le point de commande lui-même**, et
   la règle ci-dessus le règle déjà : à faible dispersion, s* est plus haut en discret (31,7 j)
   qu'en continu (27,5 j). Une politique qui compterait s à pleine cadence pendant les marches
@@ -1188,6 +1190,170 @@ comme une estimation :
 mieux en donner une borne basse sur la fin de traversée. La mesure demande soit les dates
 d'affrètement (internes à AQS), soit les dates de départ des ports de chargement (AIS, hors
 données publiques gratuites).
+
+### D'où viennent les ruptures, et ce qu'on peut dire de `cv_delai` sans nouvelle donnée
+
+**Cadre.** Celui des étapes 6 et 7 : `phase2_endogene`, régime stationnaire, quatre variantes
+(C/D × p/i). Écarts de β en points de pourcentage. Pas de nouvelle collecte.
+
+#### Les ruptures suivent les navires en retard, pas les reprises du four
+
+*Sert l'**originalité** : l'attribution épisode par épisode, contre une distribution de
+référence, est ce qui permet de rejeter une explication plausible au lieu de la raconter.
+Sert l'**importance** : elle dit quel levier vise la bonne cause — la protection contre le
+retard des navires — et lequel n'en vise aucune.*
+
+À l'étape 7, j'avais lu le faible effet des politiques (b) et (c) comme le signe que les
+ruptures viendraient « de la pleine cadence après la reprise », sans le démontrer. Le modèle
+tient désormais un **journal des ruptures**, sans effet sur la trajectoire (identique au bit
+près sur 32 cas) : pour chaque épisode, l'âge de la marche du four (temps depuis la dernière
+reprise), la position de stock à cette reprise et au début de l'épisode, la chaîne en
+transit, et le plus grand retard parmi les commandes attendues dans le délai moyen qui
+précède (retard = arrivée en rade − commande − délai moyen). Deux références : les heures de
+marche par âge depuis la reprise, et le plus grand retard récent relevé tous les 5 jours.
+200 réplications, s = 35 j, politique (a) (`scripts/attribution_ruptures.py`).
+
+**Classes**, exclusives dans cet ordre : (i) dans les N jours qui suivent une reprise ; (ii)
+précédé d'un retard au-delà du 90e centile des retards (7,3 à 7,6 j selon la variante) ; (iii)
+autre. **N** est choisi sur la distribution comme l'âge **le plus favorable** à
+l'interprétation testée — celui où les épisodes sont le plus sur-représentés par rapport aux
+heures de marche. Aucun âge ne les sur-représente : ce N vaut 1 jour dans les quatre
+variantes. N = 22 j (un délai moyen : au-delà, une commande passée à la reprise est arrivée)
+est publié comme N mécanique.
+
+**Règle écrite avant le calcul** : l'interprétation est *confirmée* si, en discret, (i)
+réunit au moins la moitié des épisodes avec un risque relatif d'au moins 2, borne basse
+comprise ; *infirmée* si le risque relatif ne dépasse pas 1,25, borne haute comprise.
+
+| variante | épisodes / an | (i) / (ii) / (iii), par épisode (N = 22 j) | idem, par heure de rupture | risque relatif de (i), N = 22 j | idem, N le plus favorable (1 j) | retard > 90e centile : avant un épisode / à un instant quelconque | risque relatif de (ii) |
+| --- | ---: | --- | --- | --- | --- | --- | --- |
+| C, p | 0,15 | 0 / 98 / 2 % | 0 / 100 / 0 % | 0,03 [0,00 ; 0,08] | 0,00 | 98 % / 23 % | **4,3** [4,2 ; 4,4] |
+| C, i | 0,85 | 0 / 97 / 2 % | 0 / 99 / 0 % | 0,03 [0,01 ; 0,05] | 0,00 | 98 % / 22 % | **4,4** [4,4 ; 4,5] |
+| D, p | 2,50 | 10 / 79 / 11 % | 11 / 87 / 1 % | **0,20** [0,16 ; 0,26] | 0,17 [0,11 ; 0,23] | 89 % / 23 % | **3,9** [3,8 ; 4,1] |
+| D, i | 5,42 | 15 / 71 / 14 % | 18 / 81 / 1 % | **0,30** [0,27 ; 0,35] | 0,34 [0,29 ; 0,40] | 85 % / 21 % | **4,0** [3,9 ; 4,1] |
+
+IC à 95 % par bootstrap sur les réplications.
+
+![Les ruptures suivent-elles les reprises du four ?](docs/attribution_ruptures.png)
+
+*(version anglaise : `docs/attribution_ruptures_en.png`)*
+
+- **« Pleine cadence après la reprise » : infirmée**, dans les deux variantes discrètes et
+  quel que soit N. Les ruptures sont *sous*-représentées après une reprise : risque relatif
+  de 0,17 à 0,34. Le risque monte au contraire avec l'âge de la marche, de 0,06 épisode pour
+  1 000 heures dans les cinq premiers jours à environ 1 entre 60 et 75 jours (D, p), et de
+  0,16 à environ 2 (D, i). À la reprise, le stock est plein de ce qui est arrivé pendant
+  l'arrêt (position médiane : 39 jours de consommation).
+- **Ce qui précède une rupture, c'est un navire en retard.** Un retard au-delà du 90e centile
+  précède 85 à 98 % des épisodes, contre 21 à 23 % des instants pris au hasard : un risque
+  relatif de 4, dans les quatre variantes, continu compris. Pondérée par les heures de rupture
+  — ce qui fait la perte —, la classe (ii) pèse 81 à 100 %. Au début d'un épisode, la
+  position de stock vaut ~42 jours de consommation, dont ~41,5 à flot : le minerai existe, il
+  est en mer ou en rade. Le retard médian du navire en cause est de 10 à 14 jours.
+- **Le rôle des arrêts discrets est de multiplier les occasions**, pas d'en créer une
+  nouvelle : 2,5 à 5,4 épisodes par an contre 0,15 à 0,85 en continu. Une longue marche à
+  pleine cadence (18 % au-dessus du rythme moyen) consomme le stock de sécurité, et un
+  navire en retard achève de le vider. C'est la lecture compatible avec le profil de risque
+  par âge ; elle reste une lecture.
+- **La politique (d) — relever s avant la reprise — n'est pas testée**, comme la règle le
+  prévoyait : elle ajouterait du stock au moment où le risque est le plus bas. Le levier qui
+  vise la cause est la protection contre la dispersion du délai, c'est-à-dire le point de
+  commande réglé sur `cv_delai` (étape 7) ou sur une cible de service (ci-dessous).
+
+Reproductible par `python scripts/attribution_ruptures.py` (~30 min, 12 processus) ;
+`--depuis-json` relit `data/sim/attribution_ruptures.json`.
+
+#### La règle sous contrainte de service s_β(cv_delai), et ce que les prix y déplacent
+
+*Sert l'**importance** : une règle qu'un exploitant peut appliquer sans croire aux prix du
+projet, puisqu'elle ne dépend que d'une cible de service qu'il choisit. Sert la
+**généralité** : s_β s'exprime en jours de consommation contre un coefficient de variation,
+et l'écart entre s_β et s* dit où un corridor quelconque cesse d'être bien servi par
+l'optimum de coût.*
+
+Pour chaque cv de la grille de l'étape 7, le plus petit s qui tient β = 98 % et β = 99 %
+(β approvisionnement moyen de long terme : un taux espéré, pas une garantie annuelle), par
+interpolation entre les deux points de la grille au pas de 5 jours qui encadrent la cible ;
+IC à 95 % par bootstrap ; 40 réplications appariées par point, reprises de l'étape 7 et
+complétées par 21 points simulés (142 au total) (`scripts/regle_service.py`). Puis s* à coût minimal
+recalculé sans simuler pour neuf combinaisons de prix : portage × 0,5 / 1 / 1,5 et
+surestaries × 0,5 / 1 / 1,5.
+
+**Sans dépassement** (C, i et D, i) — là où la règle se joue :
+
+| cv | variante | s* (j) [β à s*, coût] | s_98 (j) [IC] — coût | s_99 (j) [IC] — coût | s* aux prix ± 50 % |
+| ---: | --- | --- | --- | --- | --- |
+| 0,10 | C, i | 27,5 [99,4 %, 3,0 M] | 24,7 [24,6 ; 24,7] — 3,5 M | 26,1 [26,0 ; 26,3] — 3,0 M | 27,1 – 30,0 |
+| 0,30 | C, i | 36,3 [98,9 %, 8,1 M] | 34,0 [33,8 ; 34,2] — 8,2 M | 37,0 [36,5 ; 37,4] — 8,2 M | 34,0 – 39,2 |
+| 0,40 | C, i | 39,8 [98,1 %, 10,8 M] | 39,6 [39,3 ; 40,0] — 10,8 M | 43,9 [43,3 ; 44,5] — 11,4 M | 37,3 – 43,1 |
+| 0,50 | C, i | 42,7 [96,4 %, 14,2 M] | 47,4 [46,5 ; 48,3] — 14,7 M | 52,9 [51,6 ; 54,0] — 16,8 M | 39,4 – 47,2 |
+| 0,60 | C, i | 44,4 [94,6 %, 17,1 M] | 54,9 [54,0 ; 56,4] — 19,5 M | **> 60** (hors domaine) | 40,3 – 50,4 |
+| 0,10 | D, i | 31,7 [99,6 %, 4,3 M] | 28,9 [28,8 ; 28,9] — 5,0 M | 29,7 [29,7 ; 29,7] — 4,3 M | 31,1 – 32,4 |
+| 0,30 | D, i | 38,0 [98,0 %, 10,2 M] | 38,1 [37,7 ; 38,4] — 10,2 M | 41,4 [40,7 ; 42,0] — 10,5 M | 35,8 – 41,3 |
+| 0,40 | D, i | 40,8 [96,9 %, 13,0 M] | 43,9 [43,4 ; 44,5] — 13,4 M | 48,5 [47,6 ; 49,3] — 14,8 M | 37,9 – 45,1 |
+| 0,50 | D, i | 42,9 [95,0 %, 16,3 M] | 51,7 [50,4 ; 53,0] — 18,2 M | 58,2 [56,2 ; 59,6] — 22,0 M | 38,9 – 48,0 |
+| 0,60 | D, i | 44,8 [93,3 %, 19,2 M] | 58,7 [57,7 ; 59,8] — 23,4 M | **> 60** (hors domaine) | 40,0 – 51,3 |
+
+**Avec dépassements** (C, p et D, p), sur toute la grille : s_98 de 24,6 à 34,9 j, s_99 de
+26,1 à 38,5 j, tous deux **au-dessous ou à moins de 2,4 j au-dessus de s\***, et β à s\* de
+98,4 à 99,7 %. Le tableau complet est imprimé par le script.
+
+![Règle sous contrainte de service et sensibilité de s* aux prix](docs/regle_service.png)
+
+*(version anglaise : `docs/regle_service_en.png` ; à droite, les barres sont l'étendue de s\*
+sur les neuf combinaisons de prix, pas un intervalle de confiance)*
+
+- **Avec dépassements, l'optimum de coût tient déjà 98 %** pour toute dispersion du délai, et
+  99 % partout en continu, jusqu'à cv = 0,3 en discret : la contrainte de service ne change
+  presque rien, la règle s\*(cv) suffit.
+- **Sans dépassement, l'optimum de coût cesse de tenir 98 % à partir de cv = 0,3 en discret
+  et de cv = 0,5 en continu.** Tenir 98 % coûte
+  alors de 0 à 4,2 M USD/an de plus que l'optimum, et demande jusqu'à 14 jours de stock de
+  sécurité en plus ; tenir 99 % coûte jusqu'à 5,7 M USD/an (cv = 0,5) et sort du domaine
+  publié de s (60 j) à cv = 0,6. **Le service exigé, pas le prix, fixe alors la règle.**
+- **Ce que les prix non sourcés déplacent dans s\*.** À ± 50 % sur le portage et sur les
+  surestaries, s\* balaie 1 à 3 jours à cv = 0,10, et à cv = 0,60 environ 5 jours avec dépassements, 10
+  à 11 jours sans. C'est l'ordre de grandeur de l'écart entre les cibles 98 % et 99 % (1 à
+  7 jours) : la partie de s\*(cv) qui dépend des prix est aussi grande que celle qui dépend du
+  choix de la cible. s_β, lui, n'en dépend pas — c'est la raison de le publier à côté.
+- **Réserves** : 40 réplications par point ; l'IC ne mesure que le bruit de simulation à
+  grille donnée ; β cible porte sur la moyenne de long terme, une année isolée peut tomber
+  dessous (étape 6 : l'aléa pèse un tiers à deux tiers de la dispersion annuelle).
+
+Reproductible par `python scripts/regle_service.py` (~45 min si l'étape 7 a été calculée) ;
+`--depuis-json` relit `data/sim/regle_service.json`.
+
+#### Ce que la validation dit de `cv_delai` : rien
+
+*Sert l'**importance**, par la négative : elle dit ce que les données publiques déjà
+exploitées ne permettent pas de trancher, donc où une mesure nouvelle serait décisive.*
+
+La carte de compatibilité de l'étape 5 (84 combinaisons durée d'arrêt × stockage ×
+`cv_delai` × dépassements, `baseline_endogene`, arrêts discrets) relue par paramètre
+(`python scripts/validation_arrets.py --depuis-json` ; la carte n'avait pas été sauvegardée
+à l'étape 5, elle a été reconstruite depuis la sortie imprimée de ce calcul, verdicts exacts
+et quantiles à trois décimales, et le script l'écrit désormais lui-même) :
+
+| 2023-2025 (référence) | combinaisons compatibles |
+| --- | --- |
+| cv_delai = 0,10 (dépassements permis) | 18 sur 21 |
+| cv_delai = 0,25 (dépassements permis) | 19 sur 21 |
+| cv_delai = 0,25 (dépassements interdits) | 18 sur 21 |
+| cv_delai = 0,60 (dépassements permis) | **21 sur 21** |
+| *pour comparaison : durée d'arrêt 2 j / 5 j et plus* | *4 sur 12 / 12 sur 12 à chaque durée* |
+
+**La validation ne discrimine pas `cv_delai`** : 86 à 100 % des combinaisons sont compatibles
+pour chacune des trois valeurs testées, et aucune n'est écartée. Le seul paramètre qu'elle
+discrimine est la durée des arrêts du four (2 jours, trop réguliers, sauf à cv élevé). Il n'y
+a donc pas de plage résiduelle, et la plage de β et de coût du site reste celle de l'étape 7.
+Trois réserves : la carte ne contient que trois valeurs de `cv_delai` (0,10, 0,25, 0,60) ; le
+test a **peu de puissance** (les bandes simulées couvrent presque un ordre de grandeur sur
+12 trimestres) ; et la période de référence 2023-2025 a été **choisie après** avoir vu le rôle
+de 2022. Sur 2022-2025, 2 à 3 combinaisons sur 21 passent à chaque cv, toutes à 30 jours
+d'arrêt : pas davantage de discrimination.
+
+Avec l'étape 7 (la collecte ne mesure pas `cv_delai`) : **aucune donnée publique déjà
+exploitée ne resserre l'inconnue qui pilote le chiffre du site.**
 
 > **Ces chiffres ne sont pas des prévisions.** Les deux paramètres qui les pilotent ne sont
 > pas sourcés : la **régularité des arrivées** de minéraliers (statut *estimé*, jamais

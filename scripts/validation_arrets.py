@@ -36,6 +36,7 @@ Usage : python scripts/validation_arrets.py [--graines 4] [--annees 60]
 import argparse
 import dataclasses
 import importlib.util
+import json
 import math
 import sys
 from pathlib import Path
@@ -64,6 +65,9 @@ DEFAULT_GRAINES = 4
 DEFAULT_ANNEES = 60.0
 DEFAULT_SEED = 20260924
 DEFAULT_FIGURE = Path("docs/validation_arrets.png")
+DEFAULT_JSON = Path("data/sim/validation_arrets.json")
+#: Les axes de la carte, dans l'ordre de ses clés (cv, dépassements, stockage, durée).
+AXES = ("cv_delai", "depassements", "stockage", "duree_j")
 
 
 def _charger(nom: str):
@@ -151,6 +155,46 @@ def juger(series, periode, valeur_observee) -> dict:
             if valeurs else math.nan}
 
 
+# --- la carte relue : compatibilité par paramètre (étape 8) -----------------------
+
+
+def vers_json(carte: dict) -> list[dict]:
+    return [{**dict(zip(AXES, cle, strict=True)), "periodes": r} for cle, r in carte.items()]
+
+
+def depuis_json(lignes: list[dict]) -> dict:
+    return {tuple(ligne[a] for a in AXES): ligne["periodes"] for ligne in lignes}
+
+
+def compatibilite_par(carte: dict, periode: str, axe: str,
+                      depassements: bool | None = None) -> dict:
+    """{valeur de l'axe: (combinaisons compatibles, combinaisons)} sur une période.
+
+    `depassements` restreint la carte à une hypothèse, pour comparer des valeurs de
+    `cv_delai` qui n'ont pas toutes été jouées sous les deux.
+    """
+    i = AXES.index(axe)
+    sortie: dict = {}
+    for cle, r in carte.items():
+        if depassements is not None and cle[1] != depassements:
+            continue
+        ok, n = sortie.get(cle[i], (0, 0))
+        sortie[cle[i]] = (ok + bool(r[periode]["compatible"]), n + 1)
+    return dict(sorted(sortie.items()))
+
+
+def print_compatibilite(carte: dict) -> None:
+    print(f"\n{'=' * 100}\nCompatibilité par paramètre\n{'=' * 100}")
+    for periode in PERIODES:
+        for axe in AXES:
+            parts = compatibilite_par(carte, periode, axe)
+            print(f"  {periode} — {axe:12} " + "  ".join(
+                f"{v}: {ok}/{n}" for v, (ok, n) in parts.items()))
+        parts = compatibilite_par(carte, periode, "cv_delai", depassements=True)
+        print(f"  {periode} — cv_delai, dépassements permis seuls : " + "  ".join(
+            f"{v}: {ok}/{n}" for v, (ok, n) in parts.items()))
+
+
 # --- figure ---------------------------------------------------------------------
 
 
@@ -215,7 +259,15 @@ def main(argv=None) -> int:
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--durees", type=float, nargs="+", default=list(DUREES_ARRET_J))
     parser.add_argument("--figure", type=Path, default=DEFAULT_FIGURE)
+    parser.add_argument("--json", type=Path, default=DEFAULT_JSON)
+    parser.add_argument("--depuis-json", action="store_true",
+                        help="relit la carte écrite par un calcul précédent, sans simuler")
     args = parser.parse_args(argv)
+
+    if args.depuis_json:
+        carte = depuis_json(json.loads(args.json.read_text(encoding="utf-8")))
+        print_compatibilite(carte)
+        return 0
 
     raw = load_yaml(ASSUMPTIONS_PATH)
     val.verifier_preenregistrement(raw)
@@ -259,8 +311,12 @@ def main(argv=None) -> int:
             print(f"    cv_delai {cv}, {dict(val.HYPOTHESES)[dep]}, stockage {stockage}, "
                   f"arrêt {duree:g} j")
 
+    print_compatibilite(carte)
+    args.json.parent.mkdir(parents=True, exist_ok=True)
+    args.json.write_text(json.dumps(vers_json(carte)), encoding="utf-8")
+    print(f"\ncarte écrite : {args.json}")
     chemin = write_figure(carte, observes, args.figure)
-    print(f"\nfigure écrite : {chemin}")
+    print(f"figure écrite : {chemin}")
     return 0
 
 

@@ -211,6 +211,7 @@ def test_la_figure_est_un_png_non_vide(tmp_path):
 
 
 
+@pytest.mark.slow
 def test_mesurer_plusieurs_rend_exactement_des_appels_separes(monkeypatch):
     """Un seul lot de processus, mêmes graines que `replicate` : rien ne doit changer.
 

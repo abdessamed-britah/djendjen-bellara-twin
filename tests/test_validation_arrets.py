@@ -149,3 +149,32 @@ def test_la_figure_est_un_png_non_vide(tmp_path):
              for cv in (0.1, 0.25) for s in va.NIVEAUX_STOCKAGE for d in (2, 30)}
     chemin = va.write_figure(carte, {"2023-2025": 0.04, "2022-2025": 0.17}, tmp_path / "a.png")
     assert chemin.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+# --- étape 8 : la carte relue par paramètre ---------------------------------------
+
+
+def _carte_minimale():
+    def r(ok):
+        return {p: {"mediane": 0.03, "q05": 0.01, "q95": 0.05, "compatible": ok}
+                for p in va.PERIODES}
+    return {(0.1, True, "bas", 2.0): r(False), (0.1, True, "bas", 7.0): r(True),
+            (0.6, True, "bas", 2.0): r(True), (0.25, False, "haut", 7.0): r(True)}
+
+
+def test_la_carte_se_relit_depuis_json():
+    import json
+    carte = _carte_minimale()
+    assert va.depuis_json(json.loads(json.dumps(va.vers_json(carte)))) == carte
+
+
+def test_la_compatibilite_se_compte_par_valeur_d_un_axe():
+    carte = _carte_minimale()
+    assert va.compatibilite_par(carte, "2023-2025", "cv_delai") == {
+        0.1: (1, 2), 0.25: (1, 1), 0.6: (1, 1)}
+    assert va.compatibilite_par(carte, "2023-2025", "duree_j") == {2.0: (1, 2), 7.0: (2, 2)}
+
+
+def test_la_compatibilite_par_cv_peut_se_restreindre_a_une_hypothese_de_depassement():
+    parts = va.compatibilite_par(_carte_minimale(), "2023-2025", "cv_delai", depassements=True)
+    assert parts == {0.1: (1, 2), 0.6: (1, 1)}

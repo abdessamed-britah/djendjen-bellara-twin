@@ -235,6 +235,13 @@ class _Metrics:
     # date d'arrivée du navire de chaque attente de `waits_h`, dans le même ordre : une
     # attente est enregistrée à l'accostage, pas à l'arrivée
     waits_arrival_h: list[float] = field(default_factory=list)
+    # Journal des ruptures (étape 8). Écrit par les processus, jamais relu par le modèle :
+    # il ne change rien à la trajectoire. Lu par `journal_des_ruptures`.
+    reprises: list[tuple[float, float]] = field(default_factory=list)  # (heure, position)
+    episodes_rupture: list[dict] = field(default_factory=list)
+    commandes: list[tuple[float, float, float]] = field(default_factory=list)  # commande,
+    # arrivée en rade, délai tiré (avant le report d'un navire qui ne peut pas dépasser)
+    heures_marche_par_age_j: dict[int, float] = field(default_factory=dict)
 
 
 class _Corridor:
@@ -263,6 +270,12 @@ class _Corridor:
         # pendant un arrêt du four (`politique_arrets`) ; nulle hors arrêt, et toujours nulle
         # en politique « aveugle ».
         self.consommation_fictive_t = 0.0
+        # État du four vu par le journal des ruptures : arrêté (planifié ou panne), heure de
+        # la dernière reprise (0 = début de la simulation), épisode de rupture en cours.
+        self._four_arrete = False
+        self._derniere_reprise_h = 0.0
+        self._episode: dict | None = None
+        self.debut_journal_h = 0.0
         # Dépassements interdits : date d'arrivée du dernier navire commandé, que le
         # suivant ne peut pas devancer.
         self._derniere_arrivee = 0.0
@@ -346,6 +359,7 @@ class _Corridor:
         Le minerai compte dans la position de stock dès la commande : c'est ce qui empêche
         la politique de commander un navire par heure jusqu'à l'arrivée du premier.
         """
+        commande_h, delai_tire_h = self.env.now, delai_h
         if not self.config.depassements_autorises:
             # navette sur une seule route : ce navire n'arrive pas avant le précédent
             arrivee = max(self.env.now + delai_h, self._derniere_arrivee)
@@ -354,6 +368,7 @@ class _Corridor:
         self.metrics.at_sea_tonnage.change(self.env.now, +size_t)
         yield self.env.timeout(delai_h)
         self.metrics.at_sea_tonnage.change(self.env.now, -size_t)
+        self.metrics.commandes.append((commande_h, self.env.now, delai_tire_h))
         yield from self.vessel(size_t, rate)
 
     def position_de_stock(self) -> float:
@@ -491,6 +506,7 @@ class _Corridor:
             fin_planifiee = self._planned_stop_end(self.env.now)
             if fin_planifiee is not None:
                 self.metrics.dri_planned_stop_hours += step_h
+                self._four_arrete, self._episode = True, None
                 self._pendant_un_arret(fin_planifiee - self.env.now)
                 yield self.env.timeout(step_h)
                 continue
@@ -509,10 +525,12 @@ class _Corridor:
                 reste_h -= step_h
                 if en_panne:
                     self.metrics.dri_breakdown_hours += step_h
+                    self._four_arrete, self._episode = True, None
                     self._pendant_un_arret(reste_h + step_h)
                     yield self.env.timeout(step_h)
                     continue
             self.consommation_fictive_t = 0.0
+            self._journal_marche()
             if self.plant.level >= besoin_t:
                 yield self.plant.get(besoin_t)
                 if self.pull:
@@ -520,10 +538,12 @@ class _Corridor:
                     yield self.plant_space.put(besoin_t)
                 self.metrics.pellets_consumed_t += besoin_t
                 self.metrics.dri_production_t += production_t
+                self._episode = None
                 self._reveiller()
             else:
                 # stock usine épuisé : le four s'arrête, l'heure est comptée
                 self.metrics.dri_stop_hours += step_h
+                self._journal_rupture(step_h)
             yield self.env.timeout(step_h)
 
     def monitor(self) -> Generator:
@@ -533,6 +553,29 @@ class _Corridor:
             self.metrics.plant_samples.append(self.plant.level)
             self.metrics.inventory_samples.append(self.position_de_stock())
             yield self.env.timeout(self.config.pas_echantillonnage_h)
+
+    def _journal_marche(self) -> None:
+        """Une heure où le four devrait tourner : note la reprise, et l'âge de l'heure."""
+        if self._four_arrete:
+            self._four_arrete = False
+            self._derniere_reprise_h = self.env.now
+            self.metrics.reprises.append((self.env.now, self.position_de_stock()))
+        if self.env.now >= self.debut_journal_h:
+            age_j = int((self.env.now - self._derniere_reprise_h) // 24)
+            heures = self.metrics.heures_marche_par_age_j
+            heures[age_j] = heures.get(age_j, 0.0) + self.config.pas_h
+
+    def _journal_rupture(self, step_h: float) -> None:
+        """Une heure de rupture : ouvre un épisode ou prolonge celui en cours."""
+        if self._episode is None:
+            self._episode = {
+                "debut_h": self.env.now, "duree_h": 0.0,
+                "derniere_reprise_h": self._derniere_reprise_h,
+                "position_t": self.position_de_stock(),
+                "transit_t": self.metrics.pellets_afloat_t + self.metrics.pellets_in_transit_t,
+            }
+            self.metrics.episodes_rupture.append(self._episode)
+        self._episode["duree_h"] += step_h
 
     def _pendant_un_arret(self, reste_h: float) -> None:
         """Une heure d'arrêt du four, vue par la politique de commande.
@@ -693,6 +736,31 @@ def simulate(
     env.run(until=years * config.heures_par_an)
     return corridor.result(scenario=scenario, rep=rep, seed=seed, years=years,
                            warmup_years=warmup_years)
+
+
+def journal_des_ruptures(config: SimConfig, seed: int, years: float,
+                         warmup_years: float = 0.0) -> dict:
+    """Le journal des ruptures d'une trajectoire, pour les attribuer (étape 8).
+
+    Renvoie les épisodes de rupture commencés après l'échauffement, les reprises du four
+    (heure, position de stock), les commandes (commande, arrivée en rade, délai tiré) et la
+    distribution de référence : les heures de marche après l'échauffement, par âge en jours
+    depuis la dernière reprise. Un épisode est une suite d'heures de rupture consécutives ;
+    un arrêt du four ou une heure de production le clôt.
+    """
+    env, corridor = _construire(config, seed, years, None, warmup_years)
+    corridor.debut_journal_h = warmup_years * config.heures_par_an
+    env.run(until=years * config.heures_par_an)
+    m = corridor.metrics
+    return {
+        "debut_h": corridor.debut_journal_h,
+        "fin_h": years * config.heures_par_an,
+        "episodes": [dict(e) for e in m.episodes_rupture
+                     if e["debut_h"] >= corridor.debut_journal_h],
+        "reprises": list(m.reprises),
+        "commandes": list(m.commandes),
+        "heures_marche_par_age_j": dict(m.heures_marche_par_age_j),
+    }
 
 
 def attentes_en_rade(config: SimConfig, seed: int, years: float,

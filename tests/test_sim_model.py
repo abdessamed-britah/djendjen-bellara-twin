@@ -1101,6 +1101,7 @@ def test_les_deux_bilans_tiennent_avec_une_politique_consciente_des_arrets(discr
     _verifie_l_amont_fenetre(resultat)
 
 
+@pytest.mark.slow
 def test_commander_pendant_les_arrets_releve_le_stock_physique(discret):
     """Les commandes passées pendant l'arrêt arrivent : le stock moyen monte."""
     def stock(politique):
@@ -1115,3 +1116,48 @@ def test_les_pannes_restent_les_memes_quelle_que_soit_la_politique(discret):
                              years=1.0).dri_breakdown_hours
               for p in ("aveugle", "rythme_moyen", "date_de_reprise")}
     assert len(set(heures.values())) == 1
+
+
+# --- étape 8 : journal des ruptures ------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def journal_discret(discret):
+    serre = dataclasses.replace(discret, point_de_commande_j=20.0,
+                                point_de_commande_t=20 * discret.debit_pellets_t_par_h * 24)
+    return serre, md.journal_des_ruptures(serre, GRAINE, 3.0, 1.0)
+
+
+@pytest.mark.slow
+def test_le_journal_ne_change_pas_la_trajectoire(journal_discret):
+    config, journal = journal_discret
+    r = md.simulate(config, seed=GRAINE, years=3.0, warmup_years=1.0)
+    assert sum(e["duree_h"] for e in journal["episodes"]) == pytest.approx(
+        r.dri_stop_hours, abs=config.pas_h * 2)
+    assert journal["episodes"], "s serré : il doit y avoir des ruptures à attribuer"
+
+
+@pytest.mark.slow
+def test_un_episode_commence_apres_la_derniere_reprise_et_apres_l_echauffement(journal_discret):
+    _, journal = journal_discret
+    for e in journal["episodes"]:
+        assert e["debut_h"] >= journal["debut_h"]
+        assert e["derniere_reprise_h"] <= e["debut_h"]
+        assert e["duree_h"] > 0
+
+
+@pytest.mark.slow
+def test_les_heures_de_marche_de_reference_couvrent_la_fenetre_mesuree(journal_discret):
+    config, journal = journal_discret
+    heures = sum(journal["heures_marche_par_age_j"].values())
+    fenetre_ouvree = config.heures_ouvrees_par_an * 2.0
+    # marche = heures ouvrées hors pannes : environ le taux d'utilisation
+    assert 0.6 * fenetre_ouvree < heures <= fenetre_ouvree + config.pas_h
+
+
+@pytest.mark.slow
+def test_chaque_commande_arrive_apres_son_delai_tire(journal_discret):
+    _, journal = journal_discret
+    assert journal["commandes"]
+    for commande, arrivee, delai in journal["commandes"]:
+        assert arrivee >= commande + delai - 1e-9
