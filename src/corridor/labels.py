@@ -114,6 +114,24 @@ LIBELLES: dict[str, dict[str, str]] = {
         "fr": "Point de commande adaptatif au risque de délai, phase 2, régime stationnaire",
         "en": "Reorder point adapted to lead-time risk, phase 2, steady state",
     },
+    # validation des arrêts discrets (étape 5, régénérée à l'étape 9)
+    "niveau_bas": {"fr": "bas", "en": "low"},
+    "niveau_centre": {"fr": "centre", "en": "central"},
+    "niveau_haut": {"fr": "haut", "en": "high"},
+    "stockage_niveau": {"fr": "stockage {niveau}", "en": "{niveau} storage"},
+    "observe_periode": {"fr": "observé {periode}", "en": "observed {periode}"},
+    "duree_arret_j": {"fr": "durée moyenne d'un arrêt non planifié (jours)",
+                      "en": "mean unplanned outage duration (days)"},
+    "cv2_intra": {"fr": "CV² intra-annuel des tonnages débarqués",
+                  "en": "within-year CV² of tonnage landed"},
+    "titre_validation_arrets": {
+        "fr": "Arrêts discrets du four : la dispersion simulée rejoint-elle l'observé ? "
+              "({periode}, fenêtres de 12 trimestres)\nBandes : 5 %-95 % simulé, "
+              "baseline_endogene, dépassements permis. Compatible = l'observé dans la bande.",
+        "en": "Discrete furnace outages: does simulated dispersion reach the observed one? "
+              "({periode}, 12-quarter windows)\nBands: simulated 5%-95%, baseline_endogene, "
+              "overtaking allowed. Compatible = observed value inside the band.",
+    },
 }
 
 

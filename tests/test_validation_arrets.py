@@ -7,6 +7,7 @@ contrôle court du découpage.
 """
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
@@ -147,8 +148,10 @@ def test_la_figure_est_un_png_non_vide(tmp_path):
     r = {"q05": 0.01, "mediane": 0.02, "q95": 0.03}
     carte = {(cv, True, s, d): {"2023-2025": r, "2022-2025": r}
              for cv in (0.1, 0.25) for s in va.NIVEAUX_STOCKAGE for d in (2, 30)}
-    chemin = va.write_figure(carte, {"2023-2025": 0.04, "2022-2025": 0.17}, tmp_path / "a.png")
-    assert chemin.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    chemins = va.write_figure(carte, {"2023-2025": 0.04, "2022-2025": 0.17}, tmp_path / "a.png")
+    assert [c.name for c in chemins] == ["a.png", "a_en.png"]
+    for chemin in chemins:
+        assert chemin.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
 # --- étape 8 : la carte relue par paramètre ---------------------------------------
@@ -178,3 +181,25 @@ def test_la_compatibilite_se_compte_par_valeur_d_un_axe():
 def test_la_compatibilite_par_cv_peut_se_restreindre_a_une_hypothese_de_depassement():
     parts = va.compatibilite_par(_carte_minimale(), "2023-2025", "cv_delai", depassements=True)
     assert parts == {0.1: (1, 2), 0.6: (1, 1)}
+
+
+# --- étape 9 : grille de cv et calcul parallèle -------------------------------------
+
+
+def test_la_grille_de_cv_couvre_la_fourchette_et_le_centre_preenregistre():
+    bas, haut = RAW["approvisionnement"]["cv_delai"]["range"]
+    assert min(va.CV_DELAIS) == bas
+    assert max(va.CV_DELAIS) == haut
+    assert va.val.CV_DELAI_PREENREGISTRE in va.CV_DELAIS
+    assert {0.40, 0.50} <= set(va.CV_DELAIS)
+
+
+@pytest.mark.slow
+def test_le_calcul_parallele_de_la_carte_rend_le_calcul_en_serie(monkeypatch):
+    # Les processus fils retrouvent `_serie` par le nom du module : il doit être importable.
+    monkeypatch.syspath_prepend(str(Path(va.__file__).parent))
+    monkeypatch.setitem(sys.modules, "validation_arrets", va)
+    configs = [va.configuration(RAW, duree_j=d) for d in (2, 7)]
+    graines = [1, 2]
+    assert va.simuler_carte(configs, graines, 1.0, processus=2) == va.simuler_carte(
+        configs, graines, 1.0, processus=1)

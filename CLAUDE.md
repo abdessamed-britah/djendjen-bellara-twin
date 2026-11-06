@@ -1,7 +1,7 @@
 ﻿# CLAUDE.md
 
 Contexte permanent du projet, écrit pour une **reprise après plusieurs semaines sans aucun
-contexte**. Dernière mise à jour : 2026-10-29. Lis-le en entier avant toute tâche : état réel de
+contexte**. Dernière mise à jour : 2026-11-06. Lis-le en entier avant toute tâche : état réel de
 chaque étape, décisions prises et leurs raisons, limites connues, commandes, puis les trois
 prochaines tâches avec des critères de réussite vérifiables.
 
@@ -75,8 +75,8 @@ voir le tableau « tient / change / tombe » du README.
 | 4. Simulation SimPy + sensibilité + coûts | ✅ | `corridor.sim.*`, `scripts/economic_summary.py` |
 | 5. ML, optimisation des stocks, tableau de bord | ⬜ non commencée | — |
 
-`ruff check .` et `pytest -q` passent : **1 124 tests** (2026-10-29). **Limite de 45 s dépassée à la dernière mesure** : 57 s sur secteur, avec 31 % du processeur pris par d'autres applications (navigateur, éditeur) ; le même test de référence y prend 2,0 à 2,5 s contre 1,7 s le 2026-10-27, où 1 001 tests prenaient 38 s. Les tests ajoutés aux étapes 7 et 8 pèsent ~6 s ; les plus lourds sont passés en `slow`. **À re-mesurer machine au repos** avant d'en tirer une règle ; si le dépassement tient au repos, c'est la limite ou la suite qu'il faut revoir, pas la mesure.
-S'y ajoutent **34 tests
+`ruff check .` et `pytest -q` passent : **1 154 tests** (2026-11-06 ; 1 138 lors de la mesure de durée ci-après). **Limite de 45 s dépassée au repos** : **68 s** sur secteur, sans simulation en cours, mesuré une seule fois à l'étape 9 (116 s sur batterie le même jour ; 57 s le 2026-10-29 sur secteur, machine chargée à 31 %). Les mesures dépendent plus de l'état du portable que du nombre de tests. **Proposition en attente du porteur du projet** (`REPRODUIRE.md`) : porter la limite à 90 s sur secteur au repos, à renégocier vers 2 300 tests. Tant qu'elle n'est pas acceptée, la limite reste 45 s et ne se « corrige » pas en passant d'autres tests en `slow`.
+S'y ajoutent **35 tests
 marqués `slow`**, exclus de `pytest -q` par `addopts` dans `pyproject.toml` et lancés par
 `pytest -m slow -q` (~100 s au repos, 225 s machine chaude) : la validation analytique du moteur de file, deux validations de
 comportement de `beta_site.py`, les deux mesures de la limite 0 (gain des nombres communs,
@@ -557,6 +557,28 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
   21/21 combinaisons compatibles à cv 0,10, 0,25 et 0,60 (dépassements permis, 2023-2025) ;
   seule la durée d'arrêt de 2 j est écartée. La carte de l'étape 5 avait été perdue ; elle a
   été reconstruite depuis sa sortie imprimée (verdicts exacts, quantiles à 3 décimales).
+  **Étape 9 (2026-11-06) : consolider, régénérer, figer.** Tableau unique des chiffres de
+  l'article dans `docs/results_summary.md` (script, commit, graine, réplications, variante,
+  statut calculé / reconstruit / fixé par hypothèse, réserve) ; commandes, durées et
+  versions dans `REPRODUIRE.md` ; étiquette git `v0.1-resultats`. *Régénération par calcul
+  réel* : carte de validation (126 combinaisons, cv_delai ∈ {0,10 ; 0,25 ; 0,40 ; 0,50 ;
+  0,60}, 29 min) — 0 verdict changé sur 168, quantiles identiques ; 0,40 et 0,50 sont
+  compatibles 21/21 comme 0,60. Plan factoriel (80 min) — 192 effets identiques à l'arrondi,
+  4 cellules bougent d'une unité au dernier chiffre affiché, une significativité sans portée
+  bascule (stockage → coût des arrêts, C i, +0,006 M), aucun verdict de synthèse ne change.
+  *Rythme de marche* (`rythme_de_marche.py`, 200 rép., D′ = s compté au débit plein, soit
+  41,2 j moyens) : l'écart continu–discret en épisodes se réduit de **100 % [98 ; 103]**
+  (permis) et **92 % [88 ; 94]** (interdits), mais D′ n'est en tonnes qu'un s relevé de
+  18 % : +82 à +89 kt de stock, +0,74 à +1,64 M USD/an face à D. Pas d'effet de l'unité de
+  compte démontré au-delà de ce supplément. *FIFO* (`ordre_accostage.py`) : 13 vraquiers
+  passés par la rade, 8 paires ayant attendu ensemble, **6 dépassements (75 % [41 ; 93])**,
+  tous entre postes différents, 5 paires sur 8 à cargaisons différentes : ne teste pas la
+  file d'un même poste. Ordre d'annonce contre arrivée : 2/148 (1 %), indicateur d'erreur
+  d'ETA, **ne tranche pas permis/interdits**.
+- **Un module de `scripts/` chargé par `importlib` et utilisé en parallèle doit être
+  enregistré dans `sys.modules` sous son nom** : les processus fils retrouvent ses fonctions
+  par ce nom (`rythme_de_marche._charger` ; en test, `monkeypatch.setitem(sys.modules, …)`
+  et `syspath_prepend`). Sinon : `PicklingError … not the same object`.
 - **Journal des ruptures** (`model.journal_des_ruptures`) : reprises du four, épisodes de
   rupture, commandes, heures de marche par âge. Écrit seulement, jamais relu par le modèle :
   la trajectoire est identique au bit près (vérifié sur 32 cas). **Une attribution se juge
@@ -809,6 +831,9 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
     **Faite le 2026-10-26 : elle échoue** (voir décisions, étape 3). La règle tient donc
     toujours : aucun résultat endogène ne décrit le site tant qu'un mécanisme de
     regroupement n'a pas été choisi et validé à son tour.
+    **Seconde attente minerai observée (étape 9)** : IAN M, 159,4 h en rade avant QW/7
+    (29/10 → 04/11), dans la plage du maximum simulé (160-172 h) mais toujours dans la
+    queue de la distribution.
 22. **`cv_delai`, l'inconnue qui pilote le chiffre du site, n'est pas mesurable avec la
     collecte.** État des lieux du 2026-10-28 (`etat_mesure_delai.py`) : les ETA publiées ne
     précèdent l'arrivée que d'un jour et demi en médiane, contre 22 jours de délai supposé,
@@ -890,7 +915,9 @@ python scripts/politique_arrets.py            # commander pendant les arrêts : 
 python scripts/etat_mesure_delai.py           # cv_delai mesurable par la collecte ? (instantané)
 python scripts/attribution_ruptures.py        # d'où viennent les ruptures (~30 min)
 python scripts/regle_service.py               # s_β(cv) et sensibilité de s* aux prix (~45 min)
-python scripts/validation_arrets.py --depuis-json  # compatibilité par paramètre, sans simuler
+python scripts/validation_arrets.py --depuis-json  # compatibilité et figure, sans simuler
+python scripts/rythme_de_marche.py            # s au rythme de marche, D′ contre C et D (~17 min)
+python scripts/ordre_accostage.py             # test FIFO sur les escales observées (secondes)
 ```
 
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de
@@ -898,7 +925,9 @@ Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures ve
 `cout_regularite.png`, `metamodele_frontiere.png` et `metamodele_frontiere_directe.png`,
 puis, en français et en anglais (`_en`), `factoriel_endogene.png`,
 `chiffre_site_endogene.png`, `point_de_commande_adaptatif.png`, `chiffre_site_adaptatif.png`,
-`politique_arrets.png`, `attribution_ruptures.png` et `regle_service.png`.
+`politique_arrets.png`, `attribution_ruptures.png`, `regle_service.png` et
+`validation_arrets.png`. Chiffres de l'article : `docs/results_summary.md` ; reproduction :
+`REPRODUIRE.md`.
 
 ## Structure du dépôt
 
@@ -925,7 +954,8 @@ scripts/                 health_check, ore_calls_report, arrival_dispersion,
                          diagnostic_dispersion, validation_arrets, effet_arrets,
                          factoriel_endogene, chiffre_site_endogene,
                          point_de_commande_adaptatif, politique_arrets, etat_mesure_delai,
-                         attribution_ruptures, regle_service,
+                         attribution_ruptures, regle_service, rythme_de_marche,
+                         ordre_accostage,
                          cout_regularite,
                          beta_site, metamodele_frontiere, inspect_latest, fetch_raw
 data/raw/port_status/    _manifest.csv versionné ; PDF locaux git-ignorés

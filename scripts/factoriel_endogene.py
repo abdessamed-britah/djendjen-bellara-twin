@@ -251,9 +251,10 @@ def main(argv=None) -> int:
           f"{args.processus} processus. * = significatif à 95 %.")
     par_variante = {}
     for variante in VARIANTES:
-        cases = {case: pc.mesurer(configuration(raw, *variante, *case), args.reps, args.seed,
-                                  unitaires, SCENARIO, processus=args.processus)
-                 for case in CASES}
+        mesures = pc.mesurer_plusieurs([configuration(raw, *variante, *case) for case in CASES],
+                                       args.reps, args.seed, unitaires, SCENARIO,
+                                       processus=args.processus)
+        cases = dict(zip(CASES, mesures, strict=True))
         par_variante[variante] = effets(cases)
         print_variante(variante, cases, par_variante[variante])
 

@@ -822,12 +822,12 @@ continu, D = discret ; p = dépassements permis, i = interdits.
 
 | effet | C, p | C, i | D, p | D, i |
 | --- | ---: | ---: | ---: | ---: |
-| second poste, stockage de base | −1,96 ± 0,02 * | −2,88 ± 0,02 * | −2,77 ± 0,02 * | −3,56 ± 0,03 * |
+| second poste, stockage de base | −1,96 ± 0,02 * | −2,87 ± 0,02 * | −2,77 ± 0,02 * | −3,56 ± 0,03 * |
 | second poste, stockage haut | −1,96 ± 0,02 * | −2,88 ± 0,02 * | −2,56 ± 0,03 * | −3,41 ± 0,03 * |
 | stockage haut, 1 poste | +0,00 ± 0,01 | +0,00 ± 0,01 | −0,25 ± 0,02 * | −0,22 ± 0,02 * |
 | stockage haut, 2 postes | +0,00 ± 0,00 | −0,00 ± 0,00 | −0,05 ± 0,01 * | −0,06 ± 0,01 * |
-| les deux leviers | −1,96 ± 0,02 * | −2,88 ± 0,02 * | −2,82 ± 0,03 * | −3,63 ± 0,03 * |
-| interaction | −0,00 ± 0,01 | −0,00 ± 0,01 | +0,21 ± 0,02 * | +0,15 ± 0,02 * |
+| les deux leviers | −1,96 ± 0,02 * | −2,88 ± 0,02 * | −2,82 ± 0,02 * | −3,63 ± 0,03 * |
+| interaction | −0,00 ± 0,01 | −0,00 ± 0,01 | +0,21 ± 0,02 * | +0,15 ± 0,01 * |
 
 **Coût total (arrêts + surestaries + portage), en M USD/an**
 
@@ -837,7 +837,7 @@ continu, D = discret ; p = dépassements permis, i = interdits.
 | second poste, stockage de base | −1,61 ± 0,01 * | −2,37 ± 0,02 * | −2,35 ± 0,02 * | −3,03 ± 0,03 * |
 | second poste, stockage haut | −1,61 ± 0,01 * | −2,36 ± 0,02 * | −2,12 ± 0,02 * | −2,85 ± 0,03 * |
 | stockage haut, 1 poste | −0,00 ± 0,01 | −0,01 ± 0,01 | −0,16 ± 0,02 * | −0,13 ± 0,03 * |
-| stockage haut, 2 postes | −0,00 ± 0,01 | +0,00 ± 0,01 | +0,07 ± 0,01 * | +0,06 ± 0,02 * |
+| stockage haut, 2 postes | −0,00 ± 0,01 | +0,00 ± 0,01 | +0,07 ± 0,01 * | +0,05 ± 0,02 * |
 | les deux leviers | −1,61 ± 0,02 * | −2,37 ± 0,02 * | −2,28 ± 0,03 * | −2,98 ± 0,03 * |
 | interaction | +0,00 ± 0,01 | +0,01 ± 0,01 * | +0,23 ± 0,02 * | +0,18 ± 0,02 * |
 
@@ -876,8 +876,13 @@ l'exploitation d'un quai ne sont comptés, et il repose sur des surestaries en b
 Il dit au plus ce qu'un second poste pourrait rembourser chaque année. Et `postes_minerai = 2`
 n'est pas une situation observée (limite 10).
 
-Reproductible par `python scripts/factoriel_endogene.py` (~80 min, 10 processus, sur
-batterie) ; `--depuis-json` retrace la figure depuis `data/sim/factoriel_endogene.json`.
+Reproductible par `python scripts/factoriel_endogene.py` (80 min, 10 processus, sur
+batterie, mesuré à l'étape 9) ; `--depuis-json` retrace la figure depuis
+`data/sim/factoriel_endogene.json`. **Régénéré par calcul réel à l'étape 9** : les 192 effets
+retombent sur les valeurs publiées à l'arrondi près (quatre cellules bougent d'une unité au
+dernier chiffre affiché ci-dessus, déjà corrigées) ; une seule significativité bascule, sans
+portée — l'effet du stockage sur le coût des arrêts en C, i, +0,006 M USD/an, passe de pile
+sur le bord de son intervalle (valeur arrondie) à tout juste au-delà.
 
 #### Le chiffre du site, en plage
 
@@ -1328,32 +1333,147 @@ Reproductible par `python scripts/regle_service.py` (~45 min si l'étape 7 a ét
 *Sert l'**importance**, par la négative : elle dit ce que les données publiques déjà
 exploitées ne permettent pas de trancher, donc où une mesure nouvelle serait décisive.*
 
-La carte de compatibilité de l'étape 5 (84 combinaisons durée d'arrêt × stockage ×
-`cv_delai` × dépassements, `baseline_endogene`, arrêts discrets) relue par paramètre
-(`python scripts/validation_arrets.py --depuis-json` ; la carte n'avait pas été sauvegardée
-à l'étape 5, elle a été reconstruite depuis la sortie imprimée de ce calcul, verdicts exacts
-et quantiles à trois décimales, et le script l'écrit désormais lui-même) :
+La carte de compatibilité de l'étape 5 relue par paramètre (`baseline_endogene`, arrêts
+discrets, durée d'arrêt × stockage × `cv_delai` × dépassements). Écrite à l'étape 8 depuis la
+sortie imprimée de l'étape 5, faute de sauvegarde ; **régénérée par calcul réel à l'étape 9**
+et étendue à cv = 0,40 et 0,50 (126 combinaisons, `python scripts/validation_arrets.py`,
+29 min sur 10 processus ; le script écrit `data/sim/validation_arrets.json`). Sur les 84
+combinaisons communes, **la régénération ne change rien** : 0 verdict sur 168 (84 × deux
+périodes), et les quantiles reconstruits à trois décimales retombent exactement.
 
 | 2023-2025 (référence) | combinaisons compatibles |
 | --- | --- |
 | cv_delai = 0,10 (dépassements permis) | 18 sur 21 |
 | cv_delai = 0,25 (dépassements permis) | 19 sur 21 |
 | cv_delai = 0,25 (dépassements interdits) | 18 sur 21 |
+| cv_delai = 0,40 (dépassements permis) — *nouveau* | **21 sur 21** |
+| cv_delai = 0,50 (dépassements permis) — *nouveau* | **21 sur 21** |
 | cv_delai = 0,60 (dépassements permis) | **21 sur 21** |
-| *pour comparaison : durée d'arrêt 2 j / 5 j et plus* | *4 sur 12 / 12 sur 12 à chaque durée* |
+| *pour comparaison : durée d'arrêt 2 j / 5 j et plus* | *10 sur 18 / 18 sur 18 à chaque durée* |
 
 **La validation ne discrimine pas `cv_delai`** : 86 à 100 % des combinaisons sont compatibles
-pour chacune des trois valeurs testées, et aucune n'est écartée. Le seul paramètre qu'elle
-discrimine est la durée des arrêts du four (2 jours, trop réguliers, sauf à cv élevé). Il n'y
-a donc pas de plage résiduelle, et la plage de β et de coût du site reste celle de l'étape 7.
-Trois réserves : la carte ne contient que trois valeurs de `cv_delai` (0,10, 0,25, 0,60) ; le
-test a **peu de puissance** (les bandes simulées couvrent presque un ordre de grandeur sur
-12 trimestres) ; et la période de référence 2023-2025 a été **choisie après** avoir vu le rôle
-de 2022. Sur 2022-2025, 2 à 3 combinaisons sur 21 passent à chaque cv, toutes à 30 jours
-d'arrêt : pas davantage de discrimination.
+pour chacune des cinq valeurs testées, et aucune n'est écartée. Les deux valeurs ajoutées
+passent partout, comme 0,60 : la compatibilité ne fait que croître avec cv, sans seuil. Le
+seul paramètre discriminé est la durée des arrêts du four (2 jours, trop réguliers, sauf à
+cv ≥ 0,40). Il n'y a donc pas de plage résiduelle, et la plage de β et de coût du site reste
+celle de l'étape 7. Deux réserves : le test a **peu de puissance** (les bandes simulées
+couvrent presque un ordre de grandeur sur 12 trimestres) ; et la période de référence
+2023-2025 a été **choisie après** avoir vu le rôle de 2022. Sur 2022-2025, 2 à 3 combinaisons
+sur 21 passent à chaque cv, toutes à 30 jours d'arrêt : pas davantage de discrimination.
 
 Avec l'étape 7 (la collecte ne mesure pas `cv_delai`) : **aucune donnée publique déjà
 exploitée ne resserre l'inconnue qui pilote le chiffre du site.**
+
+### Consolider, régénérer, figer (étape 9)
+
+Tous les chiffres destinés à l'article sont rassemblés, une ligne chacun, avec script,
+commit, graine, réplications, variante, statut et réserve, dans
+[`docs/results_summary.md`](docs/results_summary.md). Les commandes et la durée de chaque
+calcul sont dans [`REPRODUIRE.md`](REPRODUIRE.md). L'étiquette git `v0.1-resultats` marque le
+commit où ils ont été figés.
+
+#### Régénération : ce qui change
+
+*Sert la **reproductibilité**, condition des trois critères : un chiffre qu'on ne sait pas
+refaire ne sert ni l'originalité, ni la généralité, ni l'importance.*
+
+Les deux résultats qui n'existaient que sous forme reconstruite ont été recalculés de bout en
+bout, et chaque script écrit désormais lui-même son JSON.
+
+- **Carte de validation des arrêts discrets** (étape 5) : 0 verdict changé sur 168 (84
+  combinaisons × deux périodes) ; les quantiles reconstruits à trois décimales retombent
+  exactement. Étendue à cv_delai = 0,40 et 0,50 : 21 combinaisons sur 21 compatibles pour
+  chacune (section précédente).
+- **Plan factoriel endogène** (étape 6) : les 192 effets (6 effets × 8 indicateurs × 4
+  variantes) retombent sur les valeurs publiées ; quatre cellules des tableaux bougent d'une
+  unité au dernier chiffre affiché (surestaries du second poste en C, i : −2,88 → −2,87 ;
+  trois demi-largeurs ou valeurs à ± 0,01 M USD/an), corrigées. Une seule significativité
+  bascule : l'effet du stockage sur le coût des arrêts en C, i (+0,006 M USD/an), qui était
+  pile au bord de son intervalle dans la version arrondie. **Aucun verdict de synthèse ne
+  change.**
+
+#### Le point de commande compté au rythme de marche
+
+*Sert la **généralité** : il dit dans quelle unité exprimer une couverture de stock quand le
+consommateur tourne par campagnes, et ce que cela coûte.*
+
+En arrêts discrets, le four tourne à pleine cadence ou s'arrête, mais s est compté en jours
+de consommation **moyenne**. Variante D′ : s = 35 jours au **rythme de marche**, soit
+41,2 jours de consommation moyenne. 200 réplications appariées ; C (continu) et D (discret,
+s moyen) sont repris des étapes 7 et 8, mêmes graines (`scripts/rythme_de_marche.py`).
+
+| | épisodes de rupture / an | heures de rupture / an | β appro. (%) | stock moyen (kt) | coût total (M USD/an) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| *dépassements permis* | | | | | |
+| C | 0,15 | 3,7 | 99,96 | 233 | 5,44 |
+| D | 2,50 | 32,9 | 99,53 | 221 | 6,46 |
+| D′ | 0,14 | 0,9 | 99,99 | 310 | 8,10 |
+| D′ − D | −2,36 ± 0,21 * | −32,0 ± 1,6 * | +0,45 ± 0,02 * | +88,8 ± 0,4 * | +1,64 ± 0,03 * |
+| *dépassements interdits* | | | | | |
+| C | 0,85 | 41,1 | 99,50 | 214 | 6,53 |
+| D | 5,42 | 127,7 | 98,19 | 204 | 8,43 |
+| D′ | 1,23 | 22,4 | 99,68 | 286 | 9,17 |
+| D′ − D | −4,19 ± 0,29 * | −105,3 ± 3,7 * | +1,50 ± 0,05 * | +82,1 ± 0,5 * | +0,74 ± 0,06 * |
+
+**L'écart continu–discret en épisodes se réduit de 100 % [98 ; 103] avec dépassements et de
+92 % [88 ; 94] sans** (IC bootstrap sur les réplications). En heures de rupture la part
+dépasse 100 % (109 et 122 %) : D′ fait moins de ruptures que la référence continue, parce
+qu'il porte plus de stock qu'elle.
+
+Ce que la mesure dit, et ce qu'elle ne dit pas :
+
+- **En tonnes, D′ n'est pas une autre politique : c'est un point de commande plus haut.**
+  Compter s au rythme de marche revient à relever le seuil de 18 %, soit 6,2 jours de
+  consommation moyenne. Le résultat montre donc qu'à couverture égale en jours de marche, le
+  four par campagnes ne rompt pas plus souvent que le four continu ; il ne montre pas que
+  l'unité de compte agit autrement que par ce supplément de stock.
+- **Ce supplément n'est pas gratuit** : +82 à +89 kt de stock moyen et +0,74 à +1,64 M USD/an
+  face à D (portage et surestaries ; coûts non sourcés, surestaries en borne haute). Le s de
+  D, 35 jours moyens, était déjà proche de l'optimum de coût de la variante discrète
+  (étape 7) : D′ achète des ruptures en moins au-delà de cet optimum.
+- La comparaison est faite au seul cv_delai central (0,25) et au seul s = 35 j.
+
+#### Le test FIFO sur les escales observées
+
+*Sert l'**originalité** : il confronte une hypothèse du modèle à la série collectée, ce
+qu'aucune donnée interne n'était nécessaire pour faire.*
+
+Sur les escales reconstruites (série du 2026-09-24 au 2026-11-05, 1 644 observations,
+59 escales), `scripts/ordre_accostage.py` garde les vraquiers passés par la rade (13, aucun
+encore en rade à la fin) et compare, pour chaque paire ayant attendu **en même temps**, l'ordre
+d'arrivée en rade et l'ordre d'accostage.
+
+| | paires | second arrivé, premier accosté |
+| --- | ---: | ---: |
+| toutes | 8 | **6 = 75 %** [41 ; 93] (Wilson 95 %) |
+| même poste | 0 | — |
+| postes différents | 8 | 6 |
+| même catégorie de cargaison | 3 | 2 |
+| catégories différentes | 5 | 4 |
+
+**Ce que le test ne peut pas dire.** Aucune des 8 paires n'a accosté au même poste, et 5 sur
+8 portent des cargaisons de catégories différentes : chaque dépassement observé peut venir de
+ce qu'un poste adapté se libère pour l'un et pas pour l'autre. Le test ne mesure donc **pas**
+la discipline de la file d'un poste donné, qui est ce que le modèle suppose (premier arrivé,
+premier servi au poste minerai, dans les deux variantes). Il établit seulement que la rade de
+Djen Djen, tous postes confondus, n'est pas servie dans l'ordre d'arrivée — ce que BERGE NIMBA
+suggérait déjà. Une seconde attente minerai est désormais mesurée : **IAN M, 159,4 h** en rade
+avant QW/7 (29/10 → 04/11).
+
+**Sur les hypothèses « permis » et « interdits », les données ne tranchent pas.** Ces
+hypothèses portent sur l'ordre **commande → arrivée**, pas sur l'ordre d'accostage, et la date
+de commande n'est publiée nulle part. Le seul indice public, l'ordre de première annonce
+comparé à l'ordre d'arrivée, donne 2 inversions sur 148 paires (1 % [0 ; 5]) sur 18
+vraquiers : mais l'horizon d'annonce est d'un jour et demi en médiane, contre 22 jours de
+délai supposé, donc ce chiffre mesure l'erreur d'ETA de fin de traversée, pas les dépassements
+entre commandes. Les deux hypothèses restent à publier côte à côte.
+
+#### La boucle courte
+
+`pytest -q` (1 138 tests) prend **68 s** sur secteur et au repos, mesuré une fois : la
+limite de 45 s est dépassée. Plutôt que de continuer à la réduire, `REPRODUIRE.md` propose de
+la porter à 90 s sur secteur, à renégocier vers 2 300 tests ; la limite actuelle reste en
+vigueur tant que la proposition n'est pas acceptée.
 
 > **Ces chiffres ne sont pas des prévisions.** Les deux paramètres qui les pilotent ne sont
 > pas sourcés : la **régularité des arrivées** de minéraliers (statut *estimé*, jamais

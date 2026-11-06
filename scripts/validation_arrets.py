@@ -38,7 +38,9 @@ import dataclasses
 import importlib.util
 import json
 import math
+import os
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import matplotlib
@@ -46,6 +48,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from corridor.labels import LANGUES, chemin_langue, libelle
 from corridor.sim.config import ASSUMPTIONS_PATH, load_yaml
 from corridor.sim.model import chronique
 from corridor.sim.run import ECHAUFFEMENT_STATIONNAIRE_ANS
@@ -60,6 +63,9 @@ SCENARIO = "baseline_endogene"
 DUREES_ARRET_J = (2, 5, 7, 10, 15, 20, 30)
 #: Capacités de stockage : port et usine ensemble aux bornes et au centre de leurs fourchettes.
 NIVEAUX_STOCKAGE = ("bas", "centre", "haut")
+#: Valeurs de cv_delai jouées avec dépassements permis (étape 9 : 0,40 et 0,50 ajoutés aux
+#: bornes et au centre de l'étape 5). Avec dépassements interdits, le seul centre, comme avant.
+CV_DELAIS = (0.10, 0.25, 0.40, 0.50, 0.60)
 TRIMESTRES_PAR_AN = 4
 DEFAULT_GRAINES = 4
 DEFAULT_ANNEES = 60.0
@@ -132,15 +138,35 @@ def fenetres(tonnages, annees: int) -> list[list[float]]:
     return [tonnages[i:i + longueur] for i in range(0, len(tonnages) - longueur + 1, longueur)]
 
 
-def simuler(config, seeds, annees: float) -> list[float]:
-    """Tonnages déchargés par trimestre après échauffement, mis bout à bout graine par graine."""
+def _serie(tache) -> list[float]:
+    """Tonnages déchargés par trimestre après échauffement, pour une graine."""
+    config, graine, annees = tache
     echauffement_h = ECHAUFFEMENT_STATIONNAIRE_ANS * config.heures_par_an
-    series = []
-    for g in seeds:
-        c = chronique(config, seed=g, years=ECHAUFFEMENT_STATIONNAIRE_ANS + annees,
-                      periode_h=config.heures_par_an / TRIMESTRES_PAR_AN)
-        series.append([p["debarque_t"] for p in c["periodes"] if p["debut_h"] >= echauffement_h])
-    return series
+    c = chronique(config, seed=graine, years=ECHAUFFEMENT_STATIONNAIRE_ANS + annees,
+                  periode_h=config.heures_par_an / TRIMESTRES_PAR_AN)
+    return [p["debarque_t"] for p in c["periodes"] if p["debut_h"] >= echauffement_h]
+
+
+def simuler(config, seeds, annees: float) -> list[list[float]]:
+    """Les séries d'une configuration, une par graine."""
+    return simuler_carte([config], seeds, annees)[0]
+
+
+def simuler_carte(configs, seeds, annees: float, processus: int = 1) -> list[list[list[float]]]:
+    """Les séries de plusieurs configurations, éventuellement sur plusieurs processus.
+
+    Chaque série ne dépend que de sa configuration et de sa graine, et les résultats
+    reviennent dans l'ordre : identique au calcul en série.
+    """
+    taches = [(c, g, annees) for c in configs for g in seeds]
+    if processus <= 1:
+        series = [_serie(t) for t in taches]
+    else:
+        with ProcessPoolExecutor(max_workers=processus) as executeur:
+            series = list(executeur.map(_serie, taches,
+                                        chunksize=max(1, len(taches) // (4 * processus))))
+    n = len(seeds)
+    return [series[k * n:(k + 1) * n] for k in range(len(configs))]
 
 
 def juger(series, periode, valeur_observee) -> dict:
@@ -211,36 +237,40 @@ def donnees_figure(carte: dict, observes: dict) -> dict:
     }
 
 
-def write_figure(carte, observes, path=DEFAULT_FIGURE) -> Path:
+def write_figure(carte, observes, path=DEFAULT_FIGURE) -> list[Path]:
+    """La figure en français (`path`) et en anglais (`path` suffixé `_en`)."""
     donnees = donnees_figure(carte, observes)
     cvs = sorted({cle[0] for cle in donnees["series"]})
-    figure, axes = plt.subplots(1, len(cvs), figsize=(5.2 * len(cvs), 5.2), sharey=True,
-                                constrained_layout=True, squeeze=False)
     couleurs = {"bas": "#d62728", "centre": "#1f77b4", "haut": "#2ca02c"}
-    for ax, cv in zip(axes[0], cvs, strict=True):
-        for (c, dep, stockage), (d, bas, med, haut) in donnees["series"].items():
-            if c != cv or not dep:
-                continue
-            ax.fill_between(d, bas, haut, color=couleurs[stockage], alpha=0.15)
-            ax.plot(d, med, color=couleurs[stockage], marker="o",
-                    label=f"stockage {stockage}")
-        ax.axhline(donnees["observe"], color="0.2", linestyle="--",
-                   label=f"observé {PERIODE_DE_REFERENCE}")
-        ax.set_title(f"cv_delai = {cv}", fontweight="bold")
-        ax.set_xlabel("durée moyenne d'un arrêt non planifié (jours)")
-        ax.set_yscale("log")
-        ax.grid(True, which="both", color="0.9")
-    axes[0][0].set_ylabel("CV² intra-annuel des tonnages débarqués")
-    axes[0][0].legend(fontsize=8.5)
-    figure.suptitle(f"Arrêts discrets du four : la dispersion simulée rejoint-elle l'observé ? "
-                    f"({PERIODE_DE_REFERENCE}, fenêtres de 12 trimestres)\nBandes : 5 %-95 % "
-                    "simulé, baseline_endogene, dépassements permis. Compatible = l'observé "
-                    "dans la bande.", fontsize=10.5)
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(path, dpi=150)
-    plt.close(figure)
-    return path
+    chemins = []
+    for langue in LANGUES:
+        figure, axes = plt.subplots(1, len(cvs), figsize=(4.6 * len(cvs), 5.2), sharey=True,
+                                    constrained_layout=True, squeeze=False)
+        for ax, cv in zip(axes[0], cvs, strict=True):
+            for (c, dep, stockage), (d, bas, med, haut) in donnees["series"].items():
+                if c != cv or not dep:
+                    continue
+                niveau = libelle(f"niveau_{stockage}", langue)
+                ax.fill_between(d, bas, haut, color=couleurs[stockage], alpha=0.15)
+                ax.plot(d, med, color=couleurs[stockage], marker="o",
+                        label=libelle("stockage_niveau", langue).format(niveau=niveau))
+            ax.axhline(donnees["observe"], color="0.2", linestyle="--",
+                       label=libelle("observe_periode", langue).format(
+                           periode=PERIODE_DE_REFERENCE))
+            ax.set_title(f"cv_delai = {cv}", fontweight="bold")
+            ax.set_xlabel(libelle("duree_arret_j", langue))
+            ax.set_yscale("log")
+            ax.grid(True, which="both", color="0.9")
+        axes[0][0].set_ylabel(libelle("cv2_intra", langue))
+        axes[0][0].legend(fontsize=8.5)
+        figure.suptitle(libelle("titre_validation_arrets", langue).format(
+            periode=PERIODE_DE_REFERENCE), fontsize=10.5)
+        chemin = chemin_langue(path, langue)
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        figure.savefig(chemin, dpi=150)
+        plt.close(figure)
+        chemins.append(chemin)
+    return chemins
 
 
 # --- rapport ----------------------------------------------------------------------
@@ -258,23 +288,29 @@ def main(argv=None) -> int:
     parser.add_argument("--annees", type=float, default=DEFAULT_ANNEES)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--durees", type=float, nargs="+", default=list(DUREES_ARRET_J))
+    parser.add_argument("--cv", type=float, nargs="+", default=list(CV_DELAIS))
+    parser.add_argument("--processus", type=int, default=max(1, (os.cpu_count() or 2) - 2))
     parser.add_argument("--figure", type=Path, default=DEFAULT_FIGURE)
     parser.add_argument("--json", type=Path, default=DEFAULT_JSON)
     parser.add_argument("--depuis-json", action="store_true",
                         help="relit la carte écrite par un calcul précédent, sans simuler")
     args = parser.parse_args(argv)
 
+    observes = {p: observe(bornes) for p, bornes in PERIODES.items()}
     if args.depuis_json:
         carte = depuis_json(json.loads(args.json.read_text(encoding="utf-8")))
         print_compatibilite(carte)
+        for chemin in write_figure(carte, observes, args.figure):
+            print(f"figure écrite : {chemin}")
         return 0
 
     raw = load_yaml(ASSUMPTIONS_PATH)
     val.verifier_preenregistrement(raw)
-    observes = {p: observe(bornes) for p, bornes in PERIODES.items()}
     seeds = val.graines(args.graines, args.seed)
     cv_central = val.CV_DELAI_PREENREGISTRE
     bas_cv, haut_cv = raw["approvisionnement"]["cv_delai"]["range"]
+    if any(not bas_cv <= cv <= haut_cv for cv in args.cv):
+        raise ValueError(f"cv_delai hors de sa fourchette publiée [{bas_cv} ; {haut_cv}]")
     print("Observé, CV² intra-annuel : " + ", ".join(
         f"{p} = {v:.4f}" for p, v in observes.items())
           + f" ; référence {PERIODE_DE_REFERENCE} (choisie après l'étape 4)")
@@ -282,26 +318,28 @@ def main(argv=None) -> int:
           " ans d'échauffement ; colonnes : " + " | ".join(
               f"{p} médiane [5 % ; 95 %] verdict" for p in PERIODES))
 
-    def mesurer(config):
-        series = simuler(config, seeds, args.annees)
+    def juger_tout(series):
         return {p: juger(series, p, observes[p]) for p in PERIODES}
 
-    print("\n  référence, mode continu (étape 4) :")
-    print("  " + _ligne("continu", mesurer(configuration(raw, mode="continu"))))
+    plans = [(cv, True) for cv in args.cv] + [(cv_central, False)]
+    cles = [(cv, dep, stockage, duree) for cv, dep in plans for stockage in NIVEAUX_STOCKAGE
+            for duree in args.durees]
+    configs = [configuration(raw, mode="continu")] + [
+        configuration(raw, dep, cv_delai=cv, duree_j=duree, stockage=stockage)
+        for cv, dep, stockage, duree in cles]
+    toutes = simuler_carte(configs, seeds, args.annees, args.processus)
 
+    print("\n  référence, mode continu (étape 4) :")
+    print("  " + _ligne("continu", juger_tout(toutes[0])))
     carte = {}
-    plans = ([(cv_central, True), (cv_central, False)]
-             + [(cv, True) for cv in (bas_cv, haut_cv)])
-    for cv, depassements in plans:
-        print(f"\n  --- cv_delai = {cv}, {dict(val.HYPOTHESES)[depassements]}")
-        for stockage in NIVEAUX_STOCKAGE:
-            port, usine = capacites(raw, stockage)
-            for duree in args.durees:
-                r = mesurer(configuration(raw, depassements, cv_delai=cv, duree_j=duree,
-                                          stockage=stockage))
-                carte[(cv, depassements, stockage, duree)] = r
-                nom = f"stockage {stockage} ({(port + usine) / 1e3:.0f} kt), arrêt {duree:g} j"
-                print("  " + _ligne(nom, r))
+    for cle, series in zip(cles, toutes[1:], strict=True):
+        cv, depassements, stockage, duree = cle
+        if stockage == NIVEAUX_STOCKAGE[0] and duree == args.durees[0]:
+            print(f"\n  --- cv_delai = {cv}, {dict(val.HYPOTHESES)[depassements]}")
+        carte[cle] = juger_tout(series)
+        port, usine = capacites(raw, stockage)
+        nom = f"stockage {stockage} ({(port + usine) / 1e3:.0f} kt), arrêt {duree:g} j"
+        print("  " + _ligne(nom, carte[cle]))
 
     print(f"\n{'=' * 100}\nCombinaisons compatibles\n{'=' * 100}")
     for periode in PERIODES:
@@ -315,8 +353,8 @@ def main(argv=None) -> int:
     args.json.parent.mkdir(parents=True, exist_ok=True)
     args.json.write_text(json.dumps(vers_json(carte)), encoding="utf-8")
     print(f"\ncarte écrite : {args.json}")
-    chemin = write_figure(carte, observes, args.figure)
-    print(f"figure écrite : {chemin}")
+    for chemin in write_figure(carte, observes, args.figure):
+        print(f"figure écrite : {chemin}")
     return 0
 
 
