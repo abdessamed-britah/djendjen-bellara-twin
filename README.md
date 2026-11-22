@@ -51,19 +51,21 @@ interpréteur n'est pas celui que le hook trouve tout seul, indiquez-le par
 ### Compiler le papier de conférence
 
 Le papier (`paper/main.tex`, format IEEE conference, en anglais) se compile par `latexmk`,
-qui lit `paper/latexmkrc` ; le PDF sort dans `paper/build/` (ignoré par git). Ses deux
-figures se régénèrent depuis les résultats déjà calculés, **sans simuler** :
+qui lit `paper/latexmkrc` ; le PDF sort dans `paper/build/` (ignoré par git). La figure de
+structure est en TikZ (`paper/figures/structure.tex`) ; les trois autres se régénèrent depuis
+les résultats déjà calculés, **sans simuler** :
 
 ```bash
 python scripts/figures_papier.py   # paper/figures/*.pdf, depuis data/sim/*.json
 cd paper && latexmk                # paper/build/main.pdf
 ```
 
-Les JSON lus (`data/sim/factoriel_endogene.json`, `data/sim/validation_arrets.json`) sont
-ignorés par git : sur un clone neuf, les produire d'abord par `python
-scripts/factoriel_endogene.py` et `python scripts/validation_arrets.py` (voir
-`REPRODUIRE.md`). Chaque nombre du papier est rattaché à sa ligne de
-`docs/results_summary.md` dans `paper/NOMBRES.md`.
+Les JSON lus (`data/sim/convergence_horizon_baseline.json`,
+`data/sim/convergence_horizon_baseline_endogene.json`, `data/sim/factoriel_endogene.json`,
+`data/sim/validation_arrets.json`) sont ignorés par git : sur un clone neuf, les produire
+d'abord par les commandes 4a, 4b, 8 et 10 de `REPRODUIRE.md`. Chaque nombre du papier est
+rattaché à sa ligne de `docs/results_summary.md` dans `paper/NOMBRES.md`, et
+`tests/test_papier_nombres.py` refuse un nombre du papier qui n'y serait pas.
 
 ## Premiers résultats observés
 

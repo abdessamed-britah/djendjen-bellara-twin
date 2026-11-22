@@ -918,6 +918,9 @@ python scripts/regle_service.py               # s_β(cv) et sensibilité de s* a
 python scripts/validation_arrets.py --depuis-json  # compatibilité et figure, sans simuler
 python scripts/rythme_de_marche.py            # s au rythme de marche, D′ contre C et D (~17 min)
 python scripts/ordre_accostage.py             # test FIFO sur les escales observées (secondes)
+python scripts/convergence_horizon.py --scenario baseline --depuis-json  # sans simuler
+python scripts/figures_papier.py              # figures du papier (anglais, PDF), sans simuler
+cd paper && latexmk                           # le papier ; chaque nombre dans paper/NOMBRES.md
 ```
 
 Sorties : `data/sim/*.parquet` (ignoré par git, recalculable) et les figures versionnées de

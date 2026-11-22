@@ -17,6 +17,8 @@
 \usepackage{array}
 \usepackage{cite}
 \usepackage{url}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
 
 \newcommand{\figdir}{figures}
 
@@ -40,8 +42,8 @@ lost production grows as the square root of the horizon, and every service level
 is a transient that depends on the simulated horizon. Storage capacity does not enter the
 loss at all. On a corridor rebuilt from public data only, from a port of import to a
 direct-reduction steel plant, the measured growth exponent of the cumulative deficit is
-0.49 [0.37; 0.60] and the one-year-to-fifty-year service level rises from 0.858 to 0.971
-without levelling off, while multiplying storage capacity by 12 changes production by less
+0.492 [0.367; 0.599] once the initial stock is removed, and the service level rises from 0.858
+at one year to 0.971 at fifty years without levelling off, while multiplying storage capacity by 12 changes production by less
 than 0.002\%. The correction is an endogenous supply policy: an $(s,Q)$ order rule on the
 inventory position with random lead times. It restores a stationary service level
 (0.9867~$\pm$~0.0012 and 0.9912~$\pm$~0.0008 in two scenarios). With discrete furnace
@@ -191,13 +193,39 @@ vessels wait does not.
 \subsection{Measurement}
 The simulated baseline, with Poisson arrivals, was replicated 20 times and each replication
 was read at horizons from 1 to 50 years along the same trajectory. Fitting the mean deficit
-as $aT^p$ gives $p = 0.578$ [0.434; 0.718] with the initial stock and $p = 0.49$
-[0.37; 0.60] without it, compatible with $1/2$ and excluding both 0 (bounded deficit) and 1
-(stationary regime with losses). The service level rises from 0.858 at one year to 0.971 at
-fifty years without levelling off. Holding the initial stock fixed and multiplying both
+as $aT^p$ gives $p = 0.578$ [0.434; 0.718] \emph{with} the nominal initial stock, and
+$p = 0.492$ [0.367; 0.599] \emph{with zero} initial stock. Both intervals contain $1/2$ and
+exclude 0 (bounded deficit) and 1 (stationary regime with losses); the initial stock steepens
+the apparent slope because it shrinks the deficit at short horizons only, so the second
+exponent is the one that describes the random walk itself. The service level rises from
+0.858 at one year to 0.971 at fifty years without levelling off (Fig.~\ref{fig:thesis}, red).
+Holding the initial stock fixed and multiplying both
 storage capacities by 12 changes production by less than 0.002\% at horizons of 1, 4 and 12
 years. An earlier result of the project, in which larger storage appeared to reduce losses
 markedly, came entirely from the initial stock, which the scenarios derived from capacity.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{\figdir/thesis.pdf}
+\caption{Service level against the simulated horizon, same corridor, same 20 paired
+replications per model, each read along one trajectory (bands: 95\% intervals). Red: exogenous
+Poisson arrivals at the demand rate; $\beta$ keeps rising with no plateau. Blue: endogenous
+$(s,Q)$ supply; $\beta$ stabilises, and the shaded strip is its limit $\beta_\infty$ estimated by
+batch means over a single 400-year run.}
+\label{fig:thesis}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\input{\figdir/structure.tex}
+\caption{Structure of the corridor model. Black: material flow from sea to furnace. Red
+dashed: the two blockings, which propagate upstream (a full stockyard holds the vessel at the
+berth; a full plant stock holds the rakes). Blue: the supply loop of the endogenous model: the
+inventory position, which counts everything afloat, at the port, on rail and at the plant, is
+reviewed at each consumption, and a vessel is chartered when it falls below $s$. The exogenous
+model has no loop: vessels come from an independent process at the demand rate (grey dotted).}
+\label{fig:structure}
+\end{figure}
 
 % =========================================================================================
 \section{The corrective model}
@@ -206,8 +234,9 @@ markedly, came entirely from the initial stock, which the scenarios derived from
 \subsection{Endogenous supply}
 The corrected model, written in SimPy \cite{TODO-simpy}, keeps the port, berth, rail and
 plant processes of the original and replaces the arrival process by a continuous-review
-$(s,Q)$ policy \cite{TODO-sQ-inventory-theory}. One vessel is chartered whenever the
-inventory position falls below the reorder point $s$. The position counts the stockyard, the
+$(s,Q)$ policy \cite{TODO-sQ-inventory-theory} (Fig.~\ref{fig:structure}). Whenever the inventory position falls below
+the reorder point $s$, vessels are chartered one at a time ($Q$ = one vessel) until it is back
+at or above $s$. The position counts the stockyard, the
 plant stock, rail wagons in transit and everything afloat: vessels at sea, at anchorage, and
 the cargo still on board at berth. Without the last term, the position would drop by a full
 vessel at berthing and the policy would order for nothing. The policy is reviewed only when
@@ -305,10 +334,14 @@ difference.
 \label{sec:results}
 
 \subsection{Stationarity recovered}
-With endogenous supply, the service level converges. Batch means over a single 400-year run
-\cite{TODO-batch-means} give $\beta_\infty = 0.9867 \pm 0.0012$ in the current configuration
-and $0.9912 \pm 0.0008$ in the expansion scenario, and independent replications agree with
-them. The ranking of the two scenarios depends on overtaking: forbidding it lowers the
+With endogenous supply, the service level converges. Read on the same corridor, with the
+same protocol as the exogenous model, it stays between 0.987 and 0.991 at every horizon, and
+no paired difference between successive horizons beyond 8 years is significant
+(Fig.~\ref{fig:thesis}, blue). The deficit now grows linearly: fitted on horizons of 8 years
+and more, its exponent is 1.048 [0.952; 1.134], the signature of a stationary regime with
+losses. Batch means over a single 400-year run \cite{TODO-batch-means} give
+$\beta_\infty = 0.9867 \pm 0.0012$ in the current configuration and $0.9912 \pm 0.0008$ in
+the expansion scenario, and independent replications agree with them. The ranking of the two scenarios depends on overtaking: forbidding it lowers the
 expansion scenario from 0.9917 to 0.9749, because with more orders in transit an overtaking
 vessel more often fills a gap a late one would have opened \cite{TODO-order-crossover}. The
 same feedback that restores a steady state also changes what dispersion of arrivals means:
@@ -381,7 +414,7 @@ crude $(s,Q)$ rule, is enough to restore a steady state.
 The code, the scenario files, the archived public data and the scripts that produce every
 number and figure of this paper are available at
 \url{https://github.com/abdessamed-britah/djendjen-bellara-twin}; the results were frozen at
-the tag \texttt{v0.1-resultats}. The raw port snapshots are archived unchanged as release
+the tag \texttt{v0.2-resultats}. The raw port snapshots are archived unchanged as release
 assets of that repository, and the traffic statistics as the published web pages. The
 repository documentation is in French; \texttt{paper/NOMBRES.md} maps every number of this
 paper to its line in the results table.

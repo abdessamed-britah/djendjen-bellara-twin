@@ -49,12 +49,19 @@ modèle étant causal et ses flux aléatoires séparés, la simulation de T ans 
 préfixe de celle de 50 ans : les points d'une même réplication décrivent une **seule**
 trajectoire lue à plusieurs instants, et le déficit en fonction de T est une vraie courbe.
 
+**Sauvegarde.** Le script écrit ses mesures brutes — déficits par réplication et par
+horizon, avec et sans stock initial, heures de rupture, β des lots — dans
+`data/sim/convergence_horizon_<scénario>.json`, et `--depuis-json` refait toute l'analyse
+et la figure sans simuler. C'est ce fichier que lit la figure de la thèse du papier.
+
 Usage : python scripts/convergence_horizon.py [--reps 20] [--scenario baseline]
         python scripts/convergence_horizon.py --scenario phase2_endogene --lots-annees 500
+        python scripts/convergence_horizon.py --scenario baseline --depuis-json
 """
 
 import argparse
 import dataclasses
+import json
 import math
 import random
 import sys
@@ -75,6 +82,7 @@ DEFAULT_SCENARIO = "baseline"
 DEFAULT_REPS = 20
 DEFAULT_SEED = 20260924
 DEFAULT_FIGURE = Path("docs/convergence_horizon.png")
+DOSSIER_JSON = Path("data/sim")
 #: Régime d'arrivée du diagnostic exogène : Poisson, là où la perte est franche. Sans
 #: effet en politique endogène, où l'irrégularité des arrivées est une sortie du modèle.
 DISPERSION = 1.0
@@ -152,10 +160,14 @@ def deficits(config, resultats) -> dict[int, list[float]]:
 
 def part_des_ruptures(config, resultats) -> dict[int, object]:
     """{horizon: Estimate de la part des heures ouvrées perdues faute de pellets}."""
-    return {
-        h: estimate([r.dri_stop_hours / (config.heures_ouvrees_par_an * h) for r in liste])
-        for h, liste in resultats.items()
-    }
+    return part_des_ruptures_brut(
+        config, {h: [r.dri_stop_hours for r in liste] for h, liste in resultats.items()})
+
+
+def part_des_ruptures_brut(config, heures: dict[int, list[float]]) -> dict[int, object]:
+    """La même chose, depuis les heures de rupture de chaque réplication."""
+    return {h: estimate([x / (config.heures_ouvrees_par_an * h) for x in liste])
+            for h, liste in heures.items()}
 
 
 def resume(config, deficits: dict[int, list[float]]) -> list[dict]:
@@ -281,6 +293,7 @@ def moyennes_par_lots(config, seed, annees=LOTS_ANNEES, echauffement=LOTS_ECHAUF
     annees_avec_rupture = sum(p["rupture_h"] > 0 for p in utiles)
     return {
         "beta": estimate(betas),
+        "betas": betas,
         "annees": annees,
         "lots": len(betas),
         "autocorrelation": autocorrelation(betas),
@@ -515,6 +528,64 @@ def print_rapport(config, lignes, ajustement, parts, issue, ajustement_sans=None
         print(f"  **β converge : {'OUI' if convergence['converge'] else 'NON'}**")
 
 
+def chemin_json(scenario: str) -> Path:
+    return DOSSIER_JSON / f"convergence_horizon_{scenario}.json"
+
+
+def mesurer(scenario: str, reps: int, seed: int, horizons, lots_annees: int = 0) -> dict:
+    """Les mesures brutes, sérialisables : tout ce que l'analyse relit, rien de dérivé."""
+    avec_config = configuration(scenario, initial=True)
+    sans_config = configuration(scenario, initial=False)
+    seeds = graines(reps, seed)
+    resultats = resultats_par_horizon(avec_config, horizons, seeds)
+    sans = deficits(sans_config, resultats_par_horizon(sans_config, horizons, seeds))
+    lots = None
+    if lots_annees:
+        mesure = moyennes_par_lots(avec_config, seed=seed, annees=lots_annees)
+        lots = {k: v for k, v in mesure.items() if k != "beta"}
+    return {
+        "scenario": scenario, "reps": reps, "seed": seed, "horizons": list(horizons),
+        "politique": avec_config.politique_approvisionnement,
+        "cible_an_t": cible_t(avec_config, 1.0),
+        "deficits_avec_t": {str(h): v for h, v in deficits(avec_config, resultats).items()},
+        "deficits_sans_t": {str(h): v for h, v in sans.items()},
+        "rupture_h": {str(h): [r.dri_stop_hours for r in liste]
+                      for h, liste in resultats.items()},
+        "lots": lots,
+    }
+
+
+def _par_horizon(brut: dict, cle: str) -> dict[int, list[float]]:
+    return {int(h): v for h, v in brut[cle].items()}
+
+
+def analyser(brut: dict) -> dict:
+    """Tout le rapport, depuis les mesures brutes. Refuse une configuration qui a changé."""
+    avec_config = configuration(brut["scenario"], initial=True)
+    if not math.isclose(cible_t(avec_config, 1.0), brut["cible_an_t"], rel_tol=1e-12):
+        raise ValueError("la configuration a changé depuis la mesure : relancer le calcul")
+    avec = _par_horizon(brut, "deficits_avec_t")
+    sans = _par_horizon(brut, "deficits_sans_t")
+    lignes = resume(avec_config, avec)
+    ajustement = exposant(avec)
+    lots = accord = None
+    if brut["lots"]:
+        lots = {**brut["lots"], "beta": estimate(brut["lots"]["betas"])}
+        accord = accord_des_estimateurs(lignes[-1]["beta"], lots["beta"])
+    differences = convergence_beta(avec_config, avec)
+    return {
+        "config": avec_config, "lignes": lignes, "ajustement": ajustement,
+        "ajustement_sans": exposant(sans),
+        "ajustement_tardif": exposant(
+            {h: d for h, d in avec.items() if h >= SEUIL_CONVERGENCE_ANS}),
+        "parts": part_du_stock_initial(avec, sans, avec_config),
+        "issue": verdict(ajustement, lignes),
+        "ruptures": part_des_ruptures_brut(avec_config, _par_horizon(brut, "rupture_h")),
+        "differences": differences, "lots": lots, "accord": accord,
+        "convergence": verdict_convergence(differences, accord),
+    }
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--scenario", default=DEFAULT_SCENARIO)
@@ -524,43 +595,35 @@ def main(argv=None) -> int:
     parser.add_argument("--lots-annees", type=int, default=0,
                         help="longueur de la réplication des moyennes par lots ; 0 = pas de lots")
     parser.add_argument("--figure", type=Path, default=None)
+    parser.add_argument("--json", type=Path, default=None)
+    parser.add_argument("--depuis-json", action="store_true",
+                        help="relit les mesures d'un calcul précédent, sans simuler")
     args = parser.parse_args(argv)
 
-    avec_config = configuration(args.scenario, initial=True)
-    sans_config = configuration(args.scenario, initial=False)
-    seeds = graines(args.reps, args.seed)
-    print(f"scénario {args.scenario}, {args.reps} réplications, horizons {args.horizons} ans")
+    chemin = args.json or chemin_json(args.scenario)
+    if args.depuis_json:
+        brut = json.loads(chemin.read_text(encoding="utf-8"))
+    else:
+        print(f"scénario {args.scenario}, {args.reps} réplications, "
+              f"horizons {args.horizons} ans", flush=True)
+        brut = mesurer(args.scenario, args.reps, args.seed, args.horizons, args.lots_annees)
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        chemin.write_text(json.dumps(brut), encoding="utf-8")
+        print(f"mesures écrites : {chemin}")
+    a = analyser(brut)
+    print_rapport(a["config"], a["lignes"], a["ajustement"], a["parts"], a["issue"],
+                  ajustement_sans=a["ajustement_sans"],
+                  ajustement_tardif=a["ajustement_tardif"], ruptures=a["ruptures"],
+                  differences=a["differences"], lots=a["lots"], accord=a["accord"],
+                  convergence=a["convergence"])
 
-    resultats = resultats_par_horizon(avec_config, args.horizons, seeds)
-    avec = deficits(avec_config, resultats)
-    sans = deficits(sans_config, resultats_par_horizon(sans_config, args.horizons, seeds))
-    lignes = resume(avec_config, avec)
-    ajustement = exposant(avec)
-    parts = part_du_stock_initial(avec, sans, avec_config)
-    issue = verdict(ajustement, lignes)
-    differences = convergence_beta(avec_config, avec)
-
-    lots = accord = None
-    if args.lots_annees:
-        lots = moyennes_par_lots(avec_config, seed=args.seed, annees=args.lots_annees)
-        accord = accord_des_estimateurs(lignes[-1]["beta"], lots["beta"])
-    convergence = verdict_convergence(differences, accord)
-
-    print_rapport(avec_config, lignes, ajustement, parts, issue,
-                  ajustement_sans=exposant(sans),
-                  ajustement_tardif=exposant(
-                      {h: d for h, d in avec.items() if h >= SEUIL_CONVERGENCE_ANS}),
-                  ruptures=part_des_ruptures(avec_config, resultats),
-                  differences=differences, lots=lots, accord=accord,
-                  convergence=convergence)
-
-    figure = args.figure or (DEFAULT_FIGURE if args.scenario == DEFAULT_SCENARIO
+    figure = args.figure or (DEFAULT_FIGURE if brut["scenario"] == DEFAULT_SCENARIO
                              else DEFAULT_FIGURE.with_name(
-                                 f"convergence_horizon_{args.scenario}.png"))
-    chemin = write_figure(lignes, ajustement, args.scenario, args.reps, figure,
-                          politique=avec_config.politique_approvisionnement,
-                          beta_limite=lots["beta"] if lots else None)
-    print(f"\nfigure écrite : {chemin}")
+                                 f"convergence_horizon_{brut['scenario']}.png"))
+    sortie = write_figure(a["lignes"], a["ajustement"], brut["scenario"], brut["reps"], figure,
+                          politique=brut["politique"],
+                          beta_limite=a["lots"]["beta"] if a["lots"] else None)
+    print(f"\nfigure écrite : {sortie}")
     return 0
 
 

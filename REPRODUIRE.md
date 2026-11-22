@@ -1,12 +1,14 @@
 # Reproduire les résultats
 
 Ce fichier dit comment refaire, depuis un clone du dépôt et sans aucun accès privilégié, chaque
-chiffre de [`docs/results_summary.md`](docs/results_summary.md). L'étiquette git
-**`v0.1-resultats`** marque le commit sur lequel ces chiffres ont été figés.
+chiffre de [`docs/results_summary.md`](docs/results_summary.md) et le papier de conférence
+de `paper/`. L'étiquette git **`v0.2-resultats`** marque le commit sur lequel ces chiffres ont
+été figés ; elle étend `v0.1-resultats` (2026-11-06) des lignes M2b, M2c, M3b et des
+paramètres de méthode P1-P5, après recalcul de la convergence avec l'horizon.
 
 ## Environnement
 
-| Composant | Version utilisée (2026-11-06) |
+| Composant | Version utilisée (2026-11-06, vérifiée le 2026-11-22) |
 | --- | --- |
 | Python | 3.12.14 (conda, environnement `corridor`) |
 | simpy | 4.1.2 |
@@ -18,6 +20,8 @@ chiffre de [`docs/results_summary.md`](docs/results_summary.md). L'étiquette gi
 | requests | 2.34.2 |
 | pytest | 9.1.1 |
 | ruff | 0.16.8 |
+| MiKTeX / pdfTeX | 25.12 / 4.23 (papier) |
+| latexmk | 4.89 (papier) |
 
 Machine des mesures : portable Windows 11, 14 processeurs logiques ; les calculs parallèles
 utilisent 10 à 12 processus (`--processus`, par défaut le nombre de processeurs moins deux ou quatre).
@@ -58,7 +62,7 @@ se recalculent par les commandes ci-dessous. Toutes les graines par défaut vale
 ## Commandes, dans l'ordre des dépendances
 
 Durées : *mesurée* = chronométrée lors de la régénération de l'étape 9 (10 processus, machine
-non dédiée) ; *annoncée* = estimée à l'étape qui a produit le chiffre. Comptez deux à trois
+non dédiée) ou du recalcul de v0.2 (un processus, les deux scénarios en parallèle) ; *annoncée* = estimée à l'étape qui a produit le chiffre. Comptez deux à trois
 fois plus sur batterie.
 
 | # | Commande | Produit | Durée |
@@ -66,7 +70,9 @@ fois plus sur batterie.
 | 1 | `python scripts/arrival_dispersion.py` | c_a² sur 16 trimestres, IC bootstrap | secondes |
 | 2 | `python scripts/ore_calls_report.py` | cadence observée, attente BERGE NIMBA, signal H2 | secondes |
 | 3 | `pytest -m slow -q tests/test_analytic.py` | validation Pollaczek-Khinchine | ~6 s |
-| 4 | `python scripts/convergence_horizon.py --scenario phase2_endogene --lots-annees 400` (et `baseline_endogene`) | β∞ endogène | ~20 min chacun, annoncée |
+| 4a | `python scripts/convergence_horizon.py --scenario baseline` | exposants exogènes avec et sans stock initial, β par horizon (M2, M2b, M2c) → `data/sim/convergence_horizon_baseline.json` | **26 min, mesurée** |
+| 4b | `python scripts/convergence_horizon.py --scenario baseline_endogene --lots-annees 400` | β endogène par horizon et β∞ par lots (M3, M3b) → `data/sim/convergence_horizon_baseline_endogene.json` | **37 min, mesurée** |
+| 4c | `python scripts/convergence_horizon.py --scenario phase2_endogene --lots-annees 400` | β∞ phase 2 (M4) | ~20 min, annoncée |
 | 5 | `python scripts/politique_commande.py` | courbe de coût en s, s optimal | ~50 min, annoncée |
 | 6 | `python scripts/validation_ca2.py` | réfutation du modèle continu | ~1 h, annoncée |
 | 7 | `python scripts/diagnostic_dispersion.py` | l'écart n'est pas un artefact | ~15 min, annoncée |
@@ -81,9 +87,14 @@ fois plus sur batterie.
 | 16 | `python scripts/regle_service.py` | s_β(cv), sensibilité aux prix (après 12) | ~45 min, annoncée |
 | 17 | `python scripts/rythme_de_marche.py` | s au rythme de marche (après 14 et 15) → `data/sim/rythme_de_marche.json` | **17 min, mesurée** |
 | 18 | `python scripts/ordre_accostage.py` | test FIFO sur les escales observées | secondes |
+| 19 | `python scripts/figures_papier.py` | figures du papier, en anglais et en PDF vectoriel, depuis les JSON de 4a, 4b, 8 et 10 → `paper/figures/` | secondes |
+| 20 | `cd paper && latexmk` | le papier, `paper/build/main.pdf` (reproductible à l'octet) | ~1 min |
 
 Les scripts longs écrivent leurs résultats en JSON ou CSV et savent les relire sans simuler
-(`--depuis-json`, `--depuis-csv`) : les figures se retracent en quelques secondes. Les figures
+(`--depuis-json`, `--depuis-csv`) : les figures se retracent en quelques secondes. Les
+paramètres de méthode P1-P5 ne se calculent pas : ils se relisent dans le code et la
+configuration (colonne « Où il est fixé » du tableau), sauf la cadence réalisée de P1, tirée
+de `data/raw/port_status/_manifest.csv`. Les figures
 sont produites en français (`docs/x.png`) et en anglais (`docs/x_en.png`).
 
 Les étapes 17 et 18 ne recalculent pas leurs références : le rythme de marche reprend C et D

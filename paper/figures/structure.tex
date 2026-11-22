@@ -1,0 +1,57 @@
+% Model structure, one column. Black: material flow. Red dashed: blocking from downstream
+% to upstream. Thick blue: the supply loop of the endogenous model. Grey dotted: the
+% exogenous arrival process that the loop replaces.
+\begin{tikzpicture}[
+  font=\scriptsize,
+  box/.style={draw, rounded corners=1.5pt, minimum height=6.5mm, minimum width=12mm,
+              align=center, inner sep=1.5pt, fill=white},
+  ctrl/.style={box, draw=blue!70!black, thick, text=blue!50!black},
+  exo/.style={box, draw=black!45, dotted, thick, text=black!60},
+  flow/.style={-{Stealth[length=1.6mm]}, semithick},
+  block/.style={-{Stealth[length=1.6mm]}, red!75!black, dashed, semithick},
+  loop/.style={-{Stealth[length=2mm]}, blue!70!black, very thick},
+  exoflow/.style={-{Stealth[length=1.6mm]}, black!45, dotted, thick},
+  lab/.style={font=\tiny, inner sep=1pt},
+]
+% material chain, first row left to right, second row right to left
+\node[box] (sea)   at (0.95, 0)    {Sea\\(lead time)};
+\node[box] (anch)  at (2.75, 0)    {Anchorage\\queue};
+\node[box] (berth) at (4.55, 0)    {Ore\\berth};
+\node[box] (yard)  at (6.6, 0)     {Port\\stockyard};
+\node[box] (rail)  at (6.6, -1.55) {Rail\\rakes};
+\node[box] (plant) at (4.55, -1.55){Plant\\stock};
+\node[box] (furn)  at (2.75, -1.55){DRI\\furnace};
+
+\draw[flow] (sea) -- (anch);
+\draw[flow] (anch) -- (berth);
+\draw[flow] (berth) -- node[lab, above] {unload} (yard);
+\draw[flow] (yard) -- (rail);
+\draw[flow] (rail) -- (plant);
+\draw[flow] (plant) -- (furn);
+
+% blocking, downstream to upstream
+\draw[block] (yard.north) to[bend right=35]
+  node[lab, above] {yard full: vessel held} (berth.north);
+\draw[block] (plant.south) to[bend right=35]
+  node[lab, below] {plant full: rakes wait} (rail.south);
+
+% endogenous supply loop
+\node[ctrl] (pos) at (0.95, -1.55) {Inventory\\position};
+\node[ctrl, minimum width=10mm] (order) at (0.95, -2.85) {Order\\$(s,Q)$};
+\draw[loop] (furn) -- node[lab, below=1pt, text=blue!50!black] {review} (pos);
+\draw[loop] (pos) -- node[lab, right, text=blue!50!black] {$<s$} (order);
+\draw[loop] (order.west) -- ++(-0.55, 0) |- node[lab, pos=0.25, left,
+  text=blue!50!black, align=right] {charter\\$Q$ = 1 vessel} (sea.west);
+
+% exogenous arrival process, replaced by the loop
+\node[exo] (gen) at (2.75, 1.25) {Exogenous arrivals, rate $d/\mathbb{E}[Q]$};
+\draw[exoflow] (gen.west) -| (sea.north);
+
+% legend
+\begin{scope}[shift={(2.2, -2.7)}, font=\tiny]
+  \draw[flow] (0, 0.18) -- ++(0.45, 0) node[right, black] {material flow};
+  \draw[block] (0, -0.18) -- ++(0.45, 0) node[right] {blocking};
+  \draw[loop] (1.95, 0.18) -- ++(0.45, 0) node[right] {supply loop, endogenous model};
+  \draw[exoflow] (1.95, -0.18) -- ++(0.45, 0) node[right, black!60] {arrivals, exogenous model};
+\end{scope}
+\end{tikzpicture}

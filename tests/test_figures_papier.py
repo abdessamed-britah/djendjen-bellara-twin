@@ -67,3 +67,54 @@ def test_les_deux_figures_sont_des_pdf_sans_date(tmp_path):
         assert contenu[:5] == b"%PDF-"
         assert b"/CreationDate" not in contenu
         assert b"/Type3" not in contenu  # polices TrueType incorporées, pas Type 3
+
+
+# --- figure de la thèse : β selon l'horizon, exogène contre endogène -------------------
+
+
+def _brut(scenario, deficit_par_an, lots=None):
+    config = fp.ch.configuration(scenario)
+    cible = fp.ch.cible_t(config, 1.0)
+    horizons = [1, 8, 16]
+    return {
+        "scenario": scenario, "reps": 3, "seed": 1, "horizons": horizons,
+        "politique": config.politique_approvisionnement, "cible_an_t": cible,
+        "deficits_avec_t": {str(h): [deficit_par_an(h) * cible * k for k in (0.9, 1.0, 1.1)]
+                            for h in horizons},
+        "deficits_sans_t": {str(h): [deficit_par_an(h) * cible * 1.2] * 3 for h in horizons},
+        "rupture_h": {str(h): [10.0, 12.0, 14.0] for h in horizons},
+        "lots": lots,
+    }
+
+
+def test_la_these_lit_les_deux_modeles_aux_memes_horizons():
+    exogene = _brut(fp.SCENARIO_EXOGENE, lambda h: 0.1 * h ** 0.5)
+    endogene = _brut(fp.SCENARIO_ENDOGENE, lambda h: 0.01 * h,
+                     lots={"betas": [0.98, 0.99, 0.985]})
+    donnees = fp.donnees_these(exogene, endogene)
+    assert donnees["exogene"]["horizons"] == [1, 8, 16]
+    # déficit en √T : β monte avec l'horizon ; déficit en T : β constant
+    assert donnees["exogene"]["beta"] == sorted(donnees["exogene"]["beta"])
+    assert donnees["endogene"]["beta"][0] == pytest.approx(donnees["endogene"]["beta"][-1])
+    moyenne, bas, haut = donnees["limite"]
+    assert moyenne == pytest.approx(0.985)
+    assert bas < moyenne < haut
+
+
+def test_la_these_refuse_des_horizons_differents():
+    exogene = _brut(fp.SCENARIO_EXOGENE, lambda h: 0.1)
+    endogene = _brut(fp.SCENARIO_ENDOGENE, lambda h: 0.01)
+    endogene["horizons"] = [1, 8]
+    for cle in ("deficits_avec_t", "deficits_sans_t", "rupture_h"):
+        del endogene[cle]["16"]
+    with pytest.raises(ValueError):
+        fp.donnees_these(exogene, endogene)
+
+
+@pytest.mark.slow
+def test_la_figure_de_la_these_est_un_pdf_sans_date(tmp_path):
+    chemin = fp.figure_these(_brut(fp.SCENARIO_EXOGENE, lambda h: 0.1 * h ** 0.5),
+                             _brut(fp.SCENARIO_ENDOGENE, lambda h: 0.01 * h,
+                                   lots={"betas": [0.98, 0.99]}), tmp_path / "t.pdf")
+    contenu = chemin.read_bytes()
+    assert contenu[:5] == b"%PDF-" and b"/CreationDate" not in contenu

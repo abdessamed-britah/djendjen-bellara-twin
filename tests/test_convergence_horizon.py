@@ -354,3 +354,24 @@ def test_la_figure_endogene_porte_la_limite_des_lots(tmp_path):
                              politique="point_de_commande",
                              beta_limite=ch.estimate([0.98, 0.99, 0.985]))
     assert chemin.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+# --- sauvegarde : l'analyse refaite depuis le JSON ---------------------------------------
+
+
+def test_le_json_refait_l_analyse_sans_simuler(tmp_path):
+    import json
+    brut = ch.mesurer("baseline", reps=2, seed=3, horizons=[1, 8], lots_annees=0)
+    chemin = tmp_path / "c.json"
+    chemin.write_text(json.dumps(brut), encoding="utf-8")
+    relu = json.loads(chemin.read_text(encoding="utf-8"))
+    a, b = ch.analyser(brut), ch.analyser(relu)
+    assert [x["beta"].mean for x in a["lignes"]] == [x["beta"].mean for x in b["lignes"]]
+    assert a["ajustement"]["p"] == b["ajustement"]["p"]
+
+
+def test_une_configuration_changee_est_refusee():
+    brut = ch.mesurer("baseline", reps=1, seed=3, horizons=[1, 8], lots_annees=0)
+    brut["cible_an_t"] *= 1.01
+    with pytest.raises(ValueError):
+        ch.analyser(brut)

@@ -1,11 +1,14 @@
 # Tableau unique des résultats
 
-Une ligne par chiffre destiné à l'article *Computers & Industrial Engineering*. Figé à
-l'étiquette git **`v0.1-resultats`** (2026-11-06) ; commandes et durées dans
-[`REPRODUIRE.md`](../REPRODUIRE.md). Détail, figures et discussion dans le README.
+Une ligne par chiffre destiné à l'article *Computers & Industrial Engineering* et au papier
+de conférence (`paper/`). Figé à l'étiquette git **`v0.2-resultats`** (2026-11-22), qui
+étend `v0.1-resultats` (2026-11-06) des lignes M2b, M2c, M3b et de la rubrique 6 ;
+commandes et durées dans [`REPRODUIRE.md`](../REPRODUIRE.md). Détail, figures et discussion
+dans le README.
 
 **Colonnes.** *Commit* : celui qui a produit le chiffre tel qu'il est écrit ici ;
-`v0.1` = régénéré ou calculé à l'étape 9, sur le commit étiqueté. *Graine* : graine
+`v0.1` = régénéré ou calculé à l'étape 9, sur le commit étiqueté ; `v0.2` = recalculé pour
+le papier, sur le commit étiqueté `v0.2-resultats`. *Graine* : graine
 maîtresse ; la réplication i de toutes les configurations d'un même script en dérive, d'où
 des comparaisons appariées. *Rép.* : réplications par configuration (ou tirages, ou effectif
 observé). *Variante* : C/D = arrêts du four continus/discrets, p/i = dépassements en mer
@@ -49,8 +52,11 @@ donc en borne haute. Les deux capacités de stockage sont `inconnu` (H4-H5).
 | ID | Chiffre | Valeur | Intervalle | Script | Commit | Graine | Rép. | Variante | Statut | Réserve |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | M1 | Effet de la capacité de stockage (× 12) sur la production, stock initial figé | < 0,002 % | — | `tests/test_sim_model.py` | 3d0fa1d | 20260924 | 1, 4, 12 ans | exo. | calculé | modèle exogène sans régime stationnaire (limite 0) : motive le modèle endogène |
-| M2 | Exposant du déficit cumulé, approvisionnement exogène | 0,578 | [0,434 ; 0,718] | `convergence_horizon.py` | 9802faf | 20260924 | 20 | exo. | calculé | marche sans dérive : aucun β stationnaire |
-| M3 | β∞ approvisionnement, baseline endogène | 0,9867 | ± 0,0012 | `convergence_horizon.py` | 92d2fe6 | 20260924 | 400 ans par lots | C p | calculé | s = 30 j fixé par hypothèse |
+| M2 | Exposant du déficit cumulé, approvisionnement exogène, **avec** le stock initial nominal | 0,578 | [0,434 ; 0,718] bootstrap | `convergence_horizon.py` | v0.2 (9802faf) | 20260924 | 20 | exo. | calculé | **recalculé** : identique ; marche sans dérive, aucun β stationnaire ; le stock initial raidit la pente apparente |
+| M2b | Exposant du déficit cumulé, approvisionnement exogène, **à stock initial nul** | 0,492 | [0,367 ; 0,599] bootstrap | `convergence_horizon.py` | v0.2 (9802faf) | 20260924 | 20 | exo. | calculé | **recalculé** : identique au README ; l'exposant qui décrit la marche elle-même |
+| M2c | β exogène selon l'horizon (1 / 2 / 4 / 8 / 16 / 32 / 50 ans) | 0,858 / 0,888 / 0,919 / 0,944 / 0,958 / 0,967 / 0,971 | ± 0,060 / 0,043 / 0,026 / 0,018 / 0,013 / 0,010 / 0,012 | `convergence_horizon.py` | v0.2 (9802faf) | 20260924 | 20, une trajectoire par réplication lue à tous les horizons | exo. | calculé | **recalculé** : identique ; croît sans palier ; Poisson, stock initial nominal |
+| M3 | β∞ approvisionnement, baseline endogène | 0,9867 | ± 0,0012 | `convergence_horizon.py` | v0.2 (92d2fe6) | 20260924 | 400 ans par lots | C p | calculé | **recalculé** : identique ; s = 30 j fixé par hypothèse |
+| M3b | β endogène selon l'horizon (1 / 2 / 4 / 8 / 16 / 32 / 50 ans), même protocole que M2c | 0,991 / 0,988 / 0,987 / 0,988 / 0,988 / 0,987 / 0,987 | ± 0,005 / 0,005 / 0,003 / 0,002 / 0,002 / 0,001 / 0,001 | `convergence_horizon.py` | v0.2 | 20260924 | 20, une trajectoire par réplication lue à tous les horizons | C p | calculé | aucune différence appariée significative au-delà de 8 ans ; accord avec les lots à 50 ans ; exposant hors transitoire (T ≥ 8 ans) 1,048 [0,952 ; 1,134] |
 | M4 | β∞ approvisionnement, phase 2 endogène | 0,9912 | ± 0,0008 | `convergence_horizon.py` | 92d2fe6 | 20260924 | 400 ans par lots | C p | calculé | l'ordre phase 2 > baseline tient aux dépassements (M5) |
 | M5 | β phase 2, dépassements permis → interdits | 0,9917 → 0,9749 | — | script de diagnostic | 92d2fe6 | 20260924 | 12 graines × 20 ans | C p/i | reconstruit | mesuré par substitution avant que l'option existe |
 | M6 | Coût total à s = 30 j, phase 2 (arrêts + surestaries + portage) | 4,90 M USD/an (p) ; 7,03 (i) | ± 0,13 ; ± 0,26 | `politique_commande.py` | 712d0e5 | 20260924 | 16 × 16 ans | C p/i | calculé | coûts non sourcés |
@@ -102,6 +108,18 @@ en régime stationnaire ; la plage est [q05 ; q95] des 500 tirages, valeur = mé
 | H8 | Prix des pellets | 140 USD/t | [100 ; 180] | aucune locale | fixé par hypothèse (`estimé`) |
 | H9 | Taux de portage | 0,10 /an | [0,06 ; 0,15] | aucune locale | fixé par hypothèse (`estimé`) |
 | H10 | Durée moyenne d'un arrêt discret du four | 7 j | [2 ; 30] | aucune ; 2 j écarté par V4 | fixé par hypothèse (`estimé`) |
+
+## 6. Paramètres de méthode (pas des résultats)
+
+Des choix de méthode que le papier cite : relevés dans le code ou recalculés, pas recopiés.
+
+| ID | Paramètre | Valeur | Où il est fixé | Vérification | Commit |
+| --- | --- | --- | --- | --- | --- |
+| P1 | Cadence de collecte de la situation portuaire | 3 par jour programmées (05:00, 13:00, 21:00 UTC) ; **2,91 par jour réalisées** (123 collectes du 2026-09-24 au 2026-11-05) | `.github/workflows/scrape.yml` (cron) | réalisée : calculée sur `data/raw/port_status/_manifest.csv` (GitHub retarde ou saute des créneaux) | v0.2 |
+| P2 | Codes d'anomalie de la reconstruction des escales | 13 | `ANOMALY_CODES`, `corridor.transform.build_escales` | `len(ANOMALY_CODES)` | v0.2 |
+| P3 | Bande de la règle de verdict de la validation | quantiles 5 % et 95 % de la distribution simulée | `QUANTILES_DU_VERDICT = (0.05, 0.95)`, `scripts/validation_arrets.py` | relu dans le code | v0.2 |
+| P4 | Protocole de régime stationnaire | 4 ans d'échauffement, 16 ans mesurés | `ECHAUFFEMENT_STATIONNAIRE_ANS`, `FENETRE_STATIONNAIRE_ANS`, `corridor.sim.run` | relu dans le code | v0.2 |
+| P5 | Taille de commande de la politique (s, Q) | Q = 1 navire ; commandes répétées tant que la position reste sous s | boucle de commande, `corridor.sim.model` (`while self.position_de_stock() … < seuil`) | relu dans le code | v0.2 |
 
 ## Ce que ce tableau ne contient pas
 

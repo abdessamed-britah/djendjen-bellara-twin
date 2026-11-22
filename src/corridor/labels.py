@@ -124,6 +124,16 @@ LIBELLES: dict[str, dict[str, str]] = {
                       "en": "mean unplanned outage duration (days)"},
     "cv2_intra": {"fr": "CV² intra-annuel des tonnages débarqués",
                   "en": "within-year CV² of tonnage landed"},
+    # figure de la thèse du papier (β selon l'horizon)
+    "horizon_log": {"fr": "horizon de simulation T (années, échelle log)",
+                    "en": "simulation horizon T (years, log scale)"},
+    "beta_service": {"fr": "β = production ÷ cible", "en": "service level β = output / target"},
+    "modele_exogene": {"fr": "arrivées exogènes calées sur la demande",
+                       "en": "exogenous, demand-matched arrivals"},
+    "modele_endogene": {"fr": "approvisionnement endogène (s, Q)",
+                        "en": "endogenous (s, Q) supply"},
+    "beta_lots": {"fr": "β∞, moyennes par lots (IC 95 %)",
+                  "en": "β∞, batch means (95% CI)"},
     "titre_validation_arrets": {
         "fr": "Arrêts discrets du four : la dispersion simulée rejoint-elle l'observé ? "
               "({periode}, fenêtres de 12 trimestres)\nBandes : 5 %-95 % simulé, "
