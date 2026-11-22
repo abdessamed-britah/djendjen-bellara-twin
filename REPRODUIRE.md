@@ -73,6 +73,7 @@ fois plus sur batterie.
 | 4a | `python scripts/convergence_horizon.py --scenario baseline` | exposants exogènes avec et sans stock initial, β par horizon (M2, M2b, M2c) → `data/sim/convergence_horizon_baseline.json` | **26 min, mesurée** |
 | 4b | `python scripts/convergence_horizon.py --scenario baseline_endogene --lots-annees 400` | β endogène par horizon et β∞ par lots (M3, M3b) → `data/sim/convergence_horizon_baseline_endogene.json` | **37 min, mesurée** |
 | 4c | `python scripts/convergence_horizon.py --scenario phase2_endogene --lots-annees 400` | β∞ phase 2 (M4) | ~20 min, annoncée |
+| 4d | `python scripts/depassements.py` | β avec et sans dépassements, deux scénarios endogènes (M5) → `data/sim/depassements.json` | **14 min, mesurée** |
 | 5 | `python scripts/politique_commande.py` | courbe de coût en s, s optimal | ~50 min, annoncée |
 | 6 | `python scripts/validation_ca2.py` | réfutation du modèle continu | ~1 h, annoncée |
 | 7 | `python scripts/diagnostic_dispersion.py` | l'écart n'est pas un artefact | ~15 min, annoncée |

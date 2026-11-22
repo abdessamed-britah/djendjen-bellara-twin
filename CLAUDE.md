@@ -820,6 +820,10 @@ Résultats principaux (détails, tableaux et mises en garde dans le README) :
     publiée sous les deux hypothèses.** Le modèle ne propose pas encore l'option : elle a été
     mesurée par une substitution de `navire_en_mer` dans un script de diagnostic ; depuis
     l'étape 2 c'est une option du modèle, `simulation.depassements_autorises`.
+    **Recalculé par cette option** (2026-11-22, `scripts/depassements.py`, 200 réplications
+    appariées, protocole stationnaire) : phase 2 0,9912 → 0,9753 (−0,0159 ± 0,0005), baseline
+    0,9882 → 0,9863 (−0,0020 ± 0,0003). Même conclusion ; ce sont ces chiffres qui font foi
+    (M5 de `docs/results_summary.md`).
 21. **Le modèle endogène ne rend pas plausible la seule attente observée.** BERGE NIMBA a
     attendu 183,2 h en rade ; sur 1 200 navires simulés en baseline_endogene (régime
     stationnaire, s = 30 j), **aucun** n'attend autant — le maximum est de 160 à 172 h et 94 %
@@ -920,6 +924,7 @@ python scripts/rythme_de_marche.py            # s au rythme de marche, D′ cont
 python scripts/ordre_accostage.py             # test FIFO sur les escales observées (secondes)
 python scripts/convergence_horizon.py --scenario baseline --depuis-json  # sans simuler
 python scripts/figures_papier.py              # figures du papier (anglais, PDF), sans simuler
+python scripts/depassements.py                # β avec et sans dépassements (~14 min)
 cd paper && latexmk                           # le papier ; chaque nombre dans paper/NOMBRES.md
 ```
 

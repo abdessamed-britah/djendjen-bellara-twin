@@ -1,84 +1,216 @@
-% Placeholder entries only. No bibliographic data has been filled in: each entry names what
-% must be found, and the author replaces it with the real reference (keep the key, or
-% rename it in main.tex). They are printed so that the page count includes a reference list
-% of realistic length.
+% =====================================================================
+% Bibliographie vérifiée pour le papier de conférence
+% Corridor Djen Djen – Bellara
+%
+% Chaque entrée a été vérifiée sur une source bibliographique ou sur
+% l'article lui-même. Aucune n'est écrite de mémoire.
+% Vérifiées le 22 novembre 2026.
+%
+% CORRESPONDANCE avec les clés TODO du papier :
+%
+%   TODO-port-bulk-simulation      -> vanvianen2014
+%   TODO-port-plant-supply-sim.    -> deswaanarons2004
+%   TODO-exogenous-arrival-pract.  -> vanasperen2003   (+ rodrigues2016)
+%   TODO-port-calls-ais            -> wu2020
+%   TODO-interval-censoring        -> turnbull1976
+%   TODO-wilson-interval           -> wilson1927
+%   TODO-bootstrap                 -> efron1979
+%   TODO-reflected-processes       -> whitt2002        <- fusionnées
+%   TODO-fclt-renewal              -> whitt2002        <- fusionnées
+%   TODO-reflection-principle      -> karatzas1998
+%   TODO-simpy                     -> simpy            (version 4.1.2, complétée le 22/11/2026)
+%   TODO-sQ-inventory-theory       -> zipkin2000
+%   TODO-pollaczek-khinchine       -> gross2008
+%   TODO-steady-state-simulation   -> law2015          <- fusionnées
+%   TODO-batch-means               -> law2015          <- fusionnées
+%   TODO-order-crossover           -> hayya2008
+%
+% 16 clés TODO -> 15 références (deux fusions vers whitt2002 et law2015).
+% =====================================================================
 
-@misc{TODO-port-bulk-simulation,
-  title = {{TODO: discrete-event simulation studies of dry-bulk port terminals (berth, stockyard, hinterland)}},
-  note  = {Reference to be supplied}
+
+% ---------------------------------------------------------------------
+% LA RÉFÉRENCE LA PLUS IMPORTANTE DU PAPIER.
+% Compare arrivées non contrôlées (Poisson), équidistantes et pilotées
+% par le stock. Constate que sous Poisson l'étendue du stock est
+% théoriquement non bornée (88 300 t contre 10 800 en équidistant et
+% 6 700 en piloté par le stock), et conclut que Poisson est une
+% hypothèse inadéquate dès qu'un contrôle existe.
+% Le papier doit se positionner par rapport à elle, pas seulement la citer.
+% ---------------------------------------------------------------------
+@inproceedings{vanasperen2003,
+  author    = {van Asperen, Eelco and Dekker, Rommert and Polman, Mark
+               and de Swaan Arons, Henk},
+  title     = {Modeling Ship Arrivals in Ports},
+  booktitle = {Proceedings of the 2003 Winter Simulation Conference},
+  editor    = {Chick, Stephen and S{\'a}nchez, Paul J. and Ferrin, David
+               and Morrice, Douglas J.},
+  pages     = {1737--1744},
+  year      = {2003}
 }
 
-@misc{TODO-port-plant-supply-simulation,
-  title = {{TODO: simulation of raw-material supply chains from port to steel or processing plant}},
-  note  = {Reference to be supplied}
+% Le choix de la loi d'arrivée change la surestarie prédite dans un
+% rapport de 1 à 5,7 (Pearson 6 en base ; exponentielle +10 %,
+% Erlang +46 %, Weibull +566 %). Preuve que la loi d'arrivée est traitée
+% comme une entrée à ajuster, et qu'elle pèse lourd.
+@article{rodrigues2016,
+  author  = {Rodrigues, Romeu and Rangel, Jo{\~a}o Jos{\'e} de Assis},
+  title   = {Analysis of Ship Arrival Functions in Discrete Event
+             Simulation Models of an Iron Ore Export Terminal},
+  journal = {Pesquisa Operacional},
+  volume  = {36},
+  number  = {1},
+  pages   = {45--66},
+  year    = {2016},
+  doi     = {10.1590/0101-7438.2016.036.01.0045}
 }
 
-@misc{TODO-exogenous-arrival-practice,
-  title = {{TODO: published corridor or port models that generate vessel arrivals exogenously at a demand-matched rate and report one-year service levels}},
-  note  = {Reference to be supplied}
+@article{vanvianen2014,
+  author  = {van Vianen, Teus and Ottjes, Jaap and Lodewijks, Gabri{\"e}l},
+  title   = {Simulation-Based Determination of the Required Stockyard
+             Size for Dry Bulk Terminals},
+  journal = {Simulation Modelling Practice and Theory},
+  volume  = {42},
+  pages   = {119--128},
+  year    = {2014},
+  doi     = {10.1016/j.simpat.2013.12.010}
 }
 
-@misc{TODO-port-calls-ais,
-  title = {{TODO: reconstruction of port calls or berth occupancy from AIS or other public vessel data}},
-  note  = {Reference to be supplied}
+@inproceedings{deswaanarons2004,
+  author    = {de Swaan Arons, Henk and van Asperen, Eelco and Dekker,
+               Rommert and Polman, Mark},
+  title     = {Coordination in a Supply Chain for Bulk Chemicals},
+  booktitle = {Proceedings of the 2004 Winter Simulation Conference},
+  editor    = {Ingalls, Ricki G. and Rossetti, Manuel D. and Smith,
+               Jeffrey S. and Peters, Brett A.},
+  pages     = {1365--1372},
+  year      = {2004}
 }
 
-@misc{TODO-interval-censoring,
-  title = {{TODO: interval-censored durations (survival analysis reference)}},
-  note  = {Reference to be supplied}
+@article{wu2020,
+  author  = {Wu, Lin and Xu, Yongjun and Wang, Fei},
+  title   = {Identifying Port Calls of Ships by Uncertain Reasoning with
+             Trajectory Data},
+  journal = {ISPRS International Journal of Geo-Information},
+  volume  = {9},
+  number  = {12},
+  pages   = {756},
+  year    = {2020},
+  doi     = {10.3390/ijgi9120756}
 }
 
-@misc{TODO-wilson-interval,
-  title = {{TODO: Wilson score interval for a binomial proportion}},
-  note  = {Reference to be supplied}
+@article{turnbull1976,
+  author  = {Turnbull, Bruce W.},
+  title   = {The Empirical Distribution Function with Arbitrarily
+             Grouped, Censored and Truncated Data},
+  journal = {Journal of the Royal Statistical Society, Series B},
+  volume  = {38},
+  number  = {3},
+  pages   = {290--295},
+  year    = {1976},
+  doi     = {10.1111/j.2517-6161.1976.tb01597.x}
 }
 
-@misc{TODO-bootstrap,
-  title = {{TODO: percentile bootstrap confidence intervals}},
-  note  = {Reference to be supplied}
+@article{wilson1927,
+  author  = {Wilson, Edwin B.},
+  title   = {Probable Inference, the Law of Succession, and Statistical
+             Inference},
+  journal = {Journal of the American Statistical Association},
+  volume  = {22},
+  number  = {158},
+  pages   = {209--212},
+  year    = {1927},
+  doi     = {10.2307/2276774}
 }
 
-@misc{TODO-reflected-processes,
-  title = {{TODO: one-sided regulator / Skorokhod reflection map, storage or queueing theory}},
-  note  = {Reference to be supplied}
+@article{efron1979,
+  author  = {Efron, Bradley},
+  title   = {Bootstrap Methods: Another Look at the Jackknife},
+  journal = {The Annals of Statistics},
+  volume  = {7},
+  number  = {1},
+  pages   = {1--26},
+  year    = {1979},
+  doi     = {10.1214/aos/1176344552}
 }
 
-@misc{TODO-fclt-renewal,
-  title = {{TODO: functional central limit theorem for renewal-reward (compound renewal) processes}},
-  note  = {Reference to be supplied}
+% Couvre à la fois le théorème central limite fonctionnel pour les
+% processus de renouvellement-récompense et l'application de réflexion
+% de Skorokhod. Remplace donc deux clés TODO.
+@book{whitt2002,
+  author    = {Whitt, Ward},
+  title     = {Stochastic-Process Limits: An Introduction to
+               Stochastic-Process Limits and Their Application to Queues},
+  series    = {Springer Series in Operations Research},
+  publisher = {Springer},
+  address   = {New York, NY},
+  year      = {2002},
+  isbn      = {978-0-387-95358-8},
+  doi       = {10.1007/b97479}
 }
 
-@misc{TODO-reflection-principle,
-  title = {{TODO: law of the running maximum of Brownian motion (reflection principle)}},
-  note  = {Reference to be supplied}
+@book{karatzas1998,
+  author    = {Karatzas, Ioannis and Shreve, Steven E.},
+  title     = {Brownian Motion and Stochastic Calculus},
+  edition   = {2},
+  series    = {Graduate Texts in Mathematics},
+  volume    = {113},
+  publisher = {Springer},
+  address   = {New York, NY},
+  year      = {1998},
+  isbn      = {978-0-387-97655-6},
+  doi       = {10.1007/978-1-4612-0949-2}
 }
 
-@misc{TODO-simpy,
-  title = {{TODO: SimPy discrete-event simulation library (software citation)}},
-  note  = {Reference to be supplied}
+% Couvre l'analyse de sortie en régime stationnaire, le biais
+% d'initialisation et la méthode des moyennes par lots.
+% Remplace donc deux clés TODO.
+@book{law2015,
+  author    = {Law, Averill M.},
+  title     = {Simulation Modeling and Analysis},
+  edition   = {5},
+  publisher = {McGraw-Hill},
+  address   = {New York, NY},
+  year      = {2015},
+  isbn      = {978-0-07-340132-4}
 }
 
-@misc{TODO-sQ-inventory-theory,
-  title = {{TODO: continuous-review (s, Q) policies on the inventory position, inventory theory textbook}},
-  note  = {Reference to be supplied}
+@book{gross2008,
+  author    = {Gross, Donald and Shortle, John F. and Thompson, James M.
+               and Harris, Carl M.},
+  title     = {Fundamentals of Queueing Theory},
+  edition   = {4},
+  publisher = {John Wiley \& Sons},
+  address   = {Hoboken, NJ},
+  year      = {2008}
 }
 
-@misc{TODO-pollaczek-khinchine,
-  title = {{TODO: M/G/1 mean waiting time, Pollaczek-Khinchine formula (queueing textbook)}},
-  note  = {Reference to be supplied}
+@book{zipkin2000,
+  author    = {Zipkin, Paul H.},
+  title     = {Foundations of Inventory Management},
+  publisher = {McGraw-Hill},
+  address   = {Boston, MA},
+  year      = {2000}
 }
 
-@misc{TODO-steady-state-simulation,
-  title = {{TODO: steady-state simulation output analysis, warm-up / initialization bias}},
-  note  = {Reference to be supplied}
+@article{hayya2008,
+  author  = {Hayya, Jack C. and Bagchi, Uttarayan and Kim, Jeon G. and
+             Sun, Daewon},
+  title   = {On Static Stochastic Order Crossover},
+  journal = {International Journal of Production Economics},
+  volume  = {114},
+  number  = {1},
+  pages   = {404--413},
+  year    = {2008}
 }
 
-@misc{TODO-batch-means,
-  title = {{TODO: method of batch means for steady-state confidence intervals}},
-  note  = {Reference to be supplied}
-}
-
-@misc{TODO-order-crossover,
-  title = {{TODO: order crossover with stochastic lead times in inventory systems}},
-  note  = {Reference to be supplied}
+% Version : celle de l'environnement qui a produit les résultats (REPRODUIRE.md,
+% vérifiée par importlib.metadata le 22 novembre 2026). Le dépôt n'a pas de fichier de
+% verrouillage : pyproject.toml ne demande que simpy>=4.1.
+@misc{simpy,
+  author       = {{Team SimPy}},
+  title        = {{SimPy}: Discrete Event Simulation for {Python}},
+  howpublished = {\url{https://simpy.readthedocs.io}},
+  note         = {Version 4.1.2. Accessed: Nov.~22, 2026},
+  year         = {2026}
 }

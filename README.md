@@ -393,7 +393,10 @@ délais sont tirés indépendamment pour chaque commande, donc un navire en reta
 doublé par le suivant. Avec ~2,6 commandes en route à la fois, cela arrive à 12,7 % des
 arrivées en phase 2, contre 2,2 % en baseline. En interdisant les dépassements (12 graines,
 20 ans), la phase 2 tombe de **0,9917 à 0,9749** pendant que la baseline ne bouge presque pas
-(0,9893 → 0,9878) — et l'ordre s'inverse. L'hypothèse est réaliste pour des affrètements
+(0,9893 → 0,9878) — et l'ordre s'inverse. *Recalculé le 2026-11-22 par l'option du modèle
+(`scripts/depassements.py`, 200 réplications appariées, régime stationnaire) : phase 2
+0,9912 → 0,9753, baseline 0,9882 → 0,9863 ; même conclusion, et ce sont ces chiffres qui font
+foi.* L'hypothèse est réaliste pour des affrètements
 indépendants venus d'origines différentes, optimiste pour une navette sur une seule route.
 **Toute comparaison entre scénarios endogènes de cadences différentes devra être publiée sous
 les deux hypothèses.**

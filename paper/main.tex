@@ -28,29 +28,31 @@
 Lessons from a Port--Steelworks Corridor Rebuilt from Public Data}
 
 \author{\IEEEauthorblockN{Abdessamed Britah}
-\IEEEauthorblockA{Independent researcher\\
-% TODO(author): affiliation and e-mail address to be confirmed by the author.
-}}
+\IEEEauthorblockA{TODO: affiliation\\
+TODO: e-mail}}
 
 \maketitle
 
 \begin{abstract}
-Simulation models of port-to-plant supply corridors commonly drive vessel arrivals by an
-exogenous process whose mean rate is calibrated on plant demand. We show that such a model
-cannot produce a stationary service level: the net input is a random walk without drift,
-lost production grows as the square root of the horizon, and every service level it reports
-is a transient that depends on the simulated horizon. Storage capacity does not enter the
-loss at all. On a corridor rebuilt from public data only, from a port of import to a
+Simulation models of port-to-plant supply corridors often drive vessel arrivals by an
+exogenous process whose mean rate is calibrated on plant demand. Prior work warns against
+uncontrolled arrivals, whose stock range is unbounded; we give the analytic form of the
+failure. The net input is a random walk without drift, lost production grows as the square
+root of the horizon, and the service level itself is a transient that tends to one: any value
+reported at a finite horizon depends on that horizon, and storage capacity does not enter
+the loss. On a corridor rebuilt from public data only, from a port of import to a
 direct-reduction steel plant, the measured growth exponent of the cumulative deficit is
 0.492 [0.367; 0.599] once the initial stock is removed, and the service level rises from 0.858
 at one year to 0.971 at fifty years without levelling off, while multiplying storage capacity by 12 changes production by less
-than 0.002\%. The correction is an endogenous supply policy: an $(s,Q)$ order rule on the
-inventory position with random lead times. It restores a stationary service level
+than 0.002\%. The remedy is an instance of stock-controlled arrivals: an $(s,Q)$ rule on the
+inventory position, here with random lead times, discrete plant outages and two hypotheses
+on vessel overtaking. It restores a stationary service level
 (0.9867~$\pm$~0.0012 and 0.9912~$\pm$~0.0008 in two scenarios). With discrete furnace
 outages, it is not refuted by public traffic statistics, although that test has low power.
-We describe how vessel calls were reconstructed from public port snapshots with
-interval-censored departures, and illustrate what the corrected model says about investment
-levers, without turning it into a recommendation.
+We also reconstruct vessel calls from public port snapshots with interval-censored
+departures, propose a cheap diagnostic, plotting the service level against the horizon
+before reading it, and illustrate what the corrected model says about investment levers,
+without turning it into a recommendation.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -63,18 +65,26 @@ public data
 
 Bulk import corridors, in which a port receives raw material by sea and forwards it by rail
 to a processing plant, are a standard subject for discrete-event simulation
-\cite{TODO-port-bulk-simulation,TODO-port-plant-supply-simulation}. A common and natural
-modelling choice is to generate vessel arrivals exogenously, at a mean rate equal to plant
-demand divided by vessel size, with some dispersion around it, and then to read a service
-level, such as the fraction of target production achieved, after one or a few simulated
-years \cite{TODO-exogenous-arrival-practice}.
+\cite{vanvianen2014,deswaanarons2004}. A natural modelling choice is to generate vessel
+arrivals exogenously, at a mean rate equal to plant demand divided by vessel size, with some
+dispersion around it, and then to read a service level, such as the fraction of target
+production achieved, after one or a few simulated years.
 
-This paper makes one claim. \emph{A model with exogenous arrivals calibrated on demand has no
-stationary service level; any value it reports is a transient whose level is set by the
-simulated horizon; the remedy is an endogenous supply policy.} The argument is elementary,
-but its consequences for practice are large: in such a model, the service level read after
-one year depends on the horizon at least as much as on the levers being compared, and
-storage capacity, the lever most often studied, has no effect at all.
+Prior work already warns against uncontrolled arrivals. Van Asperen et al.\ compare Poisson,
+equidistant and stock-controlled arrivals in a chemical port; under Poisson arrivals they find
+that the range of the stock is theoretically unbounded, and they conclude that Poisson
+arrivals are inadequate whenever arrivals are in fact controlled, recommending
+stock-controlled arrivals instead \cite{vanasperen2003}. Rodrigues and Rangel show, for an
+iron-ore export terminal, that the fitted arrival distribution alone changes the predicted
+demurrage more than fivefold \cite{rodrigues2016}. Neither the warning nor the remedy is
+therefore new.
+
+What has not been made explicit is what the failure does to a published service level.
+\emph{A model with exogenous arrivals calibrated on demand has no stationary service level;
+any value it reports is a transient whose level is set by the simulated horizon.} The
+argument is elementary, but its consequences for practice are large: in such a model, the
+service level read after one year depends on the horizon at least as much as on the levers
+being compared, and storage capacity, the lever most often studied, has no effect at all.
 
 We found the problem while building a digital twin of an actual corridor from public data
 only. The study is independent and not affiliated with the port or the plant operator. The
@@ -83,13 +93,16 @@ contributions are:
 \item a method to reconstruct vessel calls from periodic public port snapshots, with
 departures treated as interval-censored, and a statement of what such a series can and
 cannot identify, complementing reconstructions from vessel-tracking data
-\cite{TODO-port-calls-ais} (Section~\ref{sec:reconstruction});
-\item a short analytic argument and a measurement showing that demand-matched exogenous
-arrivals produce no stationary service level and make storage capacity inert
-(Section~\ref{sec:trap});
-\item a corrective model with an $(s,Q)$ policy on the inventory position, random lead
-times, discrete plant outages and two hypotheses on vessel overtaking, which recovers a
-stationary regime and is not refuted by public traffic data
+\cite{wu2020} (Section~\ref{sec:reconstruction});
+\item the analytic form of the failure: what is unbounded is not only the range of the
+stock; the service level itself is a transient, $\beta(T)\to 1$ with $1-\beta(T)$ decaying as
+$T^{-1/2}$, and the storage capacity does not enter the loss. The unbounded stock range is the
+visible part; the consequence for a published service level is not, and it is what makes a
+one-year figure uninterpretable (Section~\ref{sec:trap});
+\item a practical diagnostic, plotting $\beta$ against the simulated horizon before reading
+it, and a remedy that is an instance of the stock-controlled arrivals of van Asperen et
+al.~\cite{vanasperen2003}, extended to random lead times, discrete plant outages and two
+hypotheses on vessel overtaking, and confronted with the port's public statistics
 (Sections~\ref{sec:model} and~\ref{sec:results}).
 \end{enumerate}
 
@@ -117,7 +130,7 @@ starts (left-censored).
 
 A departure is never observed: a vessel is listed in one snapshot and absent from the next.
 Each departure is therefore an interval between the last snapshot listing the vessel and the
-first one that does not \cite{TODO-interval-censoring}. Durations computed on the lower end
+first one that does not \cite{turnbull1976}. Durations computed on the lower end
 of the interval are lower
 bounds, and the width of the interval, set by the irregular timing of the scheduled job, is
 published with each call. Waiting and berth times use the published event times, which are
@@ -129,7 +142,7 @@ published tonnage divided by berth occupancy, is 24\,000~t/day; it comes from 3 
 pellet calls, all at one berth and of one vessel size. Two waiting times at anchorage before
 the ore berth are measured, 183.2~h and 159.4~h. Among 13 bulk carriers that waited at
 anchorage, 6 of the 8 pairs that waited at the same time berthed in the reverse order of
-arrival (75\%, Wilson interval [41; 93]\%) \cite{TODO-wilson-interval}. The test cannot speak
+arrival (75\%, Wilson interval [41; 93]\%) \cite{wilson1927}. The test cannot speak
 to the queue at a single berth: all 8 pairs berthed at different berths, and 5 of them carried
 cargo of different categories.
 
@@ -142,7 +155,7 @@ among 18 bulk carriers, which again measures arrival-estimate error, not overtak
 orders. The ordering policy and the lead-time distribution remain unobserved.
 
 From the quarterly statistics, the dispersion index of pellets landed per quarter is 0.83
-(bootstrap interval [0.21; 1.73], 16 quarters) \cite{TODO-bootstrap}; it falls to 0.45 when
+(bootstrap interval [0.21; 1.73], 16 quarters) \cite{efron1979}; it falls to 0.45 when
 one anomalous quarter is removed. Read as the squared coefficient of variation of
 inter-arrival times, it suggests near-Poisson arrivals, but that reading holds only if
 arrivals are exogenous, which is precisely what Section~\ref{sec:trap} questions.
@@ -166,7 +179,7 @@ the net input. The inventory is $I(t) = X(t) + L(t)$, where the lost production
 \begin{equation}
 L(t) = \max\Bigl(0,\; \sup_{u\le t} \bigl(-X(u)\bigr)\Bigr)
 \end{equation}
-is the one-sided regulator of $X$ at zero \cite{TODO-reflected-processes}. Define the
+is the one-sided regulator of $X$ at zero \cite{whitt2002}. Define the
 service level over horizon $T$ as $\beta(T) = 1 - L(T)/(dT)$, the fraction of target
 production not lost for lack of feedstock.
 
@@ -177,10 +190,10 @@ cumulative deficit grows as $T^{1/2}$, $\beta(T)\to 1$ without reaching any limi
 and the stockyard capacity does not enter $L$.
 
 \emph{Sketch.} The drift of $X$ is zero by calibration. By the functional central limit
-theorem for renewal-reward processes \cite{TODO-fclt-renewal}, $(X(Tu)-S_0)/\sqrt{T}$
+theorem for renewal-reward processes \cite{whitt2002}, $(X(Tu)-S_0)/\sqrt{T}$
 converges to $\sigma B(u)$. The regulator map is continuous, so $L(T)/\sqrt{T}$ converges to
 the regulator of $\sigma B$ at time one, whose law is that of $\sigma\sup_{u\le1}B(u)$
-\cite{TODO-reflection-principle}. The initial stock only shifts the barrier by a fixed
+\cite{karatzas1998}. The initial stock only shifts the barrier by a fixed
 tonnage, whose weight in $\beta(T)$ vanishes as $1/T$. Since no supply is ever lost, the
 upper bound of the inventory never acts on $X$, so the capacity cannot appear in $L$.
 \hfill$\square$
@@ -232,9 +245,10 @@ model has no loop: vessels come from an independent process at the demand rate (
 \label{sec:model}
 
 \subsection{Endogenous supply}
-The corrected model, written in SimPy \cite{TODO-simpy}, keeps the port, berth, rail and
+The corrected model, written in SimPy \cite{simpy}, keeps the port, berth, rail and
 plant processes of the original and replaces the arrival process by a continuous-review
-$(s,Q)$ policy \cite{TODO-sQ-inventory-theory} (Fig.~\ref{fig:structure}). Whenever the inventory position falls below
+$(s,Q)$ policy \cite{zipkin2000} (Fig.~\ref{fig:structure}), an instance of the
+stock-controlled arrivals of \cite{vanasperen2003}. Whenever the inventory position falls below
 the reorder point $s$, vessels are chartered one at a time ($Q$ = one vessel) until it is back
 at or above $s$. The position counts the stockyard, the
 plant stock, rail wagons in transit and everything afloat: vessels at sea, at anchorage, and
@@ -265,7 +279,7 @@ Ci, Dp and Di.
 
 \subsection{Evidence chain}
 Table~\ref{tab:evidence} lists the checks. The berth queue alone was checked against the
-exact Pollaczek--Khinchine mean wait \cite{TODO-pollaczek-khinchine}, in a scenario where the
+exact Pollaczek--Khinchine mean wait \cite{gross2008}, in a scenario where the
 storage is made large enough that service times are independent of the queue. The supply
 model was then confronted with the quarterly dispersion of landed tonnage. With continuous
 consumption it is refuted: it is far too regular, and the gap is not an artefact of trend or
@@ -325,7 +339,7 @@ laytime, hence an upper bound.}
 \subsection{Protocol}
 Each run is warmed up for 4 years and measured over the next 16. The warm-up is handled by
 differencing cumulative counters at the end of the warm-up rather than by resetting them,
-which keeps both mass balances exact \cite{TODO-steady-state-simulation}. Configurations are
+which keeps both mass balances exact \cite{law2015}. Configurations are
 compared on paired replications sharing a master seed, with 95\% intervals on the paired
 difference.
 
@@ -339,11 +353,15 @@ same protocol as the exogenous model, it stays between 0.987 and 0.991 at every 
 no paired difference between successive horizons beyond 8 years is significant
 (Fig.~\ref{fig:thesis}, blue). The deficit now grows linearly: fitted on horizons of 8 years
 and more, its exponent is 1.048 [0.952; 1.134], the signature of a stationary regime with
-losses. Batch means over a single 400-year run \cite{TODO-batch-means} give
+losses. Batch means over a single 400-year run \cite{law2015} give
 $\beta_\infty = 0.9867 \pm 0.0012$ in the current configuration and $0.9912 \pm 0.0008$ in
-the expansion scenario, and independent replications agree with them. The ranking of the two scenarios depends on overtaking: forbidding it lowers the
-expansion scenario from 0.9917 to 0.9749, because with more orders in transit an overtaking
-vessel more often fills a gap a late one would have opened \cite{TODO-order-crossover}. The
+the expansion scenario, and independent replications agree with them. The ranking of the
+two scenarios depends on overtaking. Over 200 paired replications, forbidding it lowers the
+expansion scenario from $0.9912 \pm 0.0003$ to $0.9753 \pm 0.0006$ (paired difference
+$-0.0159 \pm 0.0005$) and the current configuration only from $0.9882 \pm 0.0004$ to
+$0.9863 \pm 0.0005$ ($-0.0020 \pm 0.0003$), so the expansion scenario ranks first only when
+overtaking is permitted: with more orders in transit, an overtaking vessel more often fills a
+gap that a late one would have opened \cite{hayya2008}. The
 same feedback that restores a steady state also changes what dispersion of arrivals means:
 it becomes an output of the policy and of the lead-time variability instead of an input.
 
@@ -400,8 +418,7 @@ the most reactive possible, so its stock-outs are a lower bound when charters ar
 fixed by monthly or quarterly programmes. The berth queue is first-come first-served, which
 the observed series neither confirms nor refutes at a single berth. The unloading rate rests
 on 3 calls. All monetary amounts use unit costs without a local source and an upper-bound
-demurrage count. The overtaking result on the expansion scenario was measured by a
-substitution script before the option existed in the model, and has not been recomputed.
+demurrage count.
 
 The general lesson is simple and cheap to check. Before reading a service level from a
 corridor model with exogenous arrivals, plot it against the simulated horizon: if it keeps

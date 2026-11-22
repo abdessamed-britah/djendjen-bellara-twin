@@ -2,7 +2,8 @@
 
 Une ligne par chiffre destiné à l'article *Computers & Industrial Engineering* et au papier
 de conférence (`paper/`). Figé à l'étiquette git **`v0.2-resultats`** (2026-11-22), qui
-étend `v0.1-resultats` (2026-11-06) des lignes M2b, M2c, M3b et de la rubrique 6 ;
+étend `v0.1-resultats` (2026-11-06) des lignes M2b, M2c, M3b et de la rubrique 6, et
+remplace M5 par un recalcul ;
 commandes et durées dans [`REPRODUIRE.md`](../REPRODUIRE.md). Détail, figures et discussion
 dans le README.
 
@@ -58,7 +59,7 @@ donc en borne haute. Les deux capacités de stockage sont `inconnu` (H4-H5).
 | M3 | β∞ approvisionnement, baseline endogène | 0,9867 | ± 0,0012 | `convergence_horizon.py` | v0.2 (92d2fe6) | 20260924 | 400 ans par lots | C p | calculé | **recalculé** : identique ; s = 30 j fixé par hypothèse |
 | M3b | β endogène selon l'horizon (1 / 2 / 4 / 8 / 16 / 32 / 50 ans), même protocole que M2c | 0,991 / 0,988 / 0,987 / 0,988 / 0,988 / 0,987 / 0,987 | ± 0,005 / 0,005 / 0,003 / 0,002 / 0,002 / 0,001 / 0,001 | `convergence_horizon.py` | v0.2 | 20260924 | 20, une trajectoire par réplication lue à tous les horizons | C p | calculé | aucune différence appariée significative au-delà de 8 ans ; accord avec les lots à 50 ans ; exposant hors transitoire (T ≥ 8 ans) 1,048 [0,952 ; 1,134] |
 | M4 | β∞ approvisionnement, phase 2 endogène | 0,9912 | ± 0,0008 | `convergence_horizon.py` | 92d2fe6 | 20260924 | 400 ans par lots | C p | calculé | l'ordre phase 2 > baseline tient aux dépassements (M5) |
-| M5 | β phase 2, dépassements permis → interdits | 0,9917 → 0,9749 | — | script de diagnostic | 92d2fe6 | 20260924 | 12 graines × 20 ans | C p/i | reconstruit | mesuré par substitution avant que l'option existe |
+| M5 | β approvisionnement, dépassements permis → interdits, et différence appariée « interdits − permis » | phase 2 : 0,9912 → 0,9753, −0,0159 ; baseline : 0,9882 → 0,9863, −0,0020 | phase 2 : ± 0,0003 / ± 0,0006, différence ± 0,0005 ; baseline : ± 0,0004 / ± 0,0005, différence ± 0,0003 | `depassements.py` | v0.2 | 20260924 | 200 × 16 ans (4 d'échauffement), appariées | C p/i | calculé | **recalculé** par l'option `simulation.depassements_autorises` ; remplace 0,9917 → 0,9749 (phase 2) et 0,9893 → 0,9878 (baseline), mesurés à l'étape 1 par un script de substitution sur 12 graines × 20 ans depuis le démarrage ; le classement phase 2 > baseline ne tient qu'avec dépassements |
 | M6 | Coût total à s = 30 j, phase 2 (arrêts + surestaries + portage) | 4,90 M USD/an (p) ; 7,03 (i) | ± 0,13 ; ± 0,26 | `politique_commande.py` | 712d0e5 | 20260924 | 16 × 16 ans | C p/i | calculé | coûts non sourcés |
 | M7 | Asymétrie de la courbe de coût en s, baseline | 15 j trop bas : +10,8 M ; 30 j trop haut : +3,0 M USD/an | — | `politique_commande.py` | 712d0e5 | 20260924 | 16 | C p | calculé | coûts non sourcés |
 | M8 | Effet des arrêts discrets sur β approvisionnement | −1,3 à −2,1 points | — | `effet_arrets.py` | 5d741e7 | 20260924 | 16 | C→D | calculé | discret = borne haute de l'irrégularité |

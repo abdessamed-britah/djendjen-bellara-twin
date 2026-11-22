@@ -12,6 +12,12 @@ coordonnées TikZ ne sont pas listés.
 ✅ = la valeur figure dans la ligne citée (arrondie au nombre de décimales du papier quand
 c'est précisé).
 
+## Littérature citée
+
+| Nombre | Source | Statut |
+| --- | --- | --- |
+| « more than fivefold » (surestarie selon la loi d'arrivée ajustée) | rodrigues2016, commentaire de `paper/refs.bib` : rapport de 1 à 5,7 | écrit en toutes lettres ; chiffre de la littérature, pas un résultat du projet |
+
 ## Résumé (abstract)
 
 | Nombre dans le papier | Ligne | Statut |
@@ -81,7 +87,7 @@ Aucun nombre.
 | no significant paired difference beyond 8 years | M3b (réserve) | ✅ |
 | exponent 1.048 [0.952; 1.134], fitted on horizons **of 8 years and more** (endogène) | M3b (réserve) | ✅ |
 | batch means over 400 years, 0.9867 ± 0.0012, 0.9912 ± 0.0008 | M3, M4 | ✅ |
-| 0.9917 → 0.9749 | M5 | ✅ (statut **reconstruit**, dit dans les limites du papier) |
+| 200 paired replications ; expansion 0.9912 ± 0.0003 → 0.9753 ± 0.0006, difference −0.0159 ± 0.0005 ; current 0.9882 ± 0.0004 → 0.9863 ± 0.0005, difference −0.0020 ± 0.0003 | M5 | ✅ (recalculé par `depassements.py`) |
 | 2 × 2 design, 200 paired replications of 16 years, four variants | M10–M14 | ✅ |
 | storage : −0.007 to −0.022 points | M13 | ✅ |
 | second berth : +0.005 to +0.058 points | M10 | ✅ |
