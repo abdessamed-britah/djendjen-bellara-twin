@@ -11,3 +11,5 @@ data/sim/
 # Le manifeste garde l'URL et l'empreinte de chaque PDF, et
 # `python -m corridor.ingest.port_stats` les retélécharge.
 data/raw/**/*.pdf
+# Sorties de compilation du papier (latexmk) : recalculables.
+paper/build/

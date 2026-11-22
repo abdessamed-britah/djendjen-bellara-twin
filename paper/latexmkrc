@@ -1,0 +1,7 @@
+# Compilation du papier : `cd paper && latexmk`. Les figures se régénèrent depuis les JSON
+# déjà calculés par `python scripts/figures_papier.py` (depuis la racine du dépôt).
+@default_files = ('main.tex');
+$pdf_mode = 1;
+$bibtex_use = 2;
+$out_dir = 'build';
+$pdflatex = 'pdflatex -interaction=nonstopmode -halt-on-error -file-line-error %O %S';

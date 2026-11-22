@@ -48,6 +48,23 @@ Il se contourne par `git commit --no-verify` : c'est un garde-fou, pas une serru
 interpréteur n'est pas celui que le hook trouve tout seul, indiquez-le par
 `CORRIDOR_PYTHON=/chemin/vers/python`.
 
+### Compiler le papier de conférence
+
+Le papier (`paper/main.tex`, format IEEE conference, en anglais) se compile par `latexmk`,
+qui lit `paper/latexmkrc` ; le PDF sort dans `paper/build/` (ignoré par git). Ses deux
+figures se régénèrent depuis les résultats déjà calculés, **sans simuler** :
+
+```bash
+python scripts/figures_papier.py   # paper/figures/*.pdf, depuis data/sim/*.json
+cd paper && latexmk                # paper/build/main.pdf
+```
+
+Les JSON lus (`data/sim/factoriel_endogene.json`, `data/sim/validation_arrets.json`) sont
+ignorés par git : sur un clone neuf, les produire d'abord par `python
+scripts/factoriel_endogene.py` et `python scripts/validation_arrets.py` (voir
+`REPRODUIRE.md`). Chaque nombre du papier est rattaché à sa ligne de
+`docs/results_summary.md` dans `paper/NOMBRES.md`.
+
 ## Premiers résultats observés
 
 > **Lecture de ce README.** Ce projet vise un *application paper* dans *Computers & Industrial

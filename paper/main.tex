@@ -1,0 +1,398 @@
+% Conference paper. Every number below is listed in paper/NOMBRES.md with the line of
+% docs/results_summary.md it comes from. Build: latexmk (see paper/latexmkrc).
+%
+% --- Venue parameters: change these lines if the target conference changes ------------
+\documentclass[conference]{IEEEtran}   % IEEE conference, two columns
+% Page limit targeted: 6 pages including references.
+% ----------------------------------------------------------------------------------------
+
+% Reproducible PDF: no creation date, no random trailer ID.
+\pdfinfoomitdate=1
+\pdftrailerid{}
+
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{cite}
+\usepackage{url}
+
+\newcommand{\figdir}{figures}
+
+\begin{document}
+
+\title{Demand-Matched Exogenous Arrivals Have No Steady State:\\
+Lessons from a Port--Steelworks Corridor Rebuilt from Public Data}
+
+\author{\IEEEauthorblockN{Abdessamed Britah}
+\IEEEauthorblockA{Independent researcher\\
+% TODO(author): affiliation and e-mail address to be confirmed by the author.
+}}
+
+\maketitle
+
+\begin{abstract}
+Simulation models of port-to-plant supply corridors commonly drive vessel arrivals by an
+exogenous process whose mean rate is calibrated on plant demand. We show that such a model
+cannot produce a stationary service level: the net input is a random walk without drift,
+lost production grows as the square root of the horizon, and every service level it reports
+is a transient that depends on the simulated horizon. Storage capacity does not enter the
+loss at all. On a corridor rebuilt from public data only, from a port of import to a
+direct-reduction steel plant, the measured growth exponent of the cumulative deficit is
+0.49 [0.37; 0.60] and the one-year-to-fifty-year service level rises from 0.858 to 0.971
+without levelling off, while multiplying storage capacity by 12 changes production by less
+than 0.002\%. The correction is an endogenous supply policy: an $(s,Q)$ order rule on the
+inventory position with random lead times. It restores a stationary service level
+(0.9867~$\pm$~0.0012 and 0.9912~$\pm$~0.0008 in two scenarios). With discrete furnace
+outages, it is not refuted by public traffic statistics, although that test has low power.
+We describe how vessel calls were reconstructed from public port snapshots with
+interval-censored departures, and illustrate what the corrected model says about investment
+levers, without turning it into a recommendation.
+\end{abstract}
+
+\begin{IEEEkeywords}
+discrete-event simulation, steady state, supply corridor, inventory policy, port operations,
+public data
+\end{IEEEkeywords}
+
+% =========================================================================================
+\section{Introduction}
+
+Bulk import corridors, in which a port receives raw material by sea and forwards it by rail
+to a processing plant, are a standard subject for discrete-event simulation
+\cite{TODO-port-bulk-simulation,TODO-port-plant-supply-simulation}. A common and natural
+modelling choice is to generate vessel arrivals exogenously, at a mean rate equal to plant
+demand divided by vessel size, with some dispersion around it, and then to read a service
+level, such as the fraction of target production achieved, after one or a few simulated
+years \cite{TODO-exogenous-arrival-practice}.
+
+This paper makes one claim. \emph{A model with exogenous arrivals calibrated on demand has no
+stationary service level; any value it reports is a transient whose level is set by the
+simulated horizon; the remedy is an endogenous supply policy.} The argument is elementary,
+but its consequences for practice are large: in such a model, the service level read after
+one year depends on the horizon at least as much as on the levers being compared, and
+storage capacity, the lever most often studied, has no effect at all.
+
+We found the problem while building a digital twin of an actual corridor from public data
+only. The study is independent and not affiliated with the port or the plant operator. The
+contributions are:
+\begin{enumerate}
+\item a method to reconstruct vessel calls from periodic public port snapshots, with
+departures treated as interval-censored, and a statement of what such a series can and
+cannot identify, complementing reconstructions from vessel-tracking data
+\cite{TODO-port-calls-ais} (Section~\ref{sec:reconstruction});
+\item a short analytic argument and a measurement showing that demand-matched exogenous
+arrivals produce no stationary service level and make storage capacity inert
+(Section~\ref{sec:trap});
+\item a corrective model with an $(s,Q)$ policy on the inventory position, random lead
+times, discrete plant outages and two hypotheses on vessel overtaking, which recovers a
+stationary regime and is not refuted by public traffic data
+(Sections~\ref{sec:model} and~\ref{sec:results}).
+\end{enumerate}
+
+% =========================================================================================
+\section{Reconstructing vessel calls from public snapshots}
+\label{sec:reconstruction}
+
+\subsection{Data}
+The port publishes a situation report as a PDF document listing berthed vessels, vessels
+at anchorage and expected arrivals, each with cargo, tonnage and an event time (berthing,
+anchoring or estimated time of arrival). A scheduled job downloads it three times a day and
+archives every document unchanged, so that every derived table can be rebuilt from the raw
+files. The document header gives the time the document was \emph{generated}, not the time
+its tables were updated. A change of situation is therefore detected on a fingerprint of
+the table contents, never on the file or its header. The second public source is the port's
+quarterly traffic statistics, which give tonnage landed by commodity.
+
+\subsection{From observations to calls}
+Each snapshot yields one observation per vessel. Observations are linked into calls by
+vessel name, with a status sequence (expected, at anchorage, berthed) that may not move
+backwards. A vessel that disappears briefly and reappears with the same cargo is attached
+to the same call. Nothing is corrected silently: 13 anomaly codes flag revised arrival
+estimates, berth changes, cargo changes and calls already in progress when the series
+starts (left-censored).
+
+A departure is never observed: a vessel is listed in one snapshot and absent from the next.
+Each departure is therefore an interval between the last snapshot listing the vessel and the
+first one that does not \cite{TODO-interval-censoring}. Durations computed on the lower end
+of the interval are lower
+bounds, and the width of the interval, set by the irregular timing of the scheduled job, is
+published with each call. Waiting and berth times use the published event times, which are
+actual movement times.
+
+\subsection{What the series identifies, and what it does not}
+The series identifies quantities measured \emph{at the port}. The apparent unloading rate,
+published tonnage divided by berth occupancy, is 24\,000~t/day; it comes from 3 iron-ore
+pellet calls, all at one berth and of one vessel size. Two waiting times at anchorage before
+the ore berth are measured, 183.2~h and 159.4~h. Among 13 bulk carriers that waited at
+anchorage, 6 of the 8 pairs that waited at the same time berthed in the reverse order of
+arrival (75\%, Wilson interval [41; 93]\%) \cite{TODO-wilson-interval}. The test cannot speak
+to the queue at a single berth: all 8 pairs berthed at different berths, and 5 of them carried
+cargo of different categories.
+
+The series does not identify quantities set \emph{before} the port. Expected arrivals are
+announced about 1.5 days ahead, against an assumed mean supply lead time of 22 days. The
+spread between announced and actual arrival gives a lead-time coefficient of variation of
+0.028, a lower bound with no value as an estimate of the ordering lead time. The order of
+first announcement against the order of arrival is reversed for 2 of 148 pairs (1\%, [0; 5]\%)
+among 18 bulk carriers, which again measures arrival-estimate error, not overtaking between
+orders. The ordering policy and the lead-time distribution remain unobserved.
+
+From the quarterly statistics, the dispersion index of pellets landed per quarter is 0.83
+(bootstrap interval [0.21; 1.73], 16 quarters) \cite{TODO-bootstrap}; it falls to 0.45 when
+one anomalous quarter is removed. Read as the squared coefficient of variation of
+inter-arrival times, it suggests near-Poisson arrivals, but that reading holds only if
+arrivals are exogenous, which is precisely what Section~\ref{sec:trap} questions.
+
+% =========================================================================================
+\section{The trap: no steady state under demand-matched exogenous arrivals}
+\label{sec:trap}
+
+\subsection{Statement}
+Consider a plant that consumes at rate $d$ while its feedstock inventory is positive and
+stops otherwise. Vessels of i.i.d.\ sizes $Q_i$ arrive at the epochs of a renewal process
+$N(t)$ whose mean rate is calibrated on demand, $\lambda = d/\mathbb{E}[Q]$, with
+inter-arrival squared coefficient of variation $c_a^2$ and size squared coefficient of
+variation $c_Q^2$. When the stockyard is full, a vessel keeps its cargo on board, at berth
+or at anchorage, until space frees up: no supply is ever lost. Let $S_0$ be the initial
+stock and
+\begin{equation}
+X(t) = S_0 + \sum_{i=1}^{N(t)} Q_i - d\,t
+\end{equation}
+the net input. The inventory is $I(t) = X(t) + L(t)$, where the lost production
+\begin{equation}
+L(t) = \max\Bigl(0,\; \sup_{u\le t} \bigl(-X(u)\bigr)\Bigr)
+\end{equation}
+is the one-sided regulator of $X$ at zero \cite{TODO-reflected-processes}. Define the
+service level over horizon $T$ as $\beta(T) = 1 - L(T)/(dT)$, the fraction of target
+production not lost for lack of feedstock.
+
+\emph{Proposition.} Under these assumptions, $L(T)/\sqrt{T}$ converges in distribution to
+$\sigma \sup_{u\le 1} B(u)$, where $B$ is a standard Brownian motion and
+$\sigma^2 = d\,\mathbb{E}[Q]\,(c_a^2 + c_Q^2)$. Hence $1-\beta(T)$ decays as $T^{-1/2}$, the
+cumulative deficit grows as $T^{1/2}$, $\beta(T)\to 1$ without reaching any limit below one,
+and the stockyard capacity does not enter $L$.
+
+\emph{Sketch.} The drift of $X$ is zero by calibration. By the functional central limit
+theorem for renewal-reward processes \cite{TODO-fclt-renewal}, $(X(Tu)-S_0)/\sqrt{T}$
+converges to $\sigma B(u)$. The regulator map is continuous, so $L(T)/\sqrt{T}$ converges to
+the regulator of $\sigma B$ at time one, whose law is that of $\sigma\sup_{u\le1}B(u)$
+\cite{TODO-reflection-principle}. The initial stock only shifts the barrier by a fixed
+tonnage, whose weight in $\beta(T)$ vanishes as $1/T$. Since no supply is ever lost, the
+upper bound of the inventory never acts on $X$, so the capacity cannot appear in $L$.
+\hfill$\square$
+
+Three consequences follow. Any service level read at a finite horizon is a transient. The
+level read after one year mixes the corridor with the horizon. And storage capacity is
+inert unless the model loses or diverts supply when it is full, which a model that lets
+vessels wait does not.
+
+\subsection{Measurement}
+The simulated baseline, with Poisson arrivals, was replicated 20 times and each replication
+was read at horizons from 1 to 50 years along the same trajectory. Fitting the mean deficit
+as $aT^p$ gives $p = 0.578$ [0.434; 0.718] with the initial stock and $p = 0.49$
+[0.37; 0.60] without it, compatible with $1/2$ and excluding both 0 (bounded deficit) and 1
+(stationary regime with losses). The service level rises from 0.858 at one year to 0.971 at
+fifty years without levelling off. Holding the initial stock fixed and multiplying both
+storage capacities by 12 changes production by less than 0.002\% at horizons of 1, 4 and 12
+years. An earlier result of the project, in which larger storage appeared to reduce losses
+markedly, came entirely from the initial stock, which the scenarios derived from capacity.
+
+% =========================================================================================
+\section{The corrective model}
+\label{sec:model}
+
+\subsection{Endogenous supply}
+The corrected model, written in SimPy \cite{TODO-simpy}, keeps the port, berth, rail and
+plant processes of the original and replaces the arrival process by a continuous-review
+$(s,Q)$ policy \cite{TODO-sQ-inventory-theory}. One vessel is chartered whenever the
+inventory position falls below the reorder point $s$. The position counts the stockyard, the
+plant stock, rail wagons in transit and everything afloat: vessels at sea, at anchorage, and
+the cargo still on board at berth. Without the last term, the position would drop by a full
+vessel at berthing and the policy would order for nothing. The policy is reviewed only when
+the plant consumes, since unloading, rail transfer and arrivals move material without
+removing it. Each order draws its vessel size, unloading rate and lead time from separate
+random streams, so that the $n$-th order has the same three values in every configuration
+compared, which makes paired comparisons tight.
+
+All non-constant distributions are gamma laws with a given mean and coefficient of
+variation. The lead time has a mean of 22 days [15; 30] and a coefficient of variation of
+0.25 [0.10; 0.60]; the reorder point is 30 or 35 days of mean consumption, in a range of
+[15; 60], set at the cost optimum of each variant. None of these three parameters has a
+public source (Section~\ref{sec:limits}).
+
+\subsection{Discrete outages and overtaking}
+The plant has a fixed annual availability. In the \emph{continuous} variant (C) it runs at
+that average rate; in the \emph{discrete} variant (D) it alternates between full rate and
+unplanned outages with a mean duration of 7 days [2; 30], at the same availability. D is the
+most irregular reading of the availability figure, an upper bound on consumption
+irregularity. Lead times are drawn independently for each order, so a late vessel can be
+overtaken by the next one. Two hypotheses are kept side by side: overtaking \emph{permitted}
+(p), realistic for independent charters from different origins, and \emph{forbidden} (i), where
+each vessel arrives no earlier than the previous one. The public series cannot separate them
+(Section~\ref{sec:reconstruction}), so every result is reported under the four variants Cp,
+Ci, Dp and Di.
+
+\subsection{Evidence chain}
+Table~\ref{tab:evidence} lists the checks. The berth queue alone was checked against the
+exact Pollaczek--Khinchine mean wait \cite{TODO-pollaczek-khinchine}, in a scenario where the
+storage is made large enough that service times are independent of the queue. The supply
+model was then confronted with the quarterly dispersion of landed tonnage. With continuous
+consumption it is refuted: it is far too regular, and the gap is not an artefact of trend or
+vessel size. With discrete outages it is \emph{not refuted} on 2023--2025: 118 of 126
+combinations of outage duration, storage level, lead-time variability and overtaking keep
+the observed value inside the simulated 5--95\% band, and only the shortest outages (2 days)
+are rejected. Three reservations bound this result. The test has low power: the simulated
+bands span almost an order of magnitude (Fig.~\ref{fig:validation}). The reference period
+2023--2025 was chosen \emph{after} seeing the role of 2022, which only outages of 30 days
+reproduce (15 of 126 combinations, all at 30 days). And other mechanisms could produce a
+similar dispersion. The test does not discriminate the lead-time variability either:
+18, 19, 21, 21 and 21 of 21 combinations pass at coefficients of variation 0.10, 0.25, 0.40,
+0.50 and 0.60.
+
+\begin{table}[t]
+\caption{Evidence chain for the corrective model}
+\label{tab:evidence}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.9cm}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{1.6cm}@{}}
+\toprule
+Check & Statistic & Outcome \\
+\midrule
+Berth queue vs.\ Pollaczek--Khinchine (200 runs $\times$ 8 years) & mean wait 37.96~$\pm$~1.40~h vs.\ 38.53~h & consistent \\
+Continuous consumption vs.\ traffic data (8 seeds $\times$ 100 years) & dispersion index, median 0.067--0.089 vs.\ 0.83; $P(I \ge 0.45)=0$ & refuted \\
+Same, within-year CV$^2$ of tonnage & 0.174 observed vs.\ [0.006; 0.032] simulated & refuted \\
+Discrete outages, 2023--2025 (4 seeds $\times$ 60 years) & observed value inside 5--95\% band & not refuted (118/126) \\
+Discrete outages, 2022--2025 & same & 15/126, all at 30-day outages \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{\figdir/validation.pdf}
+\caption{Within-year squared coefficient of variation of quarterly tonnage landed, simulated
+(median and 5--95\% band, discrete outages, lead-time coefficient of variation 0.25,
+overtaking permitted, three storage levels) against the value observed on 2023--2025. The
+observed value lies inside the bands except for the shortest outages, but the bands are
+wide: the test has low power, and the period was chosen after the data were seen.}
+\label{fig:validation}
+\end{figure}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{\figdir/factorial.pdf}
+\caption{Effects of a second berth and of high storage on the corrected model, expansion
+scenario, 200 paired replications of 16 years, four variants, 95\% intervals (often smaller
+than the markers on the cost panels). Effects on the service level are in percentage points.
+Costs are illustrative: the unit costs (margin per tonne, demurrage rate, pellet price,
+carrying rate) have no local source, and demurrage is counted on all anchorage time without
+laytime, hence an upper bound.}
+\label{fig:factorial}
+\end{figure*}
+
+\subsection{Protocol}
+Each run is warmed up for 4 years and measured over the next 16. The warm-up is handled by
+differencing cumulative counters at the end of the warm-up rather than by resetting them,
+which keeps both mass balances exact \cite{TODO-steady-state-simulation}. Configurations are
+compared on paired replications sharing a master seed, with 95\% intervals on the paired
+difference.
+
+% =========================================================================================
+\section{Results}
+\label{sec:results}
+
+\subsection{Stationarity recovered}
+With endogenous supply, the service level converges. Batch means over a single 400-year run
+\cite{TODO-batch-means} give $\beta_\infty = 0.9867 \pm 0.0012$ in the current configuration
+and $0.9912 \pm 0.0008$ in the expansion scenario, and independent replications agree with
+them. The ranking of the two scenarios depends on overtaking: forbidding it lowers the
+expansion scenario from 0.9917 to 0.9749, because with more orders in transit an overtaking
+vessel more often fills a gap a late one would have opened \cite{TODO-order-crossover}. The
+same feedback that restores a steady state also changes what dispersion of arrivals means:
+it becomes an output of the policy and of the lead-time variability instead of an input.
+
+\subsection{What the corrected model says about levers}
+The following is an illustration of what the model implies, not a recommendation: the
+storage capacities and the lead-time parameters are not sourced. Fig.~\ref{fig:factorial}
+shows a $2\times2$ design (one or two ore berths, base or high storage) in the expansion
+scenario, with 200 paired replications of 16 years in each of the four variants.
+
+\emph{Storage does not serve production.} High storage changes the service level by
+$-0.007$ to $-0.022$ points with one berth, nowhere a gain. This holds in all four variants.
+
+\emph{The second berth acts on the queue, not on production.} Its effect on the service level
+is significant but negligible, $+0.005$ to $+0.058$ points with base storage. It removes most
+of the anchorage wait, and with it demurrage: $-1.96$ to $-3.56$~M~USD/year, and $-1.61$ to
+$-3.03$~M~USD/year of total cost against a base-case total of 4.96 to 8.43~M~USD/year. These
+amounts rest on unit costs without a local source and on demurrage counted as an upper bound;
+they are gross of the investment and operation of a second berth, which is itself not an
+observed configuration.
+
+\emph{Stock-outs follow late vessels, not plant restarts.} Discrete outages lower the service
+level by 1.3 to 2.1 points and multiply stock-out episodes: 0.15 and 0.85 episodes per year
+in the continuous variants against 2.50 and 5.42 in the discrete ones. A natural explanation,
+that the plant runs out after a restart because it then consumes at full rate, is rejected:
+the relative risk of a stock-out in the 22 days after a restart is 0.20 and 0.30. A lead-time
+delay beyond its 90th percentile precedes 85 to 98\% of episodes, against 21 to 23\% of
+arbitrary instants. Counting the reorder point in days of full-rate rather than mean
+consumption closes 100\% and 92\% of the continuous--discrete gap in episodes; in tonnes,
+however, it is merely a higher reorder point, and it adds 89 and 82~kt of average stock.
+
+\emph{The reorder point is the lever.} The cost-optimal reorder point grows with lead-time
+variability, from 27.5 to 44.4 days (Ci) and from 31.7 to 44.8 days (Di) as the coefficient
+of variation goes from 0.10 to 0.60, but much less when overtaking is permitted, from 27.5
+to 35.2 days (Cp) and from 31.7 to 36.1 days (Dp). Propagating the parameter ranges through 500 draws, the long-run service level at
+a fixed reorder point has a 5th percentile between 85.8\% and 97.2\% across variants; with
+the reorder point adapted to the lead-time variability, between 92.3\% and 98.8\%. The
+adapted figure assumes that the operator knows its lead-time variability, which this study
+cannot measure.
+
+% =========================================================================================
+\section{Limitations and conclusion}
+\label{sec:limits}
+
+The analytic argument assumes no supply is ever lost and a finite-variance arrival
+process. A model that diverts or rejects vessels when storage is full has an upper barrier,
+and storage then matters; so does a model with any feedback from stock to arrivals.
+
+The corridor study has several limitations. The two storage capacities are unknown and are
+explored over wide ranges. The lead-time mean and variability and the reorder point have no
+public source, and the snapshot series cannot measure them. The validation is a
+non-refutation of low power on a period chosen after seeing the data, and discrete outages
+are the most irregular reading of the plant availability. The continuous-review policy is
+the most reactive possible, so its stock-outs are a lower bound when charters are in fact
+fixed by monthly or quarterly programmes. The berth queue is first-come first-served, which
+the observed series neither confirms nor refutes at a single berth. The unloading rate rests
+on 3 calls. All monetary amounts use unit costs without a local source and an upper-bound
+demurrage count. The overtaking result on the expansion scenario was measured by a
+substitution script before the option existed in the model, and has not been recomputed.
+
+The general lesson is simple and cheap to check. Before reading a service level from a
+corridor model with exogenous arrivals, plot it against the simulated horizon: if it keeps
+rising, there is nothing stationary to read, and the levers compared at that horizon are
+compared on a transient. Giving the supply a feedback on the inventory position, even a
+crude $(s,Q)$ rule, is enough to restore a steady state.
+
+% =========================================================================================
+\section*{Code and data availability}
+The code, the scenario files, the archived public data and the scripts that produce every
+number and figure of this paper are available at
+\url{https://github.com/abdessamed-britah/djendjen-bellara-twin}; the results were frozen at
+the tag \texttt{v0.1-resultats}. The raw port snapshots are archived unchanged as release
+assets of that repository, and the traffic statistics as the published web pages. The
+repository documentation is in French; \texttt{paper/NOMBRES.md} maps every number of this
+paper to its line in the results table.
+
+\section*{Acknowledgment}
+The author used an AI assistant (Claude, Anthropic, through Claude Code) to write and test
+the simulation and analysis code, to run the analyses and to draft this manuscript. All
+numbers were produced by versioned scripts and are traceable to the repository. The author
+reviewed the content and takes full responsibility for it.
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}
